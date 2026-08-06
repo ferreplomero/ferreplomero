@@ -1,0 +1,104 @@
+/* Tokens de marca (variables CSS, modo claro/oscuro) — debe ir antes de Tailwind. */
+@import "@arkiteq/ui/styles.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --sidebar-width: 16rem;
+  }
+
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+    /* Red de seguridad global: ningún elemento (por poco que se pase del
+       viewport — un badge, una sombra, un desborde puntual en cualquier
+       pantalla) puede empujar scroll horizontal de TODO el documento. El
+       scroll horizontal solo existe dentro de contenedores propios (p. ej.
+       las tablas anchas, que ya llevan su propio overflow-x-auto). */
+    overflow-x: hidden;
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--text-body);
+    font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+    font-feature-settings: "cv11", "ss01";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+    width: 100%;
+    /* Causa raíz real del "contenido corrido con espacio vacío" en móvil: un
+       nombre/código/correo SIN espacios (SKU, barcode, email largo) no tiene
+       dónde romper línea, así que su ancho mínimo intrínseco puede superar el
+       viewport y arrastrar consigo la fila/tarjeta que lo contiene — incluso
+       dentro de una tabla con su propio overflow-x-auto, ese desborde interno
+       se refleja en el documentElement. Rompe cualquier texto que no quepa,
+       en cualquier parte de la app, SIN afectar las celdas que ya usan
+       whitespace-nowrap a propósito (fechas, montos): nowrap siempre gana
+       sobre overflow-wrap, así que esas siguen en una sola línea igual. */
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display), ui-sans-serif, system-ui, sans-serif;
+    color: var(--text-title);
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+  }
+
+  ::selection {
+    background-color: var(--brand-500);
+    color: #ffffff;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--text-secondary) transparent;
+  }
+}
+
+@layer components {
+  /* Contenedor de sección de marketing con respiro generoso. */
+  .section {
+    @apply mx-auto w-full max-w-6xl px-5 lg:px-8;
+  }
+
+  /* Texto con degradado sutil de marca para destacados. */
+  .text-gradient-brand {
+    @apply from-brand-600 to-brand-500 bg-gradient-to-br bg-clip-text text-transparent;
+  }
+}
+
+/*
+ * Impresión (recibos y cualquier otra pantalla que se imprima desde la app):
+ * márgenes de página razonables para un ticket limpio. El menú, la barra
+ * superior y demás interfaz de la app se ocultan con la utilidad `print:hidden`
+ * de Tailwind en cada componente (ver VerticalShell) — esto solo cubre el
+ * margen de la página física, que no se puede fijar por componente.
+ * El encabezado/pie que algunos navegadores agregan al imprimir (URL, fecha)
+ * es de la configuración del navegador y no se puede quitar por CSS; el
+ * usuario puede desactivarlo desde "Más opciones -> Encabezados y pies de
+ * página" en el diálogo de impresión.
+ */
+@media print {
+  @page {
+    margin: 10mm;
+  }
+}

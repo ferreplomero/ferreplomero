@@ -1,0 +1,16 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# pnpm 11 aprueba la ejecución de scripts de instalación con el campo `allowBuilds`
+# (mapa dependencia -> booleano). En versiones anteriores el campo era
+# `onlyBuiltDependencies` (una lista), que pnpm 11 ya NO honra.
+#   esbuild  -> usado por Vitest/Turbopack
+#   sharp    -> optimización de imágenes de Next
+#   workerd  -> runtime de Cloudflare Workers (OpenNext build/preview)
+#   @journeyapps/wa-sqlite -> SQLite WASM en el dispositivo (PowerSync, offline-first)
+allowBuilds:
+  "@journeyapps/wa-sqlite": true
+  esbuild: true
+  sharp: true
+  workerd: true

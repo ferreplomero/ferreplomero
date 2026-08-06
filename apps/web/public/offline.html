@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#16252B" />
+    <title>Sin conexión · Arkiteq Data</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #f4f8f8;
+        color: #16252b;
+        font-family:
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          Roboto,
+          sans-serif;
+        padding: 24px;
+      }
+      .tarjeta {
+        max-width: 30rem;
+        width: 100%;
+        background: #ffffff;
+        border-radius: 20px;
+        padding: 2.5rem 2rem;
+        text-align: center;
+        box-shadow: 0 20px 60px rgba(22, 37, 43, 0.12);
+      }
+      .icono {
+        width: 56px;
+        height: 56px;
+        margin: 0 auto 1.25rem;
+        border-radius: 50%;
+        background: #eaf4f2;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #2e7a6f;
+      }
+      h1 {
+        font-size: 1.375rem;
+        margin: 0 0 0.75rem;
+        color: #16252b;
+      }
+      p {
+        margin: 0 0 1.5rem;
+        color: #4a5a60;
+        line-height: 1.5;
+      }
+      a.boton {
+        display: inline-block;
+        background: #4e9e91;
+        color: #ffffff;
+        text-decoration: none;
+        font-weight: 600;
+        padding: 0.75rem 1.5rem;
+        border-radius: 999px;
+      }
+      a.boton:focus-visible,
+      a.boton:hover {
+        background: #2e7a6f;
+        outline: 2px solid #2e7a6f;
+        outline-offset: 2px;
+      }
+      .disponibles {
+        margin-top: 1.75rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid #eef3f3;
+        text-align: left;
+      }
+      .disponibles-titulo {
+        margin: 0 0 0.75rem;
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #7c8b90;
+      }
+      .accesos {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+      a.acceso {
+        display: inline-flex;
+        align-items: center;
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 0.875rem;
+        color: #2e7a6f;
+        background: #eaf4f2;
+        border-radius: 999px;
+        padding: 0.5rem 1rem;
+      }
+      a.acceso:focus-visible,
+      a.acceso:hover {
+        background: #d9ece8;
+        outline: 2px solid #2e7a6f;
+        outline-offset: 1px;
+      }
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: #0e171b;
+          color: #f4f8f8;
+        }
+        .tarjeta {
+          background: #1b2d33;
+          box-shadow: none;
+        }
+        h1 {
+          color: #f4f8f8;
+        }
+        p {
+          color: #a9bcc1;
+        }
+        .disponibles {
+          border-top-color: #24373d;
+        }
+        .disponibles-titulo {
+          color: #a9bcc1;
+        }
+        a.acceso {
+          color: #eaf4f2;
+          background: #24373d;
+        }
+        a.acceso:focus-visible,
+        a.acceso:hover {
+          background: #2c454d;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="tarjeta">
+      <div class="icono" aria-hidden="true">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path
+            d="M3 8.5a13 13 0 0 1 18 0M6.5 12a8.5 8.5 0 0 1 11 0M10 15.5a4 4 0 0 1 4 0"
+            stroke-linecap="round"
+          />
+          <line x1="2" y1="2" x2="22" y2="22" stroke-linecap="round" />
+          <circle cx="12" cy="19" r="1" fill="currentColor" stroke="none" />
+        </svg>
+      </div>
+      <h1>Sin conexión por ahora</h1>
+      <p>
+        Esta pantalla todavía no se había guardado en el dispositivo. Si ya usaste el Minimarket
+        antes con internet, entra a esa pantalla — funciona sin conexión y tus datos se sincronizan
+        solos apenas vuelva la señal.
+      </p>
+      <a class="boton" href="/minimarket">Ir al Minimarket</a>
+
+      <section id="disponibles-seccion" class="disponibles" hidden>
+        <p class="disponibles-titulo">Disponible sin conexión ahora mismo</p>
+        <div id="disponibles-lista" class="accesos"></div>
+      </section>
+    </main>
+
+    <script>
+      (function () {
+        // Rutas operativas que la app intenta dejar precalentadas en el
+        // caché del Service Worker (ver lib/minimarket/prefetch-warmup.ts)
+        // más el Tablero. Aquí solo se CONSULTA el caché — nunca se genera
+        // contenido nuevo — para ofrecer accesos directos reales en vez de
+        // un único botón ciego que puede volver a caer en esta misma pantalla.
+        var candidatos = [
+          { href: "/minimarket", label: "Tablero" },
+          { href: "/minimarket/ventas/nueva", label: "Nueva venta" },
+          { href: "/minimarket/inventario", label: "Inventario" },
+          { href: "/minimarket/caja", label: "Caja" },
+          { href: "/minimarket/fiado", label: "Fiado" },
+          { href: "/minimarket/clientes", label: "Clientes" },
+        ];
+
+        if (!("caches" in window)) return;
+
+        var seccion = document.getElementById("disponibles-seccion");
+        var lista = document.getElementById("disponibles-lista");
+
+        Promise.all(
+          candidatos.map(function (c) {
+            return caches
+              .match(c.href, { ignoreSearch: true, ignoreVary: true })
+              .then(function (res) {
+                return res ? c : null;
+              })
+              .catch(function () {
+                return null;
+              });
+          }),
+        )
+          .then(function (resultados) {
+            var disponibles = resultados.filter(Boolean);
+            if (disponibles.length === 0) return;
+
+            disponibles.forEach(function (c) {
+              var a = document.createElement("a");
+              a.href = c.href;
+              a.className = "acceso";
+              a.textContent = c.label;
+              lista.appendChild(a);
+            });
+            seccion.hidden = false;
+          })
+          .catch(function () {
+            // Sin lista adicional; el botón "Ir al Minimarket" de siempre sigue disponible.
+          });
+      })();
+    </script>
+  </body>
+</html>

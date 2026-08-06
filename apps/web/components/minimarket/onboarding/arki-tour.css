@@ -1,0 +1,89 @@
+/*
+ * Overrides sobre driver.js: el popover por defecto (caja blanca, botones
+ * grises, flecha) se oculta por completo — el contenido real lo renderiza
+ * React dentro de `popover.wrapper` (ver `arki-tour.tsx`), con los
+ * componentes de `@arkiteq/ui` para que se vea igual al resto del producto.
+ */
+.arki-popover.driver-popover {
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  /* Ancho real lo fija `onPopoverRender` en arki-tour.tsx (más angosto para
+     no invadir el contenido junto al resaltado; más ancho para la tarjeta
+     central de bienvenida/cierre). Este valor es solo un respaldo. */
+  max-width: min(var(--arki-popover-ancho, 21rem), calc(100vw - 2rem));
+}
+
+.arki-popover .driver-popover-title,
+.arki-popover .driver-popover-description,
+.arki-popover .driver-popover-footer,
+.arki-popover .driver-popover-close-btn,
+.arki-popover .driver-popover-arrow {
+  display: none !important;
+}
+
+/* Anillo cálido alrededor del elemento resaltado, además del recorte del velo. */
+.driver-active .driver-active-element {
+  border-radius: 12px;
+  transition: box-shadow 0.25s ease;
+  box-shadow:
+    0 0 0 4px rgba(224, 138, 60, 0.35),
+    0 0 0 1px rgba(224, 138, 60, 0.7);
+}
+
+/*
+ * Móvil: no hay espacio para colocar la tarjeta "al lado" del resaltado (el
+ * menú vive en un drawer que ocupa casi todo el ancho). En vez de pelear con
+ * el cálculo de posición de driver.js, se ancla como hoja inferior — así el
+ * drawer con el módulo resaltado queda visible arriba, sin que la tarjeta lo
+ * tape nunca.
+ */
+@media (max-width: 640px) {
+  .arki-popover.driver-popover {
+    position: fixed !important;
+    top: auto !important;
+    left: 0.75rem !important;
+    right: 0.75rem !important;
+    bottom: 0.75rem !important;
+    max-width: none;
+    width: auto;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .arki-card-enter {
+    animation: arki-pop-in 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .arki-avatar-intro {
+    animation: arki-avatar-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+}
+
+@keyframes arki-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes arki-avatar-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.5) rotate(-8deg);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.08) rotate(3deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "name": "@arkiteq/db",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cliente Supabase tipado, helpers de RLS y migraciones SQL del modelo base.",
+  "license": "UNLICENSED",
+  "exports": {
+    ".": "./src/index.ts",
+    "./types": "./src/types/database.ts",
+    "./server": "./src/clients/server.ts",
+    "./browser": "./src/clients/browser.ts",
+    "./service": "./src/clients/service.ts",
+    "./auth-verify": "./src/clients/auth-verify.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "migrate": "node ./scripts/migrate.mjs",
+    "gen-types": "supabase gen types typescript --project-id irbwapfgegyjcuupiuwq --schema public > src/types/database.ts",
+    "clean": "rimraf .turbo"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.12.0",
+    "@supabase/supabase-js": "^2.108.0"
+  },
+  "devDependencies": {
+    "@arkiteq/config": "workspace:*",
+    "@types/pg": "^8.11.10",
+    "eslint": "^9.18.0",
+    "pg": "^8.13.1",
+    "typescript": "^5.7.3"
+  }
+}

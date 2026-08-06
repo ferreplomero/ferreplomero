@@ -1,0 +1,32 @@
+{
+  "name": "@arkiteq/core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Motor compartido: entitlements, pagos, capa de país, mensajería, notificaciones y observabilidad.",
+  "license": "UNLICENSED",
+  "exports": {
+    ".": "./src/index.ts",
+    "./country": "./src/country/index.ts",
+    "./payments": "./src/payments/index.ts",
+    "./entitlements": "./src/entitlements/index.ts",
+    "./observability": "./src/observability/index.ts",
+    "./validation": "./src/validation/index.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "clean": "rimraf .turbo"
+  },
+  "dependencies": {
+    "@arkiteq/db": "workspace:*",
+    "@supabase/supabase-js": "^2.108.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@arkiteq/config": "workspace:*",
+    "eslint": "^9.18.0",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}

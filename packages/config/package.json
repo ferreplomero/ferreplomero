@@ -1,0 +1,42 @@
+{
+  "name": "@arkiteq/config",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Configuración compartida: TypeScript, ESLint, Prettier y preset de Tailwind.",
+  "license": "UNLICENSED",
+  "exports": {
+    "./eslint": "./eslint.mjs",
+    "./prettier": "./prettier.cjs",
+    "./tailwind-preset": "./tailwind-preset.cjs",
+    "./tsconfig.base.json": "./tsconfig.base.json",
+    "./tsconfig.next.json": "./tsconfig.next.json",
+    "./tsconfig.react-library.json": "./tsconfig.react-library.json"
+  },
+  "files": [
+    "eslint.mjs",
+    "prettier.cjs",
+    "tailwind-preset.cjs",
+    "tsconfig.base.json",
+    "tsconfig.next.json",
+    "tsconfig.react-library.json"
+  ],
+  "scripts": {
+    "clean": "rimraf .turbo"
+  },
+  "dependencies": {
+    "@eslint/js": "^9.18.0",
+    "eslint": "^9.18.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-react": "^7.37.4",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "globals": "^15.14.0",
+    "tailwindcss-animate": "^1.0.7",
+    "typescript-eslint": "^8.20.0"
+  },
+  "peerDependencies": {
+    "eslint": "^9",
+    "tailwindcss": "^3",
+    "typescript": "^5"
+  }
+}

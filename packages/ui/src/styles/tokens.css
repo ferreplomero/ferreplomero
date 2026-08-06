@@ -1,0 +1,167 @@
+/* =============================================================================
+ * Arkiteq Data — tokens de marca (variables CSS).
+ * Estética clara, fría y premium, con matices oscuros profundos (ink) y un
+ * acento verde-azulado. Modo oscuro premium (nunca negro puro).
+ * Se importa una sola vez desde apps/web/app/globals.css (antes de Tailwind).
+ * Solo variables y reset mínimo: los estilos base con @layer viven en globals.css.
+ * ========================================================================== */
+
+:root {
+  /* Acento de marca */
+  --brand-50: #eaf4f2;
+  --brand-500: #4e9e91;
+  --brand-600: #2e7a6f;
+
+  /* Acento de vertical (por defecto hereda la marca; cada vertical lo redefine
+     con su propia gama vía una clase scopeada, p. ej. .theme-minimarket). */
+  --accent-50: #eaf4f2;
+  --accent-500: #4e9e91;
+  --accent-600: #2e7a6f;
+
+  /* Matices intermedios/extremos del acento, derivados en vivo de 50/500/600
+     con color-mix() para que CUALQUIER vertical (y modo claro/oscuro) tenga
+     una gama de acento completa con contraste AA, sin redefinir nada más.
+     100-400: de fondo/borde sutil hacia el acento vivo. 700-800: texto con
+     más contraste que 600 (en claro se oscurece, en oscuro se aclara). */
+  --accent-100: color-mix(in srgb, var(--accent-50) 80%, var(--accent-500) 20%);
+  --accent-200: color-mix(in srgb, var(--accent-50) 20%, var(--accent-500) 80%);
+  --accent-300: color-mix(in srgb, var(--accent-500) 82%, var(--accent-50) 18%);
+  --accent-400: color-mix(in srgb, var(--accent-500) 92%, var(--accent-600) 8%);
+  --accent-700: color-mix(in srgb, var(--accent-600) 70%, black 30%);
+  --accent-800: color-mix(in srgb, var(--accent-600) 55%, black 45%);
+
+  /* Oscuros profundos */
+  --ink-800: #1b2d33;
+  --ink-900: #16252b;
+
+  /* Fondos claros y fríos */
+  --bg: #f4f8f8;
+  --surface: #ffffff;
+  --surface-2: #eef3f3;
+  --border: #e2eaea;
+
+  /* Texto */
+  --text-title: #16252b;
+  --text-body: #4a5a60;
+  --text-secondary: #7c8b90;
+
+  /* Estados */
+  --success: #2e9e7b;
+  --warning: #c9881f;
+  --danger: #d05757;
+
+  /* Sistema */
+  --ring: #4e9e91;
+  --radius: 0.75rem;
+
+  /* Motivo de nodos/grafo (detalle sutil del logo) */
+  --node-line: rgba(78, 158, 145, 0.18);
+  --node-dot: rgba(46, 122, 111, 0.35);
+
+  color-scheme: light;
+}
+
+.dark {
+  --brand-50: #14302b;
+  --brand-500: #5fb3a5;
+  --brand-600: #7ec6b9;
+
+  --accent-50: #14302b;
+  --accent-500: #5fb3a5;
+  --accent-600: #7ec6b9;
+
+  /* En oscuro el acento se aclara al alejarse del fondo, así que 700-800
+     deben aclarar (mezcla con blanco) en vez de oscurecer. */
+  --accent-700: color-mix(in srgb, var(--accent-600) 75%, white 25%);
+  --accent-800: color-mix(in srgb, var(--accent-600) 55%, white 45%);
+
+  --ink-800: #1b2d33;
+  --ink-900: #16252b;
+
+  --bg: #0e171b;
+  --surface: #16252b;
+  --surface-2: #1b2d33;
+  --border: #26393f;
+
+  --text-title: #eaf2f2;
+  --text-body: #b7c6ca;
+  --text-secondary: #8298a0;
+
+  --success: #57c39d;
+  --warning: #e0a945;
+  --danger: #e07b7b;
+
+  --ring: #5fb3a5;
+
+  --node-line: rgba(95, 179, 165, 0.22);
+  --node-dot: rgba(126, 198, 185, 0.4);
+
+  color-scheme: dark;
+}
+
+/* =============================================================================
+ * Acento del vertical Minimarket — ámbar retail, cálido y táctil. Hereda el
+ * sistema estructural de Arkiteq Data y solo redefine la gama de acento. Se
+ * aplica con la clase `.theme-minimarket` en el shell del vertical.
+ * ========================================================================== */
+.theme-minimarket {
+  --accent-50: #fbeede;
+  --accent-500: #e08a3c;
+  --accent-600: #b96d24;
+  --ring: #e08a3c;
+}
+
+.dark .theme-minimarket {
+  --accent-50: #3a2a16;
+  --accent-500: #eaa45f;
+  --accent-600: #f2bd84;
+  --ring: #eaa45f;
+}
+
+/* =============================================================================
+ * Acento del vertical Servicio Técnico — azul acero técnico y profesional.
+ * Se aplica con la clase `.theme-tecnico` en el shell del vertical.
+ * ========================================================================== */
+.theme-tecnico {
+  --accent-50: #dceeff;
+  --accent-500: #3f7cac;
+  --accent-600: #2a5f8a;
+  --ring: #3f7cac;
+}
+
+.dark .theme-tecnico {
+  --accent-50: #162536;
+  --accent-500: #5b9dc9;
+  --accent-600: #7ab5d8;
+  --ring: #5b9dc9;
+}
+
+/* =============================================================================
+ * Acento del vertical Condominio — índigo corporativo, serio y profesional.
+ * Se aplica con la clase `.theme-condominio` en el shell del vertical.
+ * ========================================================================== */
+.theme-condominio {
+  --accent-50: #eef0fc;
+  --accent-500: #4f52c4;
+  --accent-600: #3a3d9e;
+  --ring: #4f52c4;
+}
+
+.dark .theme-condominio {
+  --accent-50: #232152;
+  --accent-500: #8a8ee8;
+  --accent-600: #a5a8ed;
+  --ring: #8a8ee8;
+}
+
+/* Respeta la preferencia del sistema de reducir movimiento */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,11 @@
+node_modules/
+.next/
+out/
+dist/
+build/
+.turbo/
+coverage/
+pnpm-lock.yaml
+*.tsbuildinfo
+packages/db/migrations/*.sql
+packages/ui/src/fonts/

@@ -1,0 +1,60 @@
+# Dependencias
+node_modules/
+.pnpm-store/
+
+# Builds
+.next/
+out/
+dist/
+build/
+.turbo/
+
+# Netlify
+.netlify/
+
+# Entornos (NUNCA subir secretos)
+.env
+.env.local
+.env.*.local
+!.env.local.example
+
+# Testing
+coverage/
+playwright-report/
+test-results/
+.playwright/
+apps/web/e2e/.auth/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Editor / SO
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Sentry
+.sentryclirc
+
+# Supabase
+packages/db/.temp/
+supabase/.branches/
+supabase/.temp/
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Carpeta local de subida de activos (los definitivos viven en apps/web/public)
+uploads/
+
+# Service worker generado por Serwist en cada build (ver apps/web/app/sw.ts)
+apps/web/public/sw.js
+apps/web/public/sw.js.map
+apps/web/public/swe-worker-*.js
+apps/web/public/swe-worker-*.js.map
