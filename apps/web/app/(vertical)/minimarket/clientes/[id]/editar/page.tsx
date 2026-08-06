@@ -28,7 +28,7 @@ export default async function EditarClientePage({ params }: Props) {
 
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
-  if (!session || !tenantId) redirect("/inicio");
+  if (!session || !tenantId) redirect("/login");
 
   const supabase = await createClient();
   const [cliente, tasa] = await Promise.all([

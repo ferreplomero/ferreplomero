@@ -56,7 +56,7 @@ export default async function PresupuestoDetallePage({ params }: Props) {
 
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
-  if (!session || !tenantId) redirect("/inicio");
+  if (!session || !tenantId) redirect("/login");
 
   const { presupuesto, tz, nombreComercial } = await cargarDetalle(tenantId, id);
   if (!presupuesto) notFound();

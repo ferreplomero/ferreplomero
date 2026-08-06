@@ -22,7 +22,7 @@ const ESTADO_BADGE: Record<string, { label: string; cls: string }> = {
 export default async function ComprasPage() {
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
-  if (!session || !tenantId) redirect("/inicio");
+  if (!session || !tenantId) redirect("/login");
 
   const supabase = await createClient();
   const country = getCountryConfig(session.activeTenant?.country);

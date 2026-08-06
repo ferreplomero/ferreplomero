@@ -16,7 +16,7 @@ export default async function ReciboPage({ params }: { params: Promise<{ id: str
   const { id } = await params;
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
-  if (!session || !tenantId) redirect("/inicio");
+  if (!session || !tenantId) redirect("/login");
 
   const supabase = await createClient();
   const [doc, tz] = await Promise.all([

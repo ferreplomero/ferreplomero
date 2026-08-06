@@ -23,7 +23,7 @@ import { moduloPermitido, resolverContextoPermisos } from "@/lib/minimarket/perm
 export default async function BancosLayout({ children }: { children: React.ReactNode }) {
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
-  if (!session || !tenantId) redirect("/inicio");
+  if (!session || !tenantId) redirect("/login");
 
   const supabase = await createClient();
   const country = getCountryConfig(session.activeTenant?.country);

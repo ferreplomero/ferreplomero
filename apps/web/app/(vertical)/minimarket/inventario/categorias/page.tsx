@@ -13,7 +13,7 @@ export const metadata: Metadata = { title: "Categorías" };
 export default async function CategoriasPage() {
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
-  if (!session || !tenantId) redirect("/inicio");
+  if (!session || !tenantId) redirect("/login");
 
   const supabase = await createClient();
   const categorias = await listCategorias(supabase, tenantId);

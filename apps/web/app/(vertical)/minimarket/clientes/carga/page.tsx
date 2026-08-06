@@ -13,7 +13,7 @@ export const metadata: Metadata = { title: "Carga masiva de fiados" };
 export default async function CargaMasivaFiadosPage() {
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
-  if (!session || !tenantId) redirect("/inicio");
+  if (!session || !tenantId) redirect("/login");
 
   const supabase = await createClient();
   const tasa = await getTasaVigente(supabase, tenantId);

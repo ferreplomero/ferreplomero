@@ -21,7 +21,7 @@ const ETIQUETA: Record<MovimientoConDetalle["tipo"], { texto: string; clase: str
 export default async function MovimientosPage() {
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
-  if (!session || !tenantId) redirect("/inicio");
+  if (!session || !tenantId) redirect("/login");
 
   const supabase = await createClient();
   const [movimientos, tz] = await Promise.all([

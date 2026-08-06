@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { usePathname, useRouter } from "next/navigation";
-import { ArrowLeft, ChevronDown, Menu, Store, X } from "lucide-react";
+import { ChevronDown, Menu, Store, X } from "lucide-react";
 import { Button, ThemeToggle, cn } from "@arkiteq/ui";
 import { BienvenidaSplash } from "@/components/bienvenida/bienvenida-splash";
 import { CerrarSesionBoton } from "@/components/cerrar-sesion-boton";
@@ -265,12 +265,6 @@ export function VerticalShell({
           <p className="text-muted-foreground truncate px-2 text-xs" title={businessName}>
             {businessName}
           </p>
-          <Button asChild variant="ghost" size="sm" className="w-full justify-start">
-            <Link href="/inicio">
-              <ArrowLeft className="size-4" />
-              Volver a Arkiteq
-            </Link>
-          </Button>
           <CerrarSesionBoton />
         </div>
       </aside>
@@ -300,12 +294,6 @@ export function VerticalShell({
               <NavLinks permisos={permisos} onNavigate={() => setDrawerOpen(false)} />
             </div>
             <div className="border-border space-y-2 border-t p-3">
-              <Button asChild variant="ghost" size="sm" className="w-full justify-start">
-                <Link href="/inicio">
-                  <ArrowLeft className="size-4" />
-                  Volver a Arkiteq
-                </Link>
-              </Button>
               <CerrarSesionBoton />
             </div>
           </aside>

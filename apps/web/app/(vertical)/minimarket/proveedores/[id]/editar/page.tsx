@@ -34,7 +34,7 @@ export default async function EditarProveedorPage({ params }: Props) {
 
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
-  if (!session || !tenantId) redirect("/inicio");
+  if (!session || !tenantId) redirect("/login");
 
   const proveedor = await getProveedorConStatsCached(tenantId, id);
   if (!proveedor) notFound();

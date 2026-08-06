@@ -16,7 +16,7 @@ export const metadata: Metadata = { title: "Nueva deuda" };
 export default async function NuevaDeudaPage() {
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
-  if (!session || !tenantId) redirect("/inicio");
+  if (!session || !tenantId) redirect("/login");
 
   const supabase = await createClient();
 

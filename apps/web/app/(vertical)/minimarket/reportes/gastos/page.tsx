@@ -35,7 +35,7 @@ const METODO_CHIP: Record<string, string> = {
 export default async function GastosOperativosPage() {
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
-  if (!session || !tenantId) redirect("/inicio");
+  if (!session || !tenantId) redirect("/login");
 
   const supabase = await createClient();
   const country = getCountryConfig(session.activeTenant?.country);

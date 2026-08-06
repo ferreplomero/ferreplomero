@@ -40,7 +40,7 @@ export const PROTECTED_PREFIXES = [
 export const AUTH_ROUTES = ["/login", "/registro"] as const;
 
 /** Ruta de aterrizaje tras iniciar sesión. */
-export const APP_HOME = "/inicio";
+export const APP_HOME = "/minimarket";
 
 /** Cookie que recuerda el negocio (tenant) activo del usuario. */
 export const ACTIVE_TENANT_COOKIE = "arkiteq_tenant";

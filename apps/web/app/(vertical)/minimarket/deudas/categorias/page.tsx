@@ -13,7 +13,7 @@ export const metadata: Metadata = { title: "Categorías de deudas" };
 export default async function CategoriasDeudaPage() {
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
-  if (!session || !tenantId) redirect("/inicio");
+  if (!session || !tenantId) redirect("/login");
 
   const supabase = await createClient();
   const [categorias, { data: deudas }] = await Promise.all([

@@ -22,7 +22,7 @@ const TIPO_LABEL: Record<string, { label: string; cls: string }> = {
 export default async function AjustesPage() {
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
-  if (!session || !tenantId) redirect("/inicio");
+  if (!session || !tenantId) redirect("/login");
 
   const supabase = await createClient();
 

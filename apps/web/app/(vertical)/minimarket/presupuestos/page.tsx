@@ -35,7 +35,7 @@ interface Props {
 export default async function PresupuestosPage({ searchParams }: Props) {
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
-  if (!session || !tenantId) redirect("/inicio");
+  if (!session || !tenantId) redirect("/login");
 
   const params = await searchParams;
   const estadoParam = typeof params.estado === "string" ? params.estado : "";

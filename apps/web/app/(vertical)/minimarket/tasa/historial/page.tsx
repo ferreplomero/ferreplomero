@@ -14,7 +14,7 @@ export const metadata: Metadata = { title: "Historial de tasa" };
 export default async function HistorialTasaPage() {
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
-  if (!session || !tenantId) redirect("/inicio");
+  if (!session || !tenantId) redirect("/login");
 
   const supabase = await createClient();
   const [historial, tz] = await Promise.all([

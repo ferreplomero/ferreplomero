@@ -45,7 +45,7 @@ export default async function ProveedorDetallePage({ params }: Props) {
 
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
-  if (!session || !tenantId) redirect("/inicio");
+  if (!session || !tenantId) redirect("/login");
 
   const supabase = await createClient();
   const country = getCountryConfig(session.activeTenant?.country);

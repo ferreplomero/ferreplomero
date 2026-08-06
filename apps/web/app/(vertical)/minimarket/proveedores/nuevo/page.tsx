@@ -11,7 +11,7 @@ export const metadata: Metadata = { title: "Nuevo proveedor" };
 export default async function NuevoProveedorPage() {
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
-  if (!session || !tenantId) redirect("/inicio");
+  if (!session || !tenantId) redirect("/login");
 
   return (
     <div className="mx-auto max-w-xl space-y-6">

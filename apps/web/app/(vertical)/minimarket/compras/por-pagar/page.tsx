@@ -22,7 +22,7 @@ function montoAdeudado(c: CompraConProveedor): number {
 export default async function PorPagarPage() {
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
-  if (!session || !tenantId) redirect("/inicio");
+  if (!session || !tenantId) redirect("/login");
 
   const supabase = await createClient();
   const country = getCountryConfig(session.activeTenant?.country);

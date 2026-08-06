@@ -22,7 +22,7 @@ const HORAS_ALERTA = 20; // más de 20 h sin actualizar → aviso
 export default async function TasaPage() {
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
-  if (!session || !tenantId) redirect("/inicio");
+  if (!session || !tenantId) redirect("/login");
 
   const supabase = await createClient();
   const [tasas, fuentePreferida, historial, tz] = await Promise.all([

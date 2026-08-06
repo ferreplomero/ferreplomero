@@ -25,7 +25,7 @@ export const metadata: Metadata = { title: "Configuración" };
 export default async function ConfiguracionPage() {
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
-  if (!session || !tenantId) redirect("/inicio");
+  if (!session || !tenantId) redirect("/login");
 
   const supabase = await createClient();
 

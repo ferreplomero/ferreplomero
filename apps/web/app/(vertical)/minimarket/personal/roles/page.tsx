@@ -10,7 +10,7 @@ export const metadata: Metadata = { title: "Roles — Personal" };
 export default async function PersonalRolesPage() {
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
-  if (!session || !tenantId) redirect("/inicio");
+  if (!session || !tenantId) redirect("/login");
 
   const supabase = await createClient();
 

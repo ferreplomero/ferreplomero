@@ -18,7 +18,7 @@ export const metadata: Metadata = { title: "Nuevo otro ingreso" };
 export default async function NuevoOtroIngresoPage() {
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
-  if (!session || !tenantId) redirect("/inicio");
+  if (!session || !tenantId) redirect("/login");
 
   const supabase = await createClient();
   const [tasa, tz, configRes, sesion, cuentasBancarias] = await Promise.all([

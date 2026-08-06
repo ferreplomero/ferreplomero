@@ -74,7 +74,7 @@ export default async function TableroPage({
 }) {
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
-  if (!session || !tenantId) redirect("/inicio");
+  if (!session || !tenantId) redirect("/login");
 
   const params = await searchParams;
 

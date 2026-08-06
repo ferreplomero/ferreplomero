@@ -30,7 +30,7 @@ export default async function EditarDeudaPage({ params }: Props) {
 
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
-  if (!session || !tenantId) redirect("/inicio");
+  if (!session || !tenantId) redirect("/login");
 
   const supabase = await createClient();
   const tz = await getTimezoneNegocio(supabase, tenantId);

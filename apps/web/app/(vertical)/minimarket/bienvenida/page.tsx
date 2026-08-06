@@ -10,7 +10,7 @@ export const metadata: Metadata = { title: "Bienvenida" };
 export default async function BienvenidaPage() {
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
-  if (!session || !tenantId) redirect("/inicio");
+  if (!session || !tenantId) redirect("/login");
 
   const supabase = await createClient();
   const { data: config } = await supabase

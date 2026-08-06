@@ -11,7 +11,7 @@ export const metadata: Metadata = { title: "Personal" };
 export default async function PersonalPage() {
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
-  if (!session || !tenantId) redirect("/inicio");
+  if (!session || !tenantId) redirect("/login");
 
   const supabase = await createClient();
 

@@ -62,7 +62,7 @@ export default async function FinanzasPage({
 }) {
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
-  if (!session || !tenantId) redirect("/inicio");
+  if (!session || !tenantId) redirect("/login");
 
   const params = await searchParams;
   const periodoParam = (params.periodo ?? "mes") as Periodo;
