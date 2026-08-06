@@ -1,0 +1,20 @@
+# Monorepo Turborepo + pnpm: el sitio de Netlify vive en apps/web. `base`
+# hace que Netlify instale dependencias desde la raíz del repo (detecta
+# pnpm-workspace.yaml / pnpm-lock.yaml ahí) y luego corra `command` ya
+# posicionado dentro de apps/web.
+[build]
+  base = "apps/web"
+  command = "pnpm run build"
+  publish = ".next"
+
+[build.environment]
+  # Debe coincidir con .nvmrc en la raíz — al fijar `base`, Netlify busca
+  # .nvmrc/.node-version dentro de apps/web, no en la raíz del repo.
+  NODE_VERSION = "22.13.0"
+
+# Activa el runtime de Next.js en Netlify (App Router, Server Actions,
+# middleware/proxy, ISR, /api/*). Sin este plugin, Netlify sirve el sitio
+# como estático y todas las rutas dan 404 — que es justo lo que estaba
+# pasando.
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
