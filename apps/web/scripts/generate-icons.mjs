@@ -44,7 +44,12 @@ function buildIco(pngBuffers) {
 async function main() {
   await mkdir(PUBLIC_DIR, { recursive: true });
 
-  const square = (size) => sharp(SOURCE_LOGO).resize(size, size, { fit: "cover" }).png().toBuffer();
+  // `ensureAlpha()` es obligatorio: el logo fuente es RGB (sin canal alfa) y un
+  // PNG-en-ICO sin RGBA hace que Turbopack falle al decodificarlo en dev
+  // ("The PNG is not in RGBA format!"), tumbando con 500 cualquier página que
+  // referencie el favicon — es decir, todas.
+  const square = (size) =>
+    sharp(SOURCE_LOGO).resize(size, size, { fit: "cover" }).ensureAlpha().png().toBuffer();
 
   // --- Convenciones de archivo de Next.js (auto-enlazadas en <head>) ---
   await writeFile(path.join(APP_DIR, "icon.png"), await square(512));
