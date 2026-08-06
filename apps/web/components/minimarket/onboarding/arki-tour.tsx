@@ -161,10 +161,17 @@ export function ArkiTour({ mostrarInicial, permisos, drawerOpen, onSetDrawerOpen
     // Precarga las rutas del tour para que, cuando de verdad se navegue, el
     // contenido ya esté listo o casi — la sensación de "instantáneo" no
     // depende únicamente de no esperar la navegación (arriba), sino también
-    // de que esa navegación en segundo plano sea rápida.
-    for (const paso of pasos) {
-      if (paso.href) router.prefetch(paso.href);
-    }
+    // de que esa navegación en segundo plano sea rápida. Escalonada (no todas
+    // a la vez): disparar 5-6 prefetch simultáneos apenas monta el tablero
+    // saturaba la concurrencia de Netlify Functions en la primera visita de
+    // un tenant nuevo (varias en cold-start a la vez), devolviendo 503 a
+    // parte de ellas — se veía como cuelgues/loops al entrar al minimarket
+    // aunque la sesión estuviera perfectamente bien.
+    pasos.forEach((paso, i) => {
+      const { href } = paso;
+      if (!href) return;
+      setTimeout(() => router.prefetch(href), i * 250);
+    });
 
     const driverObj = driver({
       animate: !reducedMotion,
