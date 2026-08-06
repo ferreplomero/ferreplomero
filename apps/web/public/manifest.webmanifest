@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "Arkiteq Data",
-  "short_name": "Arkiteq",
+  "name": "Ferreplomero",
+  "short_name": "Ferreplomero",
   "description": "Plataforma SaaS multiproducto para PYMES de Latinoamérica. Funciona con o sin internet.",
   "lang": "es",
   "dir": "ltr",
@@ -9,8 +9,8 @@
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#F4F8F8",
-  "theme_color": "#16252B",
+  "background_color": "#FFFFFF",
+  "theme_color": "#1B9DC2",
   "categories": ["business", "productivity"],
   "icons": [
     {
