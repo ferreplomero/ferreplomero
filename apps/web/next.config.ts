@@ -37,7 +37,11 @@ const nextConfig: NextConfig = {
     },
   },
   images: {
-    remotePatterns: [{ protocol: "https", hostname: "irbwapfgegyjcuupiuwq.supabase.co" }],
+    // Hostname derivado de la env var (no hardcodeado) para que next/image no
+    // rompa silenciosamente cuando el proyecto de Supabase cambie.
+    remotePatterns: process.env.NEXT_PUBLIC_SUPABASE_URL
+      ? [{ protocol: "https", hostname: new URL(process.env.NEXT_PUBLIC_SUPABASE_URL).hostname }]
+      : [],
   },
 };
 
