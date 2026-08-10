@@ -31,6 +31,11 @@ export interface ActionResult {
    * llamador (ej. el formulario de compras) agregarlo de inmediato sin
    * tener que recargar ni volver a buscarlo. */
   productoId?: string;
+  /** Solo en `crearCategoria`: id/nombre de la categoría recién creada —
+   * permite a un llamador (ej. el formulario de producto, alta rápida)
+   * seleccionarla de inmediato sin recargar ni volver a buscarla. */
+  categoriaId?: string;
+  categoriaNombre?: string;
 }
 
 const opcional = (v: FormDataEntryValue | null): string | undefined => {
@@ -624,16 +629,20 @@ export async function crearCategoria(
     .eq("tenant_id", ctx.tenantId)
     .is("deleted_at", null);
 
-  const { error } = await ctx.supabase.from("mm_categorias").insert({
-    tenant_id: ctx.tenantId,
-    nombre: parsed.data.nombre,
-    orden: count ?? 0,
-  });
+  const { data: categoria, error } = await ctx.supabase
+    .from("mm_categorias")
+    .insert({
+      tenant_id: ctx.tenantId,
+      nombre: parsed.data.nombre,
+      orden: count ?? 0,
+    })
+    .select("id, nombre")
+    .single();
 
-  if (error) return { error: "No se pudo crear la categoría." };
+  if (error || !categoria) return { error: "No se pudo crear la categoría." };
 
   revalidatePath(INVENTARIO_PATH);
-  return { ok: true };
+  return { ok: true, categoriaId: categoria.id, categoriaNombre: categoria.nombre };
 }
 
 /** Actualiza el nombre de una categoría. */

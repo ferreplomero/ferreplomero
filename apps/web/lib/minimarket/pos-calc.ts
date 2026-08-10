@@ -45,6 +45,12 @@ export interface CobroInput {
    * carrito gravado), el mismo resultado que daba esta función antes de
    * existir productos exentos. Ver `subtotalNetoGravado`. */
   subtotalGravado?: number;
+  /** Subtotal neto (mismo criterio que `subtotalNeto`) pero SOLO de las
+   * líneas que causan IGTF (`mm_productos.aplica_igtf`, o su override
+   * puntual en esta venta) — ver `subtotalNetoSujetoIgtf`. Si se omite, se
+   * asume igual a `subtotalNeto` (todo el carrito sujeto a IGTF), el mismo
+   * resultado que daba esta función antes de existir productos sin IGTF. */
+  subtotalSujetoIgtf?: number;
   /** Saldo a favor disponible del cliente (excedente acreditado en una venta
    * anterior), en USD. Solo importa si hay una fila `credito_cliente`. */
   saldoFavorDisponible?: number;
@@ -129,6 +135,33 @@ export function subtotalNetoGravado(lineas: LineaGravableInput[], descuentoUsd: 
   return Math.max(0, round2(brutoGravado - descuentoGravado));
 }
 
+export interface LineaIgtfInput {
+  /** Total bruto de la línea (precio unitario × cantidad, ya redondeado). */
+  totalUsd: number;
+  /** ¿Esta línea causa IGTF al pagarse en divisa? (`mm_productos.aplica_igtf`,
+   * o el override puntual de esta venta si lo hay). */
+  aplicaIgtf: boolean;
+}
+
+/**
+ * Análogo a `subtotalNetoGravado` pero para IGTF: subtotal neto (con el
+ * descuento repartido proporcionalmente, mismo criterio) de SOLO las líneas
+ * que causan IGTF. Se usa para escalar el 3 % de cada pago en divisa a la
+ * fracción del carrito realmente sujeta a IGTF — un producto con
+ * `aplicaIgtf=false` nunca debe sumar IGTF, ni solo ni mezclado con
+ * productos que sí lo causan en la misma venta. Si TODAS las líneas causan
+ * IGTF (el caso de hoy y de todo el historial), el resultado es exactamente
+ * `subtotalNeto` — la proporción sujeta a IGTF es 1 y el cálculo de
+ * `computeCobro` queda idéntico al de antes de existir este campo.
+ */
+export function subtotalNetoSujetoIgtf(lineas: LineaIgtfInput[], descuentoUsd: number): number {
+  const subtotalBruto = lineas.reduce((s, l) => s + l.totalUsd, 0);
+  if (subtotalBruto <= 0) return 0;
+  const brutoSujeto = lineas.filter((l) => l.aplicaIgtf).reduce((s, l) => s + l.totalUsd, 0);
+  const descuentoSujeto = descuentoUsd * (brutoSujeto / subtotalBruto);
+  return Math.max(0, round2(brutoSujeto - descuentoSujeto));
+}
+
 /** Tolerancia de redondeo: por debajo de esto, el total se considera cubierto. */
 export const TOLERANCIA_USD = 0.02;
 
@@ -143,6 +176,7 @@ export function computeCobro(input: CobroInput): CobroResultado {
     ivaActivo = false,
     ivaPct = 0,
     subtotalGravado = subtotalNeto,
+    subtotalSujetoIgtf = subtotalNeto,
     saldoFavorDisponible = 0,
   } = input;
 
@@ -150,6 +184,10 @@ export function computeCobro(input: CobroInput): CobroResultado {
   const hayCredito = pagos.some((p) => p.metodo === "credito_cliente");
 
   const ivaUsd = ivaActivo && ivaPct > 0 ? round2((subtotalGravado * ivaPct) / 100) : 0;
+  // Proporción del carrito realmente sujeta a IGTF (ver `subtotalNetoSujetoIgtf`).
+  // 1 cuando todas las líneas causan IGTF — el mismo 3 % de siempre sobre
+  // cada pago en divisa, sin ningún cambio de comportamiento.
+  const proporcionIgtf = subtotalNeto > 0 ? Math.min(1, subtotalSujetoIgtf / subtotalNeto) : 1;
 
   if (!tasa) {
     return {
@@ -183,7 +221,7 @@ export function computeCobro(input: CobroInput): CobroResultado {
     cubiertoSinFiado += usd;
     if (esEfectivo(pago.metodo)) montoEfectivoUsd += usd;
     else montoNoEfectivoUsd += usd;
-    if (igtfActivo && causaIgtf(pago.metodo)) igtf += usd * IGTF_RATE;
+    if (igtfActivo && causaIgtf(pago.metodo)) igtf += usd * IGTF_RATE * proporcionIgtf;
   }
 
   igtf = round2(igtf);
@@ -306,12 +344,16 @@ export interface PagoRowConSaldo extends PagoCalcInput {
  * la solución real) y se sube de a un centavo hasta que el total
  * recalculado con ESE monto quede cubierto — así queda garantizado que
  * coincide exactamente con lo que `computeCobro` va a mostrar.
+ *
+ * `rate` es la tasa de IGTF EFECTIVA (`IGTF_RATE` escalado por la proporción
+ * del carrito sujeta a IGTF, ver `subtotalNetoSujetoIgtf`) — default
+ * `IGTF_RATE`, el mismo 3 % de siempre cuando todo el carrito lo causa.
  */
-function montoMinimoQueCubreConIgtf(faltanteBase: number): number {
-  let candidato = Math.floor((faltanteBase / (1 - IGTF_RATE)) * 100) / 100;
+function montoMinimoQueCubreConIgtf(faltanteBase: number, rate: number = IGTF_RATE): number {
+  let candidato = Math.floor((faltanteBase / (1 - rate)) * 100) / 100;
   if (candidato < faltanteBase) candidato = round2(faltanteBase);
   for (let i = 0; i < 10; i++) {
-    const totalConCandidato = round2(faltanteBase + round2(candidato * IGTF_RATE));
+    const totalConCandidato = round2(faltanteBase + round2(candidato * rate));
     if (totalConCandidato <= candidato) return candidato;
     candidato = round2(candidato + 0.01);
   }
@@ -340,9 +382,16 @@ export function calcularMontoSaldo(
   // Base gravada real (ver `subtotalNetoGravado`) — default = subtotalNeto
   // (todo gravado), mismo resultado que antes de existir productos exentos.
   subtotalGravado: number = subtotalNeto,
+  // Base sujeta a IGTF real (ver `subtotalNetoSujetoIgtf`) — default =
+  // subtotalNeto (todo sujeto a IGTF), mismo resultado que antes de existir
+  // productos sin IGTF.
+  subtotalSujetoIgtf: number = subtotalNeto,
 ): string | null {
   const pagoActual = pagos.find((p) => p.key === key);
   if (!pagoActual) return null;
+
+  const proporcionIgtf = subtotalNeto > 0 ? Math.min(1, subtotalSujetoIgtf / subtotalNeto) : 1;
+  const igtfRateEfectiva = IGTF_RATE * proporcionIgtf;
 
   let igtfOtros = 0;
   let cubiertoOtros = 0;
@@ -357,7 +406,7 @@ export function calcularMontoSaldo(
     if (!Number.isFinite(num) || num <= 0) continue;
     const usd = esMonedaDivisa(p.metodo) ? num : num / tasa;
     cubiertoOtros += usd;
-    if (igtfActivo && causaIgtf(p.metodo)) igtfOtros += usd * IGTF_RATE;
+    if (igtfActivo && causaIgtf(p.metodo)) igtfOtros += usd * igtfRateEfectiva;
   }
   igtfOtros = round2(igtfOtros);
 
@@ -374,7 +423,7 @@ export function calcularMontoSaldo(
 
   const esDivisa = esMonedaDivisa(pagoActual.metodo);
   if (igtfActivo && causaIgtf(pagoActual.metodo)) {
-    const pUsd = montoMinimoQueCubreConIgtf(faltanteBase);
+    const pUsd = montoMinimoQueCubreConIgtf(faltanteBase, igtfRateEfectiva);
     return esDivisa ? pUsd.toFixed(2) : (Math.ceil(pUsd * tasa * 100) / 100).toFixed(2);
   }
   return esDivisa
@@ -398,6 +447,8 @@ export function recalcularPagosPorTasa<T extends PagoRowConSaldo>(
   ivaPct: number,
   // Base gravada real (ver `subtotalNetoGravado`) — default = subtotalNeto.
   subtotalGravado: number = subtotalNeto,
+  // Base sujeta a IGTF real (ver `subtotalNetoSujetoIgtf`) — default = subtotalNeto.
+  subtotalSujetoIgtf: number = subtotalNeto,
 ): T[] {
   const aRecalcular = pagos.filter((p) => p.autoSaldo && METODOS_BS.includes(p.metodo));
   if (aRecalcular.length === 0) return pagos;
@@ -414,6 +465,7 @@ export function recalcularPagosPorTasa<T extends PagoRowConSaldo>(
       ivaPct,
       undefined,
       subtotalGravado,
+      subtotalSujetoIgtf,
     );
     if (sugerido === null) continue;
     resultado = resultado.map((p) => (p.key === fila.key ? { ...p, monto: sugerido } : p));

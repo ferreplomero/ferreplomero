@@ -1710,6 +1710,7 @@ export interface Database {
           total_usd: number;
           precio_ajustado: boolean;
           motivo_ajuste_precio: string | null;
+          aplica_igtf: boolean;
           created_at: string;
         };
         Insert: {
@@ -1724,6 +1725,7 @@ export interface Database {
           total_usd?: number;
           precio_ajustado?: boolean;
           motivo_ajuste_precio?: string | null;
+          aplica_igtf?: boolean;
           created_at?: string;
         };
         Update: {
@@ -1733,6 +1735,7 @@ export interface Database {
           total_usd?: number;
           precio_ajustado?: boolean;
           motivo_ajuste_precio?: string | null;
+          aplica_igtf?: boolean;
         };
         Relationships: [];
       };

@@ -27,7 +27,7 @@ import {
   esMetodoVueltoDigital,
   METODO_CUENTA_LABEL,
 } from "@/lib/minimarket/bancos";
-import { esEfectivo, subtotalNetoGravado } from "@/lib/minimarket/pos-calc";
+import { esEfectivo, subtotalNetoGravado, subtotalNetoSujetoIgtf } from "@/lib/minimarket/pos-calc";
 import { getSesionAbierta } from "@/lib/minimarket/data/caja";
 import { listCuentasBancarias } from "@/lib/minimarket/data/bancos";
 import type { MmCreditoClienteTipo, MmCuentaBancaria, MmMetodoPago } from "@arkiteq/db";
@@ -44,6 +44,16 @@ export interface VentaItemInput {
   precio_usd_override?: number;
   /** Motivo opcional que escribió el cajero al ajustar el precio. */
   motivo_ajuste_precio?: string;
+  /**
+   * Override puntual de IVA/IGTF SOLO para esta línea de ESTA venta (toggle
+   * por producto en el carrito) — `undefined` = usa el estado guardado del
+   * producto (`mm_productos.impuesto_id`/`aplica_igtf`), igual que siempre.
+   * Nunca toca `mm_productos`: lo que termine aplicándose queda congelado en
+   * `mm_ventas_items.impuesto_id`/`aplica_igtf` de esta venta, mismo criterio
+   * que `precio_usd_override`.
+   */
+  iva_override?: boolean;
+  igtf_override?: boolean;
 }
 
 export interface PagoInput {
@@ -147,6 +157,8 @@ const ventaSchema = z
           cantidad: z.coerce.number().positive(),
           precio_usd_override: z.coerce.number().positive().optional(),
           motivo_ajuste_precio: z.string().trim().max(200).optional(),
+          iva_override: z.boolean().optional(),
+          igtf_override: z.boolean().optional(),
         }),
       )
       .min(1, "Agrega al menos un producto."),
@@ -293,7 +305,7 @@ export async function registrarVenta(input: VentaInput): Promise<VentaResult> {
         : Promise.resolve({ data: null, error: null }),
       supabase
         .from("mm_productos")
-        .select("id, nombre, precio_usd, impuesto_id")
+        .select("id, nombre, precio_usd, impuesto_id, aplica_igtf")
         .eq("tenant_id", tenantId)
         .in("id", ids)
         .is("deleted_at", null),
@@ -404,12 +416,24 @@ export async function registrarVenta(input: VentaInput): Promise<VentaResult> {
       const usaAjuste = override !== null;
       const precioUnitario = override ?? Number(prod.precio_usd);
       const total = redondear(precioUnitario * item.cantidad);
+      // Override puntual de IVA/IGTF de esta línea, SOLO para esta venta —
+      // nunca toca `mm_productos`. `undefined` = usa el estado guardado del
+      // producto, igual que siempre. Lo que se resuelva aquí queda congelado
+      // en `mm_ventas_items.impuesto_id`/`aplica_igtf` de esta venta.
+      const aplicaIva = item.iva_override ?? prod.impuesto_id !== "exento";
+      const impuestoIdEfectivo = aplicaIva
+        ? prod.impuesto_id === "exento"
+          ? "iva"
+          : prod.impuesto_id
+        : "exento";
+      const aplicaIgtfLinea = item.igtf_override ?? prod.aplica_igtf;
       return {
         producto_id: prod.id,
         descripcion: prod.nombre,
         cantidad: item.cantidad,
         precio_usd: precioUnitario,
-        impuesto_id: prod.impuesto_id,
+        impuesto_id: impuestoIdEfectivo,
+        aplica_igtf: aplicaIgtfLinea,
         total_usd: total,
         precio_ajustado: usaAjuste,
         motivo_ajuste_precio: usaAjuste ? (item.motivo_ajuste_precio ?? null) : null,
@@ -424,23 +448,35 @@ export async function registrarVenta(input: VentaInput): Promise<VentaResult> {
     const descuento = redondear(Math.min(v.descuento_usd, subtotalBruto));
     const subtotalNeto = redondear(subtotalBruto - descuento);
 
-    // IGTF: aplica a la porción pagada en divisa (efectivo_usd, zelle) si está activo.
+    // IGTF: aplica a la porción pagada en divisa (efectivo_usd, zelle) si está
+    // activo, escalado a la proporción del carrito cuyas líneas realmente
+    // causan IGTF (`aplica_igtf` por producto, o su override puntual en esta
+    // venta) — un producto marcado sin IGTF nunca debe sumarlo, ni solo ni
+    // mezclado con productos que sí lo causan en la misma venta. Cuando TODAS
+    // las líneas causan IGTF (el caso de hoy y de todo el historial) la
+    // proporción es 1 y el cálculo queda idéntico al de siempre.
+    const subtotalSujetoIgtf = subtotalNetoSujetoIgtf(
+      items.map((i) => ({ totalUsd: i.total_usd, aplicaIgtf: i.aplica_igtf })),
+      descuento,
+    );
+    const proporcionIgtf = subtotalNeto > 0 ? Math.min(1, subtotalSujetoIgtf / subtotalNeto) : 1;
     let igtfTotal = 0;
     if (igtfActivo) {
       for (const pago of v.pagos) {
         if (causaIgtf(pago.metodo)) {
           const montoUsd = pago.moneda === "USD" ? pago.monto : pago.monto / tasaUsada;
-          igtfTotal += montoUsd * IGTF_RATE;
+          igtfTotal += montoUsd * IGTF_RATE * proporcionIgtf;
         }
       }
     }
     const igtf = redondear(igtfTotal);
     // IVA sobre el subtotal neto si está activo — SOLO sobre las líneas
     // gravadas: un producto marcado "Exento" (`impuesto_id = "exento"`) en su
-    // ficha nunca debe pagar IVA, ni solo ni mezclado con productos gravados
-    // en la misma venta (CLAUDE.md, módulo Ventas). `subtotalNetoGravado`
-    // reparte el descuento proporcionalmente para que gravado + exento sigan
-    // sumando exactamente `subtotalNeto`.
+    // ficha (o por override puntual de esta venta) nunca debe pagar IVA, ni
+    // solo ni mezclado con productos gravados en la misma venta (CLAUDE.md,
+    // módulo Ventas). `subtotalNetoGravado` reparte el descuento
+    // proporcionalmente para que gravado + exento sigan sumando exactamente
+    // `subtotalNeto`.
     const subtotalGravado = subtotalNetoGravado(
       items.map((i) => ({ totalUsd: i.total_usd, impuestoId: i.impuesto_id })),
       descuento,
@@ -751,6 +787,7 @@ export async function registrarVenta(input: VentaInput): Promise<VentaResult> {
           cantidad: l.cantidad,
           precio_usd: l.precio_usd,
           impuesto_id: l.impuesto_id,
+          aplica_igtf: l.aplica_igtf,
           total_usd: l.total_usd,
           precio_ajustado: l.precio_ajustado,
           motivo_ajuste_precio: l.motivo_ajuste_precio,

@@ -5,6 +5,7 @@ import {
   computeCobro,
   recalcularPagosPorTasa,
   subtotalNetoGravado,
+  subtotalNetoSujetoIgtf,
 } from "./pos-calc";
 
 // Tasa de referencia para los casos: 623.02 Bs/USD (ejemplo real del usuario).
@@ -843,5 +844,90 @@ describe("computeCobro — bug real: producto EXENTO se cobraba IVA igual (repor
     });
     expect(r.ivaUsd).toBeCloseTo(3.2, 2); // 16% de los $20 completos, como siempre
     expect(r.totalUsd).toBeCloseTo(23.2, 2);
+  });
+});
+
+describe("subtotalNetoSujetoIgtf — análogo a subtotalNetoGravado pero para IGTF", () => {
+  it("todas las líneas aplican IGTF: resultado = subtotal neto completo", () => {
+    const base = subtotalNetoSujetoIgtf(
+      [
+        { totalUsd: 10, aplicaIgtf: true },
+        { totalUsd: 20, aplicaIgtf: true },
+      ],
+      0,
+    );
+    expect(base).toBe(30);
+  });
+
+  it("mezcla: solo suma las líneas con aplicaIgtf=true, repartiendo el descuento proporcionalmente", () => {
+    const base = subtotalNetoSujetoIgtf(
+      [
+        { totalUsd: 10, aplicaIgtf: false },
+        { totalUsd: 30, aplicaIgtf: true },
+      ],
+      8, // descuento total: 75% cae sobre la línea sujeta a IGTF (30/40)
+    );
+    expect(base).toBe(24); // 30 - (8 * 30/40) = 30 - 6 = 24
+  });
+
+  it("ninguna línea aplica IGTF: resultado = 0", () => {
+    const base = subtotalNetoSujetoIgtf([{ totalUsd: 15, aplicaIgtf: false }], 0);
+    expect(base).toBe(0);
+  });
+});
+
+describe("computeCobro — IGTF por producto (mezcla de líneas con/sin IGTF en la misma venta)", () => {
+  it("venta 100% sin IGTF (producto marcado aplica_igtf=false): total = subtotal, IGTF = $0", () => {
+    const r = computeCobro({
+      pagos: [{ metodo: "efectivo_usd", monto: "10" }],
+      subtotalNeto: 10,
+      subtotalSujetoIgtf: 0, // el único producto de la venta no causa IGTF
+      tasa: 100,
+      cantidadLineas: 1,
+      clienteId: null,
+      igtfActivo: true,
+      ivaActivo: false,
+    });
+    expect(r.igtf).toBe(0);
+    expect(r.totalUsd).toBe(10); // sin el fix: $10.30 (cobraba IGTF a un producto que no lo causa)
+  });
+
+  it("venta mixta ($10 sin IGTF + $20 con IGTF), pagando $20 en efectivo USD: el 3% solo cae sobre esos $20", () => {
+    // El IGTF se calcula sobre el MONTO PAGADO en divisa (igual que siempre),
+    // aquí escalado por la proporción del carrito sujeta a IGTF (20/30). No
+    // se persigue faltante=0 (eso ya lo cubre `calcularMontoSaldo` en otros
+    // tests) — solo se verifica que el 3% cae sobre la porción correcta.
+    const r = computeCobro({
+      pagos: [{ metodo: "efectivo_usd", monto: "20" }],
+      subtotalNeto: 30, // $10 sin IGTF + $20 con IGTF
+      subtotalSujetoIgtf: 20, // solo la línea que causa IGTF
+      tasa: 100,
+      cantidadLineas: 2,
+      clienteId: null,
+      igtfActivo: true,
+      ivaActivo: false,
+    });
+    // 20 (pagado) * 3% * (20/30 sujeto a IGTF) = 0.4 — NO 20*3%=0.6 (eso sería
+    // ignorar que solo 2/3 del carrito causa IGTF).
+    expect(r.igtf).toBeCloseTo(0.4, 2);
+    expect(r.totalUsd).toBeCloseTo(30.4, 2);
+  });
+
+  it("sin subtotalSujetoIgtf (comportamiento anterior a que existiera aplica_igtf por línea): sigue igual", () => {
+    // Regresión: un carrito donde todas las líneas causan IGTF (el estado por
+    // defecto y el de todo el historial existente) no debe cambiar en nada —
+    // REGLA CRÍTICA #1. `subtotalSujetoIgtf` es opcional y por defecto vale
+    // lo mismo que `subtotalNeto` (proporción 1, el 3% de siempre).
+    const r = computeCobro({
+      pagos: [{ metodo: "efectivo_usd", monto: "20" }],
+      subtotalNeto: 20,
+      tasa: 100,
+      cantidadLineas: 1,
+      clienteId: null,
+      igtfActivo: true,
+      ivaActivo: false,
+    });
+    expect(r.igtf).toBeCloseTo(0.6, 2); // 3% de los $20 pagados, como siempre
+    expect(r.totalUsd).toBeCloseTo(20.6, 2);
   });
 });

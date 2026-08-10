@@ -89,6 +89,11 @@ export function ReciboDocumento({ doc, fecha }: { doc: DocumentoFiscal; fecha: s
                       Exento de IVA
                     </span>
                   ) : null}
+                  {l.sinIgtf && doc.igtfUsd > 0 ? (
+                    <span className="bg-surface-2 text-muted-foreground ml-1 mt-0.5 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium">
+                      Sin IGTF
+                    </span>
+                  ) : null}
                 </td>
                 <td className="py-1 text-right tabular-nums">{usd(l.totalUsd)}</td>
               </tr>

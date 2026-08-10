@@ -225,6 +225,7 @@ const mm_ventas_items = new Table({
   total_usd: column.real,
   precio_ajustado: column.integer,
   motivo_ajuste_precio: column.text,
+  aplica_igtf: column.integer,
   created_at: column.text,
 });
 

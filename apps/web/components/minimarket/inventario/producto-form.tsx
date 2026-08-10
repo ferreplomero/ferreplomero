@@ -8,6 +8,7 @@ import {
   Camera,
   ImageIcon,
   ImagePlus,
+  PlusCircle,
   ScanLine,
   Sparkles,
   WifiOff,
@@ -15,6 +16,8 @@ import {
 } from "lucide-react";
 import {
   Button,
+  Dialog,
+  DialogContent,
   DialogDescription,
   DialogFooter,
   DialogHeader,
@@ -38,6 +41,7 @@ import {
 import { useOnline } from "@/lib/minimarket/use-online";
 import { CampoMontoDual } from "@/components/minimarket/shared/campo-monto-dual";
 import { TomarFotoDialog } from "@/components/minimarket/shared/tomar-foto-dialog";
+import { CategoriaForm } from "@/components/minimarket/inventario/categoria-form-cargador";
 import { comprimirImagen } from "@/lib/minimarket/comprimir-imagen";
 import {
   TIPOS_VENTA,
@@ -166,6 +170,24 @@ export function ProductoForm({
   // ---- Identificación ----
   const [nombre, setNombre] = React.useState(producto?.nombre ?? "");
   const [sku, setSku] = React.useState(producto?.codigo ?? "");
+
+  // ---- Categoría (con alta rápida "+ Nueva categoría" sin salir del formulario) ----
+  const [categoriasLista, setCategoriasLista] = React.useState(categorias);
+  const [categoriaId, setCategoriaId] = React.useState(producto?.categoria_id ?? "");
+  const [categoriaModalOpen, setCategoriaModalOpen] = React.useState(false);
+  // Memoizado: `CategoriaForm` pasa esta función en la dependencia de un
+  // useEffect — una referencia nueva en cada render (función inline) dispara
+  // ese efecto sin fin (router.refresh() re-renderiza este componente, que
+  // crea una nueva función, que vuelve a disparar el efecto...).
+  const onCategoriaCreada = React.useCallback((creada?: { id: string; nombre: string }) => {
+    setCategoriaModalOpen(false);
+    if (!creada) return;
+    setCategoriasLista((prev) =>
+      [...prev, creada].sort((a, b) => a.nombre.localeCompare(b.nombre, "es")),
+    );
+    setCategoriaId(creada.id);
+    toast.success(`Categoría "${creada.nombre}" creada y seleccionada.`);
+  }, []);
 
   // ---- Códigos de barras (varios) ----
   const [codigos, setCodigos] = React.useState<string[]>(producto?.codigos ?? []);
@@ -526,15 +548,26 @@ export function ProductoForm({
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="categoria_id">Categoría</Label>
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="categoria_id">Categoría</Label>
+              <button
+                type="button"
+                onClick={() => setCategoriaModalOpen(true)}
+                className="text-accent-600 inline-flex items-center gap-1 text-xs font-medium hover:underline"
+              >
+                <PlusCircle className="size-3.5" aria-hidden />
+                Nueva categoría
+              </button>
+            </div>
             <select
               id="categoria_id"
               name="categoria_id"
-              defaultValue={producto?.categoria_id ?? ""}
+              value={categoriaId}
+              onChange={(e) => setCategoriaId(e.target.value)}
               className={SELECT_CLASS}
             >
               <option value="">Sin categoría</option>
-              {categorias.map((c) => (
+              {categoriasLista.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.nombre}
                 </option>
@@ -894,6 +927,11 @@ export function ProductoForm({
         onOpenChange={setFotoDialogOpen}
         onCapturar={onCapturarFoto}
       />
+      <Dialog open={categoriaModalOpen} onOpenChange={setCategoriaModalOpen}>
+        <DialogContent className="max-w-md">
+          <CategoriaForm tenantId={tenantId} onDone={onCategoriaCreada} />
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

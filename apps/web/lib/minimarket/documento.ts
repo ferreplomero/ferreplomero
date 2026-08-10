@@ -12,6 +12,9 @@ export interface LineaDocumento {
   totalUsd: number;
   /** true si el producto estaba marcado "Exento" de IVA al momento de la venta. */
   exenta: boolean;
+  /** true si esta línea NO causaba IGTF al momento de la venta (producto sin
+   * IGTF, o desactivado puntualmente para esa venta desde el POS). */
+  sinIgtf: boolean;
 }
 
 export interface PagoDocumento {
@@ -121,7 +124,7 @@ export function construirRecibo(
   >,
   items: Pick<
     MmVentaItem,
-    "descripcion" | "cantidad" | "precio_usd" | "total_usd" | "impuesto_id"
+    "descripcion" | "cantidad" | "precio_usd" | "total_usd" | "impuesto_id" | "aplica_igtf"
   >[],
   pagos: Pick<MmPagoVenta, "metodo" | "monto" | "moneda">[],
   negocio: { nombre: string; rif: string | null; direccion: string | null; logoUrl: string | null },
@@ -150,6 +153,7 @@ export function construirRecibo(
       precioUsd: Number(i.precio_usd),
       totalUsd: Number(i.total_usd),
       exenta: i.impuesto_id === "exento",
+      sinIgtf: i.aplica_igtf === false,
     })),
     subtotalUsd: Number(venta.subtotal_usd),
     igtfUsd: Number(venta.igtf_usd),

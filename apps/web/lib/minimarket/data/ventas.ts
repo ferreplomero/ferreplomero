@@ -722,7 +722,7 @@ export async function getVentaDetalle(
     await Promise.all([
       client
         .from("mm_ventas_items")
-        .select("descripcion, cantidad, precio_usd, total_usd, impuesto_id")
+        .select("descripcion, cantidad, precio_usd, total_usd, impuesto_id, aplica_igtf")
         .eq("tenant_id", tenantId)
         .eq("venta_id", ventaId)
         .order("created_at", { ascending: true }),
@@ -934,7 +934,7 @@ export async function getVentaParaRecibo(
   const [itemsRes, pagosRes, configRes, clienteRes, excedente, devolucion] = await Promise.all([
     client
       .from("mm_ventas_items")
-      .select("descripcion, cantidad, precio_usd, total_usd, impuesto_id")
+      .select("descripcion, cantidad, precio_usd, total_usd, impuesto_id, aplica_igtf")
       .eq("tenant_id", tenantId)
       .eq("venta_id", ventaId)
       .order("created_at", { ascending: true }),

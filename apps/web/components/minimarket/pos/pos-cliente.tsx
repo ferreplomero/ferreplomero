@@ -62,6 +62,7 @@ import {
   esLineaExenta,
   recalcularPagosPorTasa,
   subtotalNetoGravado,
+  subtotalNetoSujetoIgtf,
 } from "@/lib/minimarket/pos-calc";
 import { registrarVentaLocal } from "@/lib/minimarket/powersync/registrar-venta-local";
 import {
@@ -194,11 +195,39 @@ interface LineaCarrito {
   precioAjustadoUsd?: number;
   /** Motivo opcional que escribió el cajero al ajustar el precio. */
   motivoAjustePrecio?: string;
+  /** Override puntual de IVA para ESTA línea de ESTA venta (toggle del
+   * carrito) — `undefined` = usa el estado guardado del producto
+   * (`producto.impuesto_id !== "exento"`), igual que siempre. Nunca toca
+   * `mm_productos` ni la config del negocio. */
+  ivaOverride?: boolean;
+  /** Override puntual de IGTF para ESTA línea de ESTA venta — `undefined` =
+   * usa `producto.aplica_igtf`, igual que siempre. */
+  igtfOverride?: boolean;
 }
 
 /** Precio unitario efectivo de una línea: el ajustado si existe, si no el de catálogo. */
 function precioUnitarioLinea(l: LineaCarrito): number {
   return l.precioAjustadoUsd ?? Number(l.producto.precio_usd);
+}
+
+/** ¿Esta línea lleva IVA en ESTA venta? Override puntual si existe, si no el
+ * estado guardado del producto. */
+function lineaAplicaIva(l: LineaCarrito): boolean {
+  return l.ivaOverride ?? !esLineaExenta(l.producto.impuesto_id);
+}
+
+/** ¿Esta línea causa IGTF en ESTA venta? Override puntual si existe, si no el
+ * estado guardado del producto. */
+function lineaAplicaIgtf(l: LineaCarrito): boolean {
+  return l.igtfOverride ?? l.producto.aplica_igtf;
+}
+
+/** `impuesto_id` EFECTIVO de una línea para esta venta (folding del override
+ * de IVA, si lo hay) — se usa como entrada de `subtotalNetoGravado`, que solo
+ * distingue `"exento"` de cualquier otro valor, sin tocar esa función. */
+function impuestoIdEfectivoLinea(l: LineaCarrito): string {
+  if (!lineaAplicaIva(l)) return "exento";
+  return l.producto.impuesto_id === "exento" ? "iva" : l.producto.impuesto_id;
 }
 
 interface PagoRow {
@@ -666,17 +695,30 @@ export function PosCliente({
   const descuentoUsd = descMontoNum;
   const subtotalNeto = Math.max(0, Math.round((subtotalBruto - descuentoUsd) * 100) / 100);
   const subtotalNetoBs = tasa ? Math.round(subtotalNeto * tasa * 100) / 100 : 0;
-  // Base real del IVA: solo las líneas GRAVADAS (no exentas) del carrito. Un
-  // producto marcado "Exento" en su ficha (`producto.impuesto_id`) nunca debe
-  // sumar IVA, ni solo ni mezclado con productos gravados en la misma venta.
+  // Base real del IVA: solo las líneas GRAVADAS (no exentas) del carrito, con
+  // el estado EFECTIVO de cada línea (el override puntual del toggle de esta
+  // venta, si lo hay — si no, el estado guardado del producto). Un producto
+  // exento (o desactivado puntualmente) nunca debe sumar IVA, ni solo ni
+  // mezclado con productos gravados en la misma venta.
   const subtotalGravado = subtotalNetoGravado(
     lineas.map((l) => ({
       totalUsd: precioUnitarioLinea(l) * l.cantidad,
-      impuestoId: l.producto.impuesto_id,
+      impuestoId: impuestoIdEfectivoLinea(l),
     })),
     descuentoUsd,
   );
-  const hayLineaExenta = lineas.some((l) => esLineaExenta(l.producto.impuesto_id));
+  // Análogo para IGTF: solo las líneas que realmente lo causan (estado
+  // efectivo, con override puntual si lo hay). Cuando TODAS las líneas
+  // causan IGTF (el caso de hoy) el resultado es exactamente `subtotalNeto` —
+  // cero cambio de comportamiento.
+  const subtotalSujetoIgtf = subtotalNetoSujetoIgtf(
+    lineas.map((l) => ({
+      totalUsd: precioUnitarioLinea(l) * l.cantidad,
+      aplicaIgtf: lineaAplicaIgtf(l),
+    })),
+    descuentoUsd,
+  );
+  const hayLineaExenta = lineas.some((l) => !lineaAplicaIva(l));
 
   // Cálculo de cobro — función pura única (probada en pos-calc.test.ts).
   // `puedeConfirmar` es la verdad única que habilita el botón Confirmar.
@@ -699,6 +741,7 @@ export function PosCliente({
         ivaActivo: ivaOn,
         ivaPct,
         subtotalGravado,
+        subtotalSujetoIgtf,
         saldoFavorDisponible: saldoFavorCliente,
       }),
     [
@@ -711,6 +754,7 @@ export function PosCliente({
       ivaOn,
       ivaPct,
       subtotalGravado,
+      subtotalSujetoIgtf,
       saldoFavorCliente,
     ],
   );
@@ -948,7 +992,12 @@ export function PosCliente({
       const ya = prev.get(id);
       if (!ya) return prev;
       const next = new Map(prev);
-      next.set(id, { producto: ya.producto, cantidad: ya.cantidad });
+      next.set(id, {
+        producto: ya.producto,
+        cantidad: ya.cantidad,
+        ivaOverride: ya.ivaOverride,
+        igtfOverride: ya.igtfOverride,
+      });
       return next;
     });
     cerrarEditarPrecio();
@@ -962,6 +1011,28 @@ export function PosCliente({
       const cantidad = ya.cantidad + delta;
       if (cantidad <= 0) next.delete(id);
       else next.set(id, { ...ya, cantidad });
+      return next;
+    });
+  }
+  /** Alterna el IVA de ESTA línea SOLO para esta venta (no toca el producto en
+   * Inventario ni la config del negocio) — arranca del estado guardado del
+   * producto y, al tocarlo, pasa al valor contrario explícito. */
+  function alternarIvaLinea(id: string) {
+    setCarrito((prev) => {
+      const next = new Map(prev);
+      const ya = next.get(id);
+      if (!ya) return prev;
+      next.set(id, { ...ya, ivaOverride: !lineaAplicaIva(ya) });
+      return next;
+    });
+  }
+  /** Análogo a `alternarIvaLinea` pero para IGTF. */
+  function alternarIgtfLinea(id: string) {
+    setCarrito((prev) => {
+      const next = new Map(prev);
+      const ya = next.get(id);
+      if (!ya) return prev;
+      next.set(id, { ...ya, igtfOverride: !lineaAplicaIgtf(ya) });
       return next;
     });
   }
@@ -1113,6 +1184,7 @@ export function PosCliente({
           ivaPct,
           saldoFavorCliente,
           subtotalGravado,
+          subtotalSujetoIgtf,
         ) ?? "")
       : "";
     setPagos([{ ...filaInicial, monto: montoInicial }]);
@@ -1144,6 +1216,7 @@ export function PosCliente({
           ivaPct,
           saldoFavorCliente,
           subtotalGravado,
+          subtotalSujetoIgtf,
         ) ?? "")
       : "";
     setPagos((prev) => [...prev, { ...filaNueva, monto: montoNueva }]);
@@ -1194,6 +1267,7 @@ export function PosCliente({
           ivaPct,
           saldoFavorCliente,
           subtotalGravado,
+          subtotalSujetoIgtf,
         )
       : null;
     return {
@@ -1292,6 +1366,7 @@ export function PosCliente({
           ivaPct,
           saldoFavorCliente,
           subtotalGravado,
+          subtotalSujetoIgtf,
         ) ?? "")
       : "";
     setPagos((prev) => [...prev, { ...filaNueva, monto: montoNueva }]);
@@ -1320,13 +1395,24 @@ export function PosCliente({
         ivaPct,
         saldoFavorCliente,
         subtotalGravado,
+        subtotalSujetoIgtf,
       );
       if (sugerido === null) return;
       setPagos((prev) =>
         prev.map((p) => (p.key === key ? { ...p, monto: sugerido, autoSaldo: true } : p)),
       );
     },
-    [pagos, subtotalNeto, tasaCobro, igtfOn, ivaOn, ivaPct, saldoFavorCliente, subtotalGravado],
+    [
+      pagos,
+      subtotalNeto,
+      tasaCobro,
+      igtfOn,
+      ivaOn,
+      ivaPct,
+      saldoFavorCliente,
+      subtotalGravado,
+      subtotalSujetoIgtf,
+    ],
   );
 
   // Las filas en Bs que representan "el saldo" (← saldo, o el pre-llenado
@@ -1346,9 +1432,18 @@ export function PosCliente({
   React.useEffect(() => {
     if (!tasaCobro) return;
     setPagos((prev) =>
-      recalcularPagosPorTasa(prev, subtotalNeto, tasaCobro, igtfOn, ivaOn, ivaPct, subtotalGravado),
+      recalcularPagosPorTasa(
+        prev,
+        subtotalNeto,
+        tasaCobro,
+        igtfOn,
+        ivaOn,
+        ivaPct,
+        subtotalGravado,
+        subtotalSujetoIgtf,
+      ),
     );
-  }, [tasaCobro, subtotalNeto, igtfOn, ivaOn, ivaPct, subtotalGravado]);
+  }, [tasaCobro, subtotalNeto, igtfOn, ivaOn, ivaPct, subtotalGravado, subtotalSujetoIgtf]);
 
   // ── Ventas en espera / borrador ──────────────────────────────────────────
   // Carga en el estado del POS el carrito/pagos/cliente/tasa/nota de una fila
@@ -1366,6 +1461,8 @@ export function PosCliente({
         cantidad: number;
         precioAjustadoUsd?: number;
         motivoAjustePrecio?: string;
+        ivaOverride?: boolean;
+        igtfOverride?: boolean;
       }[],
       pagosItems: {
         metodo: MmMetodoPago;
@@ -1384,6 +1481,8 @@ export function PosCliente({
             cantidad: item.cantidad,
             precioAjustadoUsd: item.precioAjustadoUsd,
             motivoAjustePrecio: item.motivoAjustePrecio,
+            ivaOverride: item.ivaOverride,
+            igtfOverride: item.igtfOverride,
           });
         else omitidos += 1;
       }
@@ -1461,6 +1560,8 @@ export function PosCliente({
             cantidad: l.cantidad,
             precioAjustadoUsd: l.precioAjustadoUsd,
             motivoAjustePrecio: l.motivoAjustePrecio,
+            ivaOverride: l.ivaOverride,
+            igtfOverride: l.igtfOverride,
           })),
           pagos: pagos.map((p) => ({
             metodo: p.metodo,
@@ -1749,6 +1850,8 @@ export function PosCliente({
         cantidad: l.cantidad,
         precioAjustadoUsd: l.precioAjustadoUsd,
         motivoAjustePrecio: l.motivoAjustePrecio,
+        ivaOverride: l.ivaOverride,
+        igtfOverride: l.igtfOverride,
       })),
       pagos: pagos.map((p) => ({
         metodo: p.metodo,
@@ -2001,6 +2104,8 @@ export function PosCliente({
             cantidad: l.cantidad,
             precio_usd_override: l.precioAjustadoUsd,
             motivo_ajuste_precio: l.motivoAjustePrecio,
+            iva_override: l.ivaOverride,
+            igtf_override: l.igtfOverride,
           })),
           pagos: pagosEnvio,
           descuento_usd: descuentoUsd,
@@ -2097,7 +2202,10 @@ export function PosCliente({
           descripcion: l.producto.nombre,
           cantidad: l.cantidad,
           precioUsd: precioUnitarioLinea(l),
-          impuestoId: l.producto.impuesto_id,
+          // Efectivo (con el override puntual de esta venta, si lo hay) —
+          // offline no hay servidor para resolverlo, así que se congela aquí.
+          impuestoId: impuestoIdEfectivoLinea(l),
+          aplicaIgtf: lineaAplicaIgtf(l),
           precioAjustado: l.precioAjustadoUsd !== undefined,
           motivoAjustePrecio: l.motivoAjustePrecio ?? null,
         })),
@@ -2368,11 +2476,32 @@ export function PosCliente({
                         {money(Number(l.producto.precio_usd), "USD")} c/u
                       </p>
                     )}
-                    {esLineaExenta(l.producto.impuesto_id) ? (
-                      <span className="bg-surface-2 text-muted-foreground mt-0.5 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium">
-                        Exento de IVA
-                      </span>
-                    ) : null}
+                    <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => alternarIvaLinea(l.producto.id)}
+                        aria-pressed={lineaAplicaIva(l)}
+                        className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                          lineaAplicaIva(l)
+                            ? "bg-surface-2 text-muted-foreground"
+                            : "bg-amber-100 text-amber-700"
+                        }`}
+                      >
+                        {lineaAplicaIva(l) ? "IVA" : "Sin IVA (esta venta)"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => alternarIgtfLinea(l.producto.id)}
+                        aria-pressed={lineaAplicaIgtf(l)}
+                        className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                          lineaAplicaIgtf(l)
+                            ? "bg-surface-2 text-muted-foreground"
+                            : "bg-amber-100 text-amber-700"
+                        }`}
+                      >
+                        {lineaAplicaIgtf(l) ? "IGTF" : "Sin IGTF (esta venta)"}
+                      </button>
+                    </div>
                   </div>
                   <div className="flex items-center gap-1">
                     {puedeAjustarPrecio ? (
@@ -2940,11 +3069,32 @@ export function PosCliente({
                                   {money(Number(l.producto.precio_usd), "USD")} c/u
                                 </p>
                               )}
-                              {esLineaExenta(l.producto.impuesto_id) ? (
-                                <span className="bg-surface-2 text-muted-foreground mt-0.5 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium">
-                                  Exento de IVA
-                                </span>
-                              ) : null}
+                              <div className="mt-0.5 flex flex-wrap items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => alternarIvaLinea(l.producto.id)}
+                                  aria-pressed={lineaAplicaIva(l)}
+                                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                                    lineaAplicaIva(l)
+                                      ? "bg-surface-2 text-muted-foreground"
+                                      : "bg-amber-100 text-amber-700"
+                                  }`}
+                                >
+                                  {lineaAplicaIva(l) ? "IVA" : "Sin IVA (esta venta)"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => alternarIgtfLinea(l.producto.id)}
+                                  aria-pressed={lineaAplicaIgtf(l)}
+                                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                                    lineaAplicaIgtf(l)
+                                      ? "bg-surface-2 text-muted-foreground"
+                                      : "bg-amber-100 text-amber-700"
+                                  }`}
+                                >
+                                  {lineaAplicaIgtf(l) ? "IGTF" : "Sin IGTF (esta venta)"}
+                                </button>
+                              </div>
                             </div>
                             <div className="flex items-center gap-1">
                               {puedeAjustarPrecio ? (

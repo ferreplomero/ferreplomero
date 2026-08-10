@@ -29,6 +29,9 @@ export interface VentaLocalItem {
   impuestoId: string;
   precioAjustado?: boolean;
   motivoAjustePrecio?: string | null;
+  /** Si esta línea causa IGTF al pagarse en divisa — ya resuelto por el
+   * caller (estado del producto o su override puntual en esta venta). */
+  aplicaIgtf: boolean;
 }
 
 export interface VentaLocalPago {
@@ -112,8 +115,8 @@ export async function registrarVentaLocal(
       await tx.execute(
         `insert into mm_ventas_items
            (id, tenant_id, venta_id, producto_id, descripcion, cantidad, precio_usd,
-            impuesto_id, total_usd, precio_ajustado, motivo_ajuste_precio, created_at)
-         values (?,?,?,?,?,?,?,?,?,?,?,?)`,
+            impuesto_id, total_usd, precio_ajustado, motivo_ajuste_precio, aplica_igtf, created_at)
+         values (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [
           crypto.randomUUID(),
           input.tenantId,
@@ -126,6 +129,7 @@ export async function registrarVentaLocal(
           round2(item.precioUsd * item.cantidad),
           item.precioAjustado ? 1 : 0,
           item.motivoAjustePrecio ?? null,
+          item.aplicaIgtf ? 1 : 0,
           nowIso,
         ],
       );

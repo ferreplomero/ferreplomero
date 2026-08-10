@@ -40,6 +40,11 @@ export interface VentaPendienteCarritoItem {
    * conserva al dejar en espera y al retomar. */
   precioAjustadoUsd?: number;
   motivoAjustePrecio?: string;
+  /** Override puntual de IVA/IGTF de esta línea para ESTA venta (toggle del
+   * carrito) — se conserva al dejar en espera y al retomar. `undefined` =
+   * usa el estado guardado del producto, igual que siempre. */
+  ivaOverride?: boolean;
+  igtfOverride?: boolean;
 }
 
 export interface VentaPendientePago {
@@ -94,6 +99,8 @@ const carritoItemSchema = z.object({
   cantidad: z.number().positive(),
   precioAjustadoUsd: z.number().positive().optional(),
   motivoAjustePrecio: z.string().optional(),
+  ivaOverride: z.boolean().optional(),
+  igtfOverride: z.boolean().optional(),
 });
 
 const pagoItemSchema = z.object({

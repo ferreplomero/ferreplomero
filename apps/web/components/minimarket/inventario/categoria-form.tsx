@@ -19,7 +19,15 @@ import { crearCategoria, type ActionResult } from "@/app/(vertical)/minimarket/i
 import { crearCategoriaLocal } from "@/lib/minimarket/powersync/registrar-producto-local";
 import { useOnline } from "@/lib/minimarket/use-online";
 
-export function CategoriaForm({ tenantId, onDone }: { tenantId: string; onDone: () => void }) {
+export interface CategoriaFormProps {
+  tenantId: string;
+  /** Al crear con éxito, recibe la categoría recién creada (id/nombre) para
+   * que un llamador (ej. el formulario de producto, alta rápida) la
+   * seleccione de inmediato sin recargar ni volver a buscarla. */
+  onDone: (creada?: { id: string; nombre: string }) => void;
+}
+
+export function CategoriaForm({ tenantId, onDone }: CategoriaFormProps) {
   const router = useRouter();
   const powerSyncDb = React.useContext(PowerSyncContext);
   const offline = !useOnline();
@@ -29,9 +37,13 @@ export function CategoriaForm({ tenantId, onDone }: { tenantId: string; onDone: 
   React.useEffect(() => {
     if (state.ok) {
       router.refresh();
-      onDone();
+      onDone(
+        state.categoriaId && state.categoriaNombre
+          ? { id: state.categoriaId, nombre: state.categoriaNombre }
+          : undefined,
+      );
     }
-  }, [state.ok, router, onDone]);
+  }, [state.ok, state.categoriaId, state.categoriaNombre, router, onDone]);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     if (!offline) return;
@@ -48,9 +60,9 @@ export function CategoriaForm({ tenantId, onDone }: { tenantId: string; onDone: 
     }
     setGuardandoLocal(true);
     try {
-      await crearCategoriaLocal(powerSyncDb, { tenantId, nombre });
+      const { categoriaId } = await crearCategoriaLocal(powerSyncDb, { tenantId, nombre });
       toast.success("Categoría guardada en este dispositivo. Se sincronizará al conectarte.");
-      onDone();
+      onDone({ id: categoriaId, nombre });
     } catch (err) {
       toast.error(
         err instanceof Error
