@@ -23,7 +23,6 @@ import {
   getFinanzasGastos,
 } from "@/lib/minimarket/data/finanzas";
 import { METODOS_PAGO } from "@/lib/minimarket/constants";
-import { GASTO_CATEGORIA_LABEL } from "@/lib/minimarket/data/ganancias";
 import { fmtFechaCorta, fmtFechaHora } from "@/lib/minimarket/date-format";
 import { getSesionAbierta, listMovimientosCaja, resumirCaja } from "@/lib/minimarket/data/caja";
 import { listCuentasConSaldo, saldoNativo } from "@/lib/minimarket/data/bancos";
@@ -894,11 +893,7 @@ export default async function FinanzasPage({
                             {g.descripcion}
                           </Link>
                         </td>
-                        <td className="text-muted-foreground px-4 py-3">
-                          {GASTO_CATEGORIA_LABEL[
-                            g.categoria as keyof typeof GASTO_CATEGORIA_LABEL
-                          ] ?? g.categoria}
-                        </td>
+                        <td className="text-muted-foreground px-4 py-3">{g.categoria}</td>
                         <td className="text-muted-foreground px-4 py-3 text-xs tabular-nums">
                           {fmtFechaCorta(g.fecha, "UTC")}
                         </td>

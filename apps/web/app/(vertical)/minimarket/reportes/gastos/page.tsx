@@ -7,7 +7,7 @@ import { getCountryConfig } from "@arkiteq/core";
 import { getSessionContext } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { fmtFechaCorta } from "@/lib/minimarket/date-format";
-import { listGastosOperativos, GASTO_CATEGORIA_LABEL } from "@/lib/minimarket/data/ganancias";
+import { listGastosOperativos } from "@/lib/minimarket/data/ganancias";
 import { METODOS_PAGO } from "@/lib/minimarket/constants";
 import { ReportesTabs } from "../reportes-tabs";
 import { EliminarGastoBoton } from "./eliminar-gasto-boton";
@@ -50,6 +50,15 @@ export default async function GastosOperativosPage() {
     porOrigenMap.set(key, (porOrigenMap.get(key) ?? 0) + Number(g.monto_usd));
   }
   const porOrigen = [...porOrigenMap.entries()].sort((a, b) => b[1] - a[1]);
+
+  const porCategoriaMap = new Map<string, number>();
+  for (const g of gastos) {
+    porCategoriaMap.set(
+      g.categoria_nombre,
+      (porCategoriaMap.get(g.categoria_nombre) ?? 0) + Number(g.monto_usd),
+    );
+  }
+  const porCategoria = [...porCategoriaMap.entries()].sort((a, b) => b[1] - a[1]);
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -110,6 +119,30 @@ export default async function GastosOperativosPage() {
             </div>
           </Card>
 
+          <Card className="space-y-3 p-5">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-heading text-sm font-semibold">Gastos por categoría</p>
+              <Link
+                href="/minimarket/reportes/categorias"
+                className="text-accent-600 text-xs font-medium hover:underline"
+              >
+                Gestionar categorías
+              </Link>
+            </div>
+            <div className="flex flex-wrap gap-4">
+              {porCategoria.map(([categoria, total]) => (
+                <div key={categoria} className="min-w-[9rem]">
+                  <span className="bg-surface-2 text-heading inline-block rounded-full px-2 py-0.5 text-xs font-medium">
+                    {categoria}
+                  </span>
+                  <p className="text-heading font-display mt-1 text-lg font-bold tabular-nums">
+                    {usd(total)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </Card>
+
           <Card className="overflow-hidden p-0">
             <div className="border-border flex items-center justify-between border-b px-4 py-3">
               <p className="text-heading text-sm font-medium">
@@ -132,9 +165,7 @@ export default async function GastosOperativosPage() {
                   {gastos.map((g) => (
                     <tr key={g.id} className="hover:bg-surface-2 transition-colors">
                       <td className="text-heading px-4 py-3 font-medium">{g.descripcion}</td>
-                      <td className="text-muted-foreground px-4 py-3">
-                        {GASTO_CATEGORIA_LABEL[g.categoria]}
-                      </td>
+                      <td className="text-muted-foreground px-4 py-3">{g.categoria_nombre}</td>
                       <td className="px-4 py-3">
                         <span
                           className={`rounded-full px-2 py-0.5 text-xs font-medium ${

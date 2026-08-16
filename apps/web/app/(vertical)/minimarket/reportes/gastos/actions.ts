@@ -49,18 +49,9 @@ async function contexto() {
   return { supabase, tenantId, userId: session.user.id };
 }
 
-const CATEGORIAS = [
-  "alquiler",
-  "servicios",
-  "sueldos",
-  "mantenimiento",
-  "impuestos_permisos",
-  "otros",
-] as const;
-
 const gastoSchema = z.object({
   descripcion: z.string().trim().min(1, "La descripción es obligatoria.").max(160),
-  categoria: z.enum(CATEGORIAS, { errorMap: () => ({ message: "Selecciona una categoría." }) }),
+  categoria_id: z.string().uuid({ message: "Selecciona una categoría." }),
   monto_usd: z.coerce
     .number({ invalid_type_error: "Monto inválido." })
     .positive("El monto debe ser mayor a cero."),
@@ -157,7 +148,7 @@ export async function crearGastoOperativo(
 
   const parsed = gastoSchema.safeParse({
     descripcion: formData.get("descripcion"),
-    categoria: formData.get("categoria"),
+    categoria_id: formData.get("categoria_id"),
     monto_usd: formData.get("monto_usd"),
     fecha: formData.get("fecha"),
     notas: formData.get("notas") ?? "",
@@ -169,6 +160,20 @@ export async function crearGastoOperativo(
   }
   const d = parsed.data;
   const montoUsd = redondear(d.monto_usd);
+
+  const { count: categoriaValida } = await ctx.supabase
+    .from("mm_categorias_movimiento")
+    .select("id", { count: "exact", head: true })
+    .eq("tenant_id", ctx.tenantId)
+    .eq("id", d.categoria_id)
+    .eq("tipo", "gasto")
+    .is("deleted_at", null);
+  if (!categoriaValida) {
+    return {
+      error: "Selecciona una categoría válida.",
+      fieldErrors: { categoria_id: "Selecciona una categoría válida." },
+    };
+  }
 
   // Un gasto en efectivo SIEMPRE debe poder descontar la caja — si no hay
   // sesión abierta, se bloquea la creación completa en vez de dejar un gasto
@@ -214,7 +219,7 @@ export async function crearGastoOperativo(
     .insert({
       tenant_id: ctx.tenantId,
       descripcion: d.descripcion,
-      categoria: d.categoria,
+      categoria_id: d.categoria_id,
       monto_usd: montoUsd,
       fecha: d.fecha,
       notas: toNull(d.notas),
@@ -294,7 +299,7 @@ export async function actualizarGastoOperativo(
 
   const parsed = gastoSchema.safeParse({
     descripcion: formData.get("descripcion"),
-    categoria: formData.get("categoria"),
+    categoria_id: formData.get("categoria_id"),
     monto_usd: formData.get("monto_usd"),
     fecha: formData.get("fecha"),
     notas: formData.get("notas") ?? "",
@@ -306,6 +311,20 @@ export async function actualizarGastoOperativo(
   }
   const d = parsed.data;
   const montoUsd = redondear(d.monto_usd);
+
+  const { count: categoriaValida } = await ctx.supabase
+    .from("mm_categorias_movimiento")
+    .select("id", { count: "exact", head: true })
+    .eq("tenant_id", ctx.tenantId)
+    .eq("id", d.categoria_id)
+    .eq("tipo", "gasto")
+    .is("deleted_at", null);
+  if (!categoriaValida) {
+    return {
+      error: "Selecciona una categoría válida.",
+      fieldErrors: { categoria_id: "Selecciona una categoría válida." },
+    };
+  }
 
   const { data: actual } = await ctx.supabase
     .from("mm_gastos_operativos")
@@ -386,7 +405,7 @@ export async function actualizarGastoOperativo(
     .from("mm_gastos_operativos")
     .update({
       descripcion: d.descripcion,
-      categoria: d.categoria,
+      categoria_id: d.categoria_id,
       monto_usd: montoUsd,
       fecha: d.fecha,
       notas: toNull(d.notas),

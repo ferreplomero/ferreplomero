@@ -185,6 +185,8 @@ export const MINIMARKET_NAV: VerticalNavItem[] = [
       { label: "Ganancias", href: `${MINIMARKET_BASE}/reportes/ganancias` },
       { label: "Gastos operativos", href: `${MINIMARKET_BASE}/reportes/gastos` },
       { label: "Otros ingresos", href: `${MINIMARKET_BASE}/reportes/otros-ingresos` },
+      { label: "Libro Diario", href: `${MINIMARKET_BASE}/reportes/libro-diario` },
+      { label: "Libro Mayor", href: `${MINIMARKET_BASE}/reportes/libro-mayor` },
     ],
   },
   {

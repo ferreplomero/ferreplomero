@@ -10,6 +10,7 @@ import { hoyEnTz } from "@/lib/minimarket/date-format";
 import { parseMetodosPago } from "@/lib/minimarket/metodos-pago";
 import { getSesionAbierta } from "@/lib/minimarket/data/caja";
 import { listCuentasBancarias } from "@/lib/minimarket/data/bancos";
+import { listCategoriasMovimiento } from "@/lib/minimarket/data/categorias-movimiento";
 import { crearOtroIngreso } from "../actions";
 import { OtroIngresoForm } from "../otro-ingreso-form";
 
@@ -21,7 +22,7 @@ export default async function NuevoOtroIngresoPage() {
   if (!session || !tenantId) redirect("/login");
 
   const supabase = await createClient();
-  const [tasa, tz, configRes, sesion, cuentasBancarias] = await Promise.all([
+  const [tasa, tz, configRes, sesion, cuentasBancarias, categorias] = await Promise.all([
     getTasaVigente(supabase, tenantId),
     getTimezoneNegocio(supabase, tenantId),
     supabase
@@ -31,6 +32,7 @@ export default async function NuevoOtroIngresoPage() {
       .maybeSingle(),
     getSesionAbierta(supabase, tenantId),
     listCuentasBancarias(supabase, tenantId),
+    listCategoriasMovimiento(supabase, tenantId, "otro_ingreso"),
   ]);
   const metodosPago = parseMetodosPago(configRes.data?.metodos_pago);
 
@@ -51,6 +53,7 @@ export default async function NuevoOtroIngresoPage() {
         action={crearOtroIngreso}
         tasa={tasa?.valor ?? 1}
         hoy={hoyEnTz(tz)}
+        categorias={categorias}
         metodosPago={metodosPago}
         cajaAbierta={Boolean(sesion)}
         cuentasBancarias={cuentasBancarias}

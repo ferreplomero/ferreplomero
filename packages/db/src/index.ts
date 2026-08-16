@@ -41,6 +41,7 @@ export type {
   MmTipoVenta,
   MmDeudaEstado,
   MmGastoCategoria,
+  MmCategoriaMovimientoTipo,
   // Filas del vertical Minimarket
   MmSucursal,
   MmUsuarioSucursal,
@@ -72,6 +73,7 @@ export type {
   MmDeuda,
   MmAbonoDeuda,
   MmSaldoDeuda,
+  MmCategoriaMovimiento,
   MmGastoOperativo,
   MmOtroIngreso,
   MmCuentaBancaria,

@@ -11,6 +11,7 @@ import { parseMetodosPago } from "@/lib/minimarket/metodos-pago";
 import { getOtroIngreso } from "@/lib/minimarket/data/ganancias";
 import { getImpactoCajaGasto, getSesionAbierta } from "@/lib/minimarket/data/caja";
 import { listCuentasBancarias } from "@/lib/minimarket/data/bancos";
+import { listCategoriasMovimiento } from "@/lib/minimarket/data/categorias-movimiento";
 import { actualizarOtroIngreso } from "../../actions";
 import { OtroIngresoForm } from "../../otro-ingreso-form";
 
@@ -36,19 +37,21 @@ export default async function EditarOtroIngresoPage({ params }: Props) {
 
   const supabase = await createClient();
 
-  const [otroIngreso, tasa, tz, configRes, sesion, impacto, cuentasBancarias] = await Promise.all([
-    getOtroIngreso(supabase, tenantId, id),
-    getTasaVigente(supabase, tenantId),
-    getTimezoneNegocio(supabase, tenantId),
-    supabase
-      .from("mm_config_negocio")
-      .select("metodos_pago")
-      .eq("tenant_id", tenantId)
-      .maybeSingle(),
-    getSesionAbierta(supabase, tenantId),
-    getImpactoCajaGasto(supabase, tenantId, id),
-    listCuentasBancarias(supabase, tenantId),
-  ]);
+  const [otroIngreso, tasa, tz, configRes, sesion, impacto, cuentasBancarias, categorias] =
+    await Promise.all([
+      getOtroIngreso(supabase, tenantId, id),
+      getTasaVigente(supabase, tenantId),
+      getTimezoneNegocio(supabase, tenantId),
+      supabase
+        .from("mm_config_negocio")
+        .select("metodos_pago")
+        .eq("tenant_id", tenantId)
+        .maybeSingle(),
+      getSesionAbierta(supabase, tenantId),
+      getImpactoCajaGasto(supabase, tenantId, id),
+      listCuentasBancarias(supabase, tenantId),
+      listCategoriasMovimiento(supabase, tenantId, "otro_ingreso"),
+    ]);
 
   if (!otroIngreso) notFound();
 
@@ -74,6 +77,7 @@ export default async function EditarOtroIngresoPage({ params }: Props) {
         otroIngreso={otroIngreso}
         tasa={tasa?.valor ?? 1}
         hoy={hoyEnTz(tz)}
+        categorias={categorias}
         metodosPago={metodosPago}
         cajaAbierta={Boolean(sesion)}
         cuentasBancarias={cuentasBancarias}

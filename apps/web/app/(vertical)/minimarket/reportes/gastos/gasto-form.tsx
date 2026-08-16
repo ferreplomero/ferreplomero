@@ -3,19 +3,19 @@
 import * as React from "react";
 import { useActionState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, Info, Lock, Receipt } from "lucide-react";
-import { Button, Card, Input, Label } from "@arkiteq/ui";
+import { AlertCircle, Info, Lock, PlusCircle, Receipt } from "lucide-react";
+import { Button, Card, Dialog, DialogContent, Input, Label, toast } from "@arkiteq/ui";
 import { SubmitButton } from "@/components/auth/submit-button";
 import { CampoMontoDual } from "@/components/minimarket/shared/campo-monto-dual";
-import { GASTO_CATEGORIA_LABEL } from "@/lib/minimarket/data/ganancias";
+import { CategoriaMovimientoForm } from "@/components/minimarket/shared/categoria-movimiento-form-cargador";
 import { METODOS_GASTO } from "@/lib/minimarket/constants";
 import { esEfectivo } from "@/lib/minimarket/pos-calc";
 import { esMetodoConCuenta } from "@/lib/minimarket/bancos";
 import { getCuentaPredeterminada } from "@/lib/minimarket/data/bancos";
 import type { MetodoPagoConfigItem } from "@/lib/minimarket/metodos-pago";
 import type {
+  MmCategoriaMovimiento,
   MmCuentaBancaria,
-  MmGastoCategoria,
   MmGastoOperativo,
   MmMetodoPago,
 } from "@arkiteq/db";
@@ -26,6 +26,8 @@ interface GastoFormProps {
   gasto?: MmGastoOperativo | null;
   tasa: number;
   hoy: string;
+  /** Categorías de gasto (preestablecidas + propias) del tenant. */
+  categorias: MmCategoriaMovimiento[];
   /** Métodos de pago activos en Configuración — el selector solo muestra estos. */
   metodosPago: MetodoPagoConfigItem[];
   /** ¿Hay una caja abierta ahora mismo? Solo afecta el aviso al elegir efectivo. */
@@ -43,20 +45,12 @@ interface GastoFormProps {
 const SELECT_CLASS =
   "border-border bg-background focus-visible:ring-ring h-10 w-full rounded-md border px-3 text-sm focus-visible:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-60";
 
-const CATEGORIAS: MmGastoCategoria[] = [
-  "alquiler",
-  "servicios",
-  "sueldos",
-  "mantenimiento",
-  "impuestos_permisos",
-  "otros",
-];
-
 export function GastoForm({
   action,
   gasto,
   tasa,
   hoy,
+  categorias,
   metodosPago,
   cajaAbierta,
   cuentasBancarias,
@@ -66,6 +60,24 @@ export function GastoForm({
   const [state, formAction] = useActionState<GastoResult, FormData>(action, {});
   const [montoUsd, setMontoUsd] = React.useState(gasto ? String(gasto.monto_usd) : "");
   const [cuentaBancariaId, setCuentaBancariaId] = React.useState(gasto?.cuenta_bancaria_id ?? "");
+
+  // ---- Categoría (con alta rápida "+ Nueva categoría" sin salir del formulario) ----
+  const [categoriasLista, setCategoriasLista] = React.useState(categorias);
+  const [categoriaId, setCategoriaId] = React.useState(
+    gasto?.categoria_id ?? categorias[0]?.id ?? "",
+  );
+  const [categoriaModalOpen, setCategoriaModalOpen] = React.useState(false);
+  const onCategoriaCreada = React.useCallback((creada?: { id: string; nombre: string }) => {
+    setCategoriaModalOpen(false);
+    if (!creada) return;
+    setCategoriasLista((prev) =>
+      [...prev, creada as MmCategoriaMovimiento].sort((a, b) =>
+        a.nombre.localeCompare(b.nombre, "es"),
+      ),
+    );
+    setCategoriaId(creada.id);
+    toast.success(`Categoría "${creada.nombre}" creada y seleccionada.`);
+  }, []);
 
   const metodosActivos = React.useMemo(() => {
     const activosSet = new Set<MmMetodoPago>(
@@ -169,22 +181,34 @@ export function GastoForm({
 
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <Label htmlFor="categoria">
-              Categoría <span className="text-danger">*</span>
-            </Label>
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor="categoria_id">
+                Categoría <span className="text-danger">*</span>
+              </Label>
+              <button
+                type="button"
+                onClick={() => setCategoriaModalOpen(true)}
+                className="text-accent-600 inline-flex items-center gap-1 text-xs font-medium hover:underline"
+              >
+                <PlusCircle className="size-3.5" aria-hidden />
+                Nueva categoría
+              </button>
+            </div>
             <select
-              id="categoria"
-              name="categoria"
-              defaultValue={gasto?.categoria ?? "otros"}
+              id="categoria_id"
+              name="categoria_id"
+              value={categoriaId}
+              onChange={(e) => setCategoriaId(e.target.value)}
               className={SELECT_CLASS}
               required
             >
-              {CATEGORIAS.map((c) => (
-                <option key={c} value={c}>
-                  {GASTO_CATEGORIA_LABEL[c]}
+              {categoriasLista.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nombre}
                 </option>
               ))}
             </select>
+            {fe.categoria_id ? <p className="text-danger text-xs">{fe.categoria_id}</p> : null}
           </div>
 
           <div className="space-y-1.5">
@@ -339,6 +363,12 @@ export function GastoForm({
           </SubmitButton>
         </div>
       </form>
+
+      <Dialog open={categoriaModalOpen} onOpenChange={setCategoriaModalOpen}>
+        <DialogContent className="max-w-md">
+          <CategoriaMovimientoForm tipo="gasto" onDone={onCategoriaCreada} />
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

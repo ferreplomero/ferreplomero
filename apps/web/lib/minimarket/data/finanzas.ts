@@ -90,7 +90,7 @@ export async function getFinanzasGastos(
 }> {
   const { data } = await client
     .from("mm_gastos_operativos")
-    .select("id, descripcion, categoria, monto_usd, fecha, metodo_pago")
+    .select("id, descripcion, categoria_id, monto_usd, fecha, metodo_pago")
     .eq("tenant_id", tenantId)
     .is("deleted_at", null)
     .gte("fecha", rango.desde)
@@ -99,6 +99,16 @@ export async function getFinanzasGastos(
 
   const gastos = data ?? [];
   const r2 = (n: number) => Math.round(n * 100) / 100;
+
+  const catIds = [...new Set(gastos.map((g) => g.categoria_id))];
+  const catNombre = new Map<string, string>();
+  if (catIds.length > 0) {
+    const { data: cats } = await client
+      .from("mm_categorias_movimiento")
+      .select("id, nombre")
+      .in("id", catIds);
+    for (const c of cats ?? []) catNombre.set(c.id, c.nombre);
+  }
 
   let totalGastosUsd = 0;
   let totalEfectivoUsd = 0;
@@ -142,7 +152,7 @@ export async function getFinanzasGastos(
     gastos: gastos.map((g) => ({
       id: g.id,
       descripcion: g.descripcion,
-      categoria: g.categoria,
+      categoria: catNombre.get(g.categoria_id) ?? "Sin categoría",
       fecha: g.fecha,
       monto_usd: r2(Number(g.monto_usd)),
       metodo_pago: g.metodo_pago,

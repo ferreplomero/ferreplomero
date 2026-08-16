@@ -68,6 +68,8 @@ export type MmDeudaEstado = "pendiente" | "pagada";
 export type MmPresupuestoEstado = "pendiente" | "convertido" | "rechazado";
 export type MmGastoCategoria =
   "alquiler" | "servicios" | "sueldos" | "mantenimiento" | "impuestos_permisos" | "otros";
+/** Discrimina el catalogo de mm_categorias_movimiento (categorias de Gastos vs Otros ingresos). */
+export type MmCategoriaMovimientoTipo = "gasto" | "otro_ingreso";
 export type MmLimpiezaPruebaDecision = "borrado" | "conservado";
 
 // --- Enums del vertical Servicio Técnico (prefijo st_) -----------------------
@@ -1428,12 +1430,42 @@ export interface Database {
         };
         Relationships: [];
       };
+      mm_categorias_movimiento: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          tipo: MmCategoriaMovimientoTipo;
+          nombre: string;
+          orden: number;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          tipo: MmCategoriaMovimientoTipo;
+          nombre: string;
+          orden?: number;
+          created_at?: string;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Update: {
+          nombre?: string;
+          orden?: number;
+          updated_at?: string;
+          deleted_at?: string | null;
+        };
+        Relationships: [];
+      };
       mm_gastos_operativos: {
         Row: {
           id: string;
           tenant_id: string;
           descripcion: string;
           categoria: MmGastoCategoria;
+          categoria_id: string;
           monto_usd: number;
           fecha: string;
           notas: string | null;
@@ -1449,6 +1481,7 @@ export interface Database {
           tenant_id: string;
           descripcion: string;
           categoria?: MmGastoCategoria;
+          categoria_id: string;
           monto_usd: number;
           fecha: string;
           notas?: string | null;
@@ -1462,6 +1495,7 @@ export interface Database {
         Update: {
           descripcion?: string;
           categoria?: MmGastoCategoria;
+          categoria_id?: string;
           monto_usd?: number;
           fecha?: string;
           notas?: string | null;
@@ -1482,6 +1516,7 @@ export interface Database {
           notas: string | null;
           metodo_pago: MmMetodoPago;
           cuenta_bancaria_id: string | null;
+          categoria_id: string;
           usuario_id: string | null;
           created_at: string;
           updated_at: string;
@@ -1496,6 +1531,7 @@ export interface Database {
           notas?: string | null;
           metodo_pago: MmMetodoPago;
           cuenta_bancaria_id?: string | null;
+          categoria_id: string;
           usuario_id?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -1508,6 +1544,7 @@ export interface Database {
           notas?: string | null;
           metodo_pago?: MmMetodoPago;
           cuenta_bancaria_id?: string | null;
+          categoria_id?: string;
           updated_at?: string;
           deleted_at?: string | null;
         };
@@ -3341,6 +3378,7 @@ export interface Database {
       mm_tipo_venta: MmTipoVenta;
       mm_deuda_estado: MmDeudaEstado;
       mm_gasto_categoria: MmGastoCategoria;
+      mm_categoria_movimiento_tipo: MmCategoriaMovimientoTipo;
       mm_limpieza_prueba_decision: MmLimpiezaPruebaDecision;
       st_orden_estado: StOrdenEstado;
       st_tipo_equipo: StTipoEquipo;
@@ -3413,6 +3451,7 @@ export type MmTasaCambio = Tables<"mm_tasas_cambio">;
 export type MmCategoriaDeuda = Tables<"mm_categorias_deuda">;
 export type MmDeuda = Tables<"mm_deudas">;
 export type MmAbonoDeuda = Tables<"mm_abonos_deuda">;
+export type MmCategoriaMovimiento = Tables<"mm_categorias_movimiento">;
 export type MmGastoOperativo = Tables<"mm_gastos_operativos">;
 export type MmOtroIngreso = Tables<"mm_otros_ingresos">;
 export type MmCuentaBancaria = Tables<"mm_cuentas_bancarias">;

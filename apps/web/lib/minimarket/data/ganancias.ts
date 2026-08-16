@@ -25,12 +25,19 @@
  *    neta — nunca infla "Ingresos por ventas" ni el número de ventas.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database, MmGastoCategoria, MmGastoOperativo, MmOtroIngreso } from "@arkiteq/db";
+import type { Database, MmGastoOperativo, MmOtroIngreso } from "@arkiteq/db";
 import { rangoLocalAUtc } from "../date-format";
 import { getTipoPreferido } from "../exchange-rate";
 import type { RangoFechas } from "./reportes";
 
 type Client = SupabaseClient<Database>;
+
+/** Resuelve nombre por id para un set de categorías (mm_categorias_movimiento). */
+async function mapCategoriaNombres(client: Client, ids: string[]): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  const { data } = await client.from("mm_categorias_movimiento").select("id, nombre").in("id", ids);
+  return new Map((data ?? []).map((c) => [c.id, c.nombre]));
+}
 
 export interface DetalleProductoVendido {
   producto_id: string | null;
@@ -56,6 +63,7 @@ export interface DetalleGasto {
 export interface DetalleOtroIngreso {
   id: string;
   descripcion: string;
+  categoria: string;
   fecha: string;
   montoUsd: number;
   metodoPago: string;
@@ -297,11 +305,15 @@ export async function getResumenGanancias(
   // nunca contra los límites UTC de un timestamptz).
   const { data: gastosManuales } = await client
     .from("mm_gastos_operativos")
-    .select("id, descripcion, categoria, monto_usd, fecha, metodo_pago")
+    .select("id, descripcion, categoria_id, monto_usd, fecha, metodo_pago")
     .eq("tenant_id", tenantId)
     .is("deleted_at", null)
     .gte("fecha", rango.desde)
     .lte("fecha", rango.hasta);
+
+  const catGastoNombre = await mapCategoriaNombres(client, [
+    ...new Set((gastosManuales ?? []).map((g) => g.categoria_id)),
+  ]);
 
   let gastosOperativosUsd = 0;
   const detalleGastosManual: DetalleGasto[] = [];
@@ -312,7 +324,7 @@ export async function getResumenGanancias(
       id: g.id,
       origen: "manual",
       descripcion: g.descripcion,
-      categoria: g.categoria,
+      categoria: catGastoNombre.get(g.categoria_id) ?? "Sin categoría",
       fecha: g.fecha,
       montoUsd: monto,
       metodoPago: g.metodo_pago,
@@ -325,11 +337,15 @@ export async function getResumenGanancias(
   // ventas" — van directo a la ganancia neta, sin costo de mercancía.
   const { data: otrosIngresos } = await client
     .from("mm_otros_ingresos")
-    .select("id, descripcion, monto_usd, fecha, metodo_pago")
+    .select("id, descripcion, categoria_id, monto_usd, fecha, metodo_pago")
     .eq("tenant_id", tenantId)
     .is("deleted_at", null)
     .gte("fecha", rango.desde)
     .lte("fecha", rango.hasta);
+
+  const catOtroIngresoNombre = await mapCategoriaNombres(client, [
+    ...new Set((otrosIngresos ?? []).map((i) => i.categoria_id)),
+  ]);
 
   let otrosIngresosUsd = 0;
   const detalleOtrosIngresos: DetalleOtroIngreso[] = [];
@@ -339,6 +355,7 @@ export async function getResumenGanancias(
     detalleOtrosIngresos.push({
       id: i.id,
       descripcion: i.descripcion,
+      categoria: catOtroIngresoNombre.get(i.categoria_id) ?? "Sin categoría",
       fecha: i.fecha,
       montoUsd: monto,
       metodoPago: i.metodo_pago,
@@ -370,20 +387,15 @@ export async function getResumenGanancias(
   };
 }
 
-export const GASTO_CATEGORIA_LABEL: Record<MmGastoCategoria, string> = {
-  alquiler: "Alquiler",
-  servicios: "Servicios (luz, agua, internet)",
-  sueldos: "Sueldos y personal",
-  mantenimiento: "Mantenimiento",
-  impuestos_permisos: "Impuestos y permisos",
-  otros: "Otros",
-};
+export interface MmGastoOperativoConCategoria extends MmGastoOperativo {
+  categoria_nombre: string;
+}
 
 /** Lista los gastos operativos manuales del tenant (historial completo, más reciente primero). */
 export async function listGastosOperativos(
   client: Client,
   tenantId: string,
-): Promise<MmGastoOperativo[]> {
+): Promise<MmGastoOperativoConCategoria[]> {
   const { data, error } = await client
     .from("mm_gastos_operativos")
     .select("*")
@@ -392,7 +404,14 @@ export async function listGastosOperativos(
     .order("fecha", { ascending: false });
 
   if (error) throw new Error(`No se pudieron cargar los gastos operativos: ${error.message}`);
-  return data ?? [];
+  const gastos = data ?? [];
+  const catNombre = await mapCategoriaNombres(client, [
+    ...new Set(gastos.map((g) => g.categoria_id)),
+  ]);
+  return gastos.map((g) => ({
+    ...g,
+    categoria_nombre: catNombre.get(g.categoria_id) ?? "Sin categoría",
+  }));
 }
 
 /** Devuelve un gasto operativo por id, o null si no existe. */
@@ -400,7 +419,7 @@ export async function getGastoOperativo(
   client: Client,
   tenantId: string,
   id: string,
-): Promise<MmGastoOperativo | null> {
+): Promise<MmGastoOperativoConCategoria | null> {
   const { data, error } = await client
     .from("mm_gastos_operativos")
     .select("*")
@@ -410,14 +429,20 @@ export async function getGastoOperativo(
     .maybeSingle();
 
   if (error) throw new Error(`No se pudo cargar el gasto: ${error.message}`);
-  return data;
+  if (!data) return null;
+  const catNombre = await mapCategoriaNombres(client, [data.categoria_id]);
+  return { ...data, categoria_nombre: catNombre.get(data.categoria_id) ?? "Sin categoría" };
+}
+
+export interface MmOtroIngresoConCategoria extends MmOtroIngreso {
+  categoria_nombre: string;
 }
 
 /** Lista los otros ingresos del tenant (historial completo, más reciente primero). */
 export async function listOtrosIngresos(
   client: Client,
   tenantId: string,
-): Promise<MmOtroIngreso[]> {
+): Promise<MmOtroIngresoConCategoria[]> {
   const { data, error } = await client
     .from("mm_otros_ingresos")
     .select("*")
@@ -426,7 +451,14 @@ export async function listOtrosIngresos(
     .order("fecha", { ascending: false });
 
   if (error) throw new Error(`No se pudieron cargar los otros ingresos: ${error.message}`);
-  return data ?? [];
+  const ingresos = data ?? [];
+  const catNombre = await mapCategoriaNombres(client, [
+    ...new Set(ingresos.map((i) => i.categoria_id)),
+  ]);
+  return ingresos.map((i) => ({
+    ...i,
+    categoria_nombre: catNombre.get(i.categoria_id) ?? "Sin categoría",
+  }));
 }
 
 /** Devuelve un otro ingreso por id, o null si no existe. */
@@ -434,7 +466,7 @@ export async function getOtroIngreso(
   client: Client,
   tenantId: string,
   id: string,
-): Promise<MmOtroIngreso | null> {
+): Promise<MmOtroIngresoConCategoria | null> {
   const { data, error } = await client
     .from("mm_otros_ingresos")
     .select("*")
@@ -444,5 +476,7 @@ export async function getOtroIngreso(
     .maybeSingle();
 
   if (error) throw new Error(`No se pudo cargar el ingreso: ${error.message}`);
-  return data;
+  if (!data) return null;
+  const catNombre = await mapCategoriaNombres(client, [data.categoria_id]);
+  return { ...data, categoria_nombre: catNombre.get(data.categoria_id) ?? "Sin categoría" };
 }

@@ -45,6 +45,15 @@ export default async function OtrosIngresosPage() {
 
   const total = otrosIngresos.reduce((s, i) => s + Number(i.monto_usd), 0);
 
+  const porCategoriaMap = new Map<string, number>();
+  for (const i of otrosIngresos) {
+    porCategoriaMap.set(
+      i.categoria_nombre,
+      (porCategoriaMap.get(i.categoria_nombre) ?? 0) + Number(i.monto_usd),
+    );
+  }
+  const porCategoria = [...porCategoriaMap.entries()].sort((a, b) => b[1] - a[1]);
+
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <ReportesTabs activo="/minimarket/reportes/otros-ingresos" />
@@ -91,6 +100,30 @@ export default async function OtrosIngresosPage() {
             </p>
           </Card>
 
+          <Card className="space-y-3 p-5">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-heading text-sm font-semibold">Otros ingresos por categoría</p>
+              <Link
+                href="/minimarket/reportes/categorias"
+                className="text-accent-600 text-xs font-medium hover:underline"
+              >
+                Gestionar categorías
+              </Link>
+            </div>
+            <div className="flex flex-wrap gap-4">
+              {porCategoria.map(([categoria, monto]) => (
+                <div key={categoria} className="min-w-[9rem]">
+                  <span className="bg-surface-2 text-heading inline-block rounded-full px-2 py-0.5 text-xs font-medium">
+                    {categoria}
+                  </span>
+                  <p className="text-heading font-display mt-1 text-lg font-bold tabular-nums">
+                    {usd(monto)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </Card>
+
           <Card className="overflow-hidden p-0">
             <div className="border-border flex items-center justify-between border-b px-4 py-3">
               <p className="text-heading text-sm font-medium">
@@ -102,6 +135,7 @@ export default async function OtrosIngresosPage() {
                 <thead className="border-border text-muted-foreground border-b text-left text-xs uppercase tracking-wide">
                   <tr>
                     <th className="px-4 py-3">Concepto</th>
+                    <th className="px-4 py-3">Categoría</th>
                     <th className="px-4 py-3">Origen</th>
                     <th className="px-4 py-3">Fecha</th>
                     <th className="px-4 py-3 text-right">Monto</th>
@@ -112,6 +146,7 @@ export default async function OtrosIngresosPage() {
                   {otrosIngresos.map((i) => (
                     <tr key={i.id} className="hover:bg-surface-2 transition-colors">
                       <td className="text-heading px-4 py-3 font-medium">{i.descripcion}</td>
+                      <td className="text-muted-foreground px-4 py-3">{i.categoria_nombre}</td>
                       <td className="px-4 py-3">
                         <span
                           className={`rounded-full px-2 py-0.5 text-xs font-medium ${

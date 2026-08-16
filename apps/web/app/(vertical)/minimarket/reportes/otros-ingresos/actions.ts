@@ -51,6 +51,7 @@ async function contexto() {
 
 const otroIngresoSchema = z.object({
   descripcion: z.string().trim().min(1, "El concepto es obligatorio.").max(160),
+  categoria_id: z.string().uuid({ message: "Selecciona una categoría." }),
   monto_usd: z.coerce
     .number({ invalid_type_error: "Monto inválido." })
     .positive("El monto debe ser mayor a cero."),
@@ -137,6 +138,7 @@ export async function crearOtroIngreso(
 
   const parsed = otroIngresoSchema.safeParse({
     descripcion: formData.get("descripcion"),
+    categoria_id: formData.get("categoria_id"),
     monto_usd: formData.get("monto_usd"),
     fecha: formData.get("fecha"),
     notas: formData.get("notas") ?? "",
@@ -148,6 +150,20 @@ export async function crearOtroIngreso(
   }
   const d = parsed.data;
   const montoUsd = redondear(d.monto_usd);
+
+  const { count: categoriaValida } = await ctx.supabase
+    .from("mm_categorias_movimiento")
+    .select("id", { count: "exact", head: true })
+    .eq("tenant_id", ctx.tenantId)
+    .eq("id", d.categoria_id)
+    .eq("tipo", "otro_ingreso")
+    .is("deleted_at", null);
+  if (!categoriaValida) {
+    return {
+      error: "Selecciona una categoría válida.",
+      fieldErrors: { categoria_id: "Selecciona una categoría válida." },
+    };
+  }
 
   let sesionId: string | null = null;
   let montoCaja: { monto: number; moneda: "USD" | "VES" } | null = null;
@@ -190,6 +206,7 @@ export async function crearOtroIngreso(
     .insert({
       tenant_id: ctx.tenantId,
       descripcion: d.descripcion,
+      categoria_id: d.categoria_id,
       monto_usd: montoUsd,
       fecha: d.fecha,
       notas: toNull(d.notas),
@@ -265,6 +282,7 @@ export async function actualizarOtroIngreso(
 
   const parsed = otroIngresoSchema.safeParse({
     descripcion: formData.get("descripcion"),
+    categoria_id: formData.get("categoria_id"),
     monto_usd: formData.get("monto_usd"),
     fecha: formData.get("fecha"),
     notas: formData.get("notas") ?? "",
@@ -276,6 +294,20 @@ export async function actualizarOtroIngreso(
   }
   const d = parsed.data;
   const montoUsd = redondear(d.monto_usd);
+
+  const { count: categoriaValida } = await ctx.supabase
+    .from("mm_categorias_movimiento")
+    .select("id", { count: "exact", head: true })
+    .eq("tenant_id", ctx.tenantId)
+    .eq("id", d.categoria_id)
+    .eq("tipo", "otro_ingreso")
+    .is("deleted_at", null);
+  if (!categoriaValida) {
+    return {
+      error: "Selecciona una categoría válida.",
+      fieldErrors: { categoria_id: "Selecciona una categoría válida." },
+    };
+  }
 
   const { data: actual } = await ctx.supabase
     .from("mm_otros_ingresos")
@@ -353,6 +385,7 @@ export async function actualizarOtroIngreso(
     .from("mm_otros_ingresos")
     .update({
       descripcion: d.descripcion,
+      categoria_id: d.categoria_id,
       monto_usd: montoUsd,
       fecha: d.fecha,
       notas: toNull(d.notas),

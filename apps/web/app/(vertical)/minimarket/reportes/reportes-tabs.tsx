@@ -5,9 +5,12 @@ const SECCIONES = [
   { href: "/minimarket/reportes/ganancias", label: "Ganancias" },
   { href: "/minimarket/reportes/gastos", label: "Gastos operativos" },
   { href: "/minimarket/reportes/otros-ingresos", label: "Otros ingresos" },
+  { href: "/minimarket/reportes/libro-diario", label: "Libro Diario" },
+  { href: "/minimarket/reportes/libro-mayor", label: "Libro Mayor" },
+  { href: "/minimarket/reportes/categorias", label: "Categorías" },
 ] as const;
 
-/** Tabs de navegación entre las secciones de Reportes (Resumen general, Ganancias, Gastos, Otros ingresos). */
+/** Tabs de navegación entre las secciones de Reportes (Resumen general, Ganancias, Gastos, Otros ingresos, Libro Diario, Libro Mayor, Categorías). */
 export function ReportesTabs({ activo }: { activo: (typeof SECCIONES)[number]["href"] }) {
   return (
     <nav

@@ -11,6 +11,7 @@ import { parseMetodosPago } from "@/lib/minimarket/metodos-pago";
 import { getGastoOperativo } from "@/lib/minimarket/data/ganancias";
 import { getImpactoCajaGasto, getSesionAbierta } from "@/lib/minimarket/data/caja";
 import { listCuentasBancarias } from "@/lib/minimarket/data/bancos";
+import { listCategoriasMovimiento } from "@/lib/minimarket/data/categorias-movimiento";
 import { actualizarGastoOperativo } from "../../actions";
 import { GastoForm } from "../../gasto-form";
 
@@ -36,19 +37,21 @@ export default async function EditarGastoPage({ params }: Props) {
 
   const supabase = await createClient();
 
-  const [gasto, tasa, tz, configRes, sesion, impacto, cuentasBancarias] = await Promise.all([
-    getGastoOperativo(supabase, tenantId, id),
-    getTasaVigente(supabase, tenantId),
-    getTimezoneNegocio(supabase, tenantId),
-    supabase
-      .from("mm_config_negocio")
-      .select("metodos_pago")
-      .eq("tenant_id", tenantId)
-      .maybeSingle(),
-    getSesionAbierta(supabase, tenantId),
-    getImpactoCajaGasto(supabase, tenantId, id),
-    listCuentasBancarias(supabase, tenantId),
-  ]);
+  const [gasto, tasa, tz, configRes, sesion, impacto, cuentasBancarias, categorias] =
+    await Promise.all([
+      getGastoOperativo(supabase, tenantId, id),
+      getTasaVigente(supabase, tenantId),
+      getTimezoneNegocio(supabase, tenantId),
+      supabase
+        .from("mm_config_negocio")
+        .select("metodos_pago")
+        .eq("tenant_id", tenantId)
+        .maybeSingle(),
+      getSesionAbierta(supabase, tenantId),
+      getImpactoCajaGasto(supabase, tenantId, id),
+      listCuentasBancarias(supabase, tenantId),
+      listCategoriasMovimiento(supabase, tenantId, "gasto"),
+    ]);
 
   if (!gasto) notFound();
 
@@ -74,6 +77,7 @@ export default async function EditarGastoPage({ params }: Props) {
         gasto={gasto}
         tasa={tasa?.valor ?? 1}
         hoy={hoyEnTz(tz)}
+        categorias={categorias}
         metodosPago={metodosPago}
         cajaAbierta={Boolean(sesion)}
         cuentasBancarias={cuentasBancarias}

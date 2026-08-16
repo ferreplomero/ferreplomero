@@ -27,6 +27,7 @@ import {
 } from "@/components/minimarket/tablero/periodo-selector";
 import { GananciasChart } from "@/components/minimarket/reportes/ganancias-chart-cargador";
 import { ReportesTabs } from "../reportes-tabs";
+import { NotaLibroContable } from "../nota-libro-contable";
 
 export const metadata: Metadata = { title: "Ganancias" };
 
@@ -73,6 +74,13 @@ export default async function GananciasPage({
     getResumenSaldosIniciales(supabase, tenantId),
   ]);
 
+  const gastosPorCategoriaMap = new Map<string, number>();
+  for (const g of resumen.detalleGastos) {
+    const key = g.categoria ?? "Sin categoría";
+    gastosPorCategoriaMap.set(key, (gastosPorCategoriaMap.get(key) ?? 0) + g.montoUsd);
+  }
+  const gastosPorCategoria = [...gastosPorCategoriaMap.entries()].sort((a, b) => b[1] - a[1]);
+
   const tasaValor = tasa?.valor ?? 1;
   const usd = (v: number) =>
     new Intl.NumberFormat(country.locale, { style: "currency", currency: "USD" }).format(v);
@@ -85,6 +93,7 @@ export default async function GananciasPage({
       valor: resumen.ingresosUsd,
       Icon: TrendingUp,
       cls: "text-heading",
+      href: "/minimarket/reportes/libro-mayor/ventas",
     },
     {
       label: "Costo de mercancía vendida",
@@ -104,12 +113,14 @@ export default async function GananciasPage({
       valor: resumen.otrosIngresosUsd,
       Icon: DollarSign,
       cls: "text-heading",
+      href: "/minimarket/reportes/libro-mayor/otros-ingresos",
     },
     {
       label: "Gastos del período",
       valor: -resumen.gastosTotalUsd,
       Icon: TrendingDown,
       cls: "text-red-600",
+      href: "/minimarket/reportes/libro-mayor/gastos",
     },
     {
       label: "= Ganancia neta",
@@ -174,7 +185,7 @@ export default async function GananciasPage({
 
       {/* Cascada ingresos -> costo -> bruta -> gastos -> neta */}
       <Card className="divide-border divide-y p-0">
-        {tarjetas.map(({ label, valor, Icon, cls, destacado }) => (
+        {tarjetas.map(({ label, valor, Icon, cls, destacado, href }) => (
           <div
             key={label}
             className={`flex items-center justify-between gap-3 px-5 py-4 ${destacado ? "bg-surface-2/60" : ""}`}
@@ -183,11 +194,20 @@ export default async function GananciasPage({
               <span className="bg-accent-500/12 text-accent-600 inline-flex size-9 items-center justify-center rounded-lg">
                 <Icon className="size-4" aria-hidden />
               </span>
-              <p
-                className={`text-sm ${destacado ? "text-heading font-semibold" : "text-muted-foreground"}`}
-              >
-                {label}
-              </p>
+              {href ? (
+                <Link
+                  href={href}
+                  className={`text-sm hover:underline ${destacado ? "text-heading font-semibold" : "text-muted-foreground"}`}
+                >
+                  {label}
+                </Link>
+              ) : (
+                <p
+                  className={`text-sm ${destacado ? "text-heading font-semibold" : "text-muted-foreground"}`}
+                >
+                  {label}
+                </p>
+              )}
             </div>
             <div className="text-right">
               <p className={`font-display text-lg font-semibold tabular-nums ${cls}`}>
@@ -300,6 +320,33 @@ export default async function GananciasPage({
         )}
       </Card>
 
+      {/* Gastos por categoría — puramente organizativo, no altera el total de arriba */}
+      {gastosPorCategoria.length > 0 ? (
+        <Card className="space-y-3 p-5">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-heading text-sm font-semibold">Gastos por categoría</p>
+            <Link
+              href="/minimarket/reportes/libro-mayor/gastos"
+              className="text-accent-600 text-xs font-medium hover:underline"
+            >
+              Ver en el Libro Mayor →
+            </Link>
+          </div>
+          <div className="flex flex-wrap gap-4">
+            {gastosPorCategoria.map(([categoria, montoUsd]) => (
+              <div key={categoria} className="min-w-[9rem]">
+                <span className="bg-surface-2 text-heading inline-block rounded-full px-2 py-0.5 text-xs font-medium">
+                  {categoria}
+                </span>
+                <p className="text-heading font-display mt-1 text-lg font-bold tabular-nums">
+                  {usd(montoUsd)}
+                </p>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
+
       {/* Desglose de gastos */}
       <Card className="overflow-hidden p-0">
         <div className="border-border flex items-center gap-2 border-b px-4 py-3">
@@ -369,7 +416,7 @@ export default async function GananciasPage({
                 <div className="min-w-0">
                   <p className="text-heading truncate font-medium">{i.descripcion}</p>
                   <p className="text-muted-foreground text-xs">
-                    {metodoLabelGanancias(i.metodoPago)} · {i.fecha}
+                    {metodoLabelGanancias(i.metodoPago)} · {i.categoria} · {i.fecha}
                   </p>
                 </div>
                 <p className="shrink-0 font-medium tabular-nums text-green-600">
@@ -386,6 +433,7 @@ export default async function GananciasPage({
         Información de control interno para apoyo a la gestión del negocio. No constituye una
         declaración fiscal.
       </p>
+      <NotaLibroContable />
     </div>
   );
 }

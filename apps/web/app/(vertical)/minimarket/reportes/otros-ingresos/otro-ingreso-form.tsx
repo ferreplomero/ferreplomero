@@ -3,16 +3,22 @@
 import * as React from "react";
 import { useActionState } from "react";
 import { useRouter } from "next/navigation";
-import { AlertCircle, Info, Lock, Sparkles } from "lucide-react";
-import { Button, Card, Input, Label } from "@arkiteq/ui";
+import { AlertCircle, Info, Lock, PlusCircle, Sparkles } from "lucide-react";
+import { Button, Card, Dialog, DialogContent, Input, Label, toast } from "@arkiteq/ui";
 import { SubmitButton } from "@/components/auth/submit-button";
 import { CampoMontoDual } from "@/components/minimarket/shared/campo-monto-dual";
+import { CategoriaMovimientoForm } from "@/components/minimarket/shared/categoria-movimiento-form-cargador";
 import { METODOS_OTRO_INGRESO } from "@/lib/minimarket/constants";
 import { esEfectivo } from "@/lib/minimarket/pos-calc";
 import { esMetodoConCuenta } from "@/lib/minimarket/bancos";
 import { getCuentaPredeterminada } from "@/lib/minimarket/data/bancos";
 import type { MetodoPagoConfigItem } from "@/lib/minimarket/metodos-pago";
-import type { MmCuentaBancaria, MmMetodoPago, MmOtroIngreso } from "@arkiteq/db";
+import type {
+  MmCategoriaMovimiento,
+  MmCuentaBancaria,
+  MmMetodoPago,
+  MmOtroIngreso,
+} from "@arkiteq/db";
 import type { OtroIngresoResult } from "./actions";
 
 interface OtroIngresoFormProps {
@@ -20,6 +26,8 @@ interface OtroIngresoFormProps {
   otroIngreso?: MmOtroIngreso | null;
   tasa: number;
   hoy: string;
+  /** Categorías de otro-ingreso (preestablecidas + propias) del tenant. */
+  categorias: MmCategoriaMovimiento[];
   /** Métodos de pago activos en Configuración — el selector solo muestra estos. */
   metodosPago: MetodoPagoConfigItem[];
   /** ¿Hay una caja abierta ahora mismo? Solo afecta el aviso al elegir efectivo. */
@@ -42,6 +50,7 @@ export function OtroIngresoForm({
   otroIngreso,
   tasa,
   hoy,
+  categorias,
   metodosPago,
   cajaAbierta,
   cuentasBancarias,
@@ -53,6 +62,24 @@ export function OtroIngresoForm({
   const [cuentaBancariaId, setCuentaBancariaId] = React.useState(
     otroIngreso?.cuenta_bancaria_id ?? "",
   );
+
+  // ---- Categoría (con alta rápida "+ Nueva categoría" sin salir del formulario) ----
+  const [categoriasLista, setCategoriasLista] = React.useState(categorias);
+  const [categoriaId, setCategoriaId] = React.useState(
+    otroIngreso?.categoria_id ?? categorias[0]?.id ?? "",
+  );
+  const [categoriaModalOpen, setCategoriaModalOpen] = React.useState(false);
+  const onCategoriaCreada = React.useCallback((creada?: { id: string; nombre: string }) => {
+    setCategoriaModalOpen(false);
+    if (!creada) return;
+    setCategoriasLista((prev) =>
+      [...prev, creada as MmCategoriaMovimiento].sort((a, b) =>
+        a.nombre.localeCompare(b.nombre, "es"),
+      ),
+    );
+    setCategoriaId(creada.id);
+    toast.success(`Categoría "${creada.nombre}" creada y seleccionada.`);
+  }, []);
 
   const metodosActivos = React.useMemo(() => {
     const activosSet = new Set<MmMetodoPago>(
@@ -150,6 +177,37 @@ export function OtroIngresoForm({
             required
           />
           {fe.descripcion ? <p className="text-danger text-xs">{fe.descripcion}</p> : null}
+        </div>
+
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <Label htmlFor="categoria_id">
+              Categoría <span className="text-danger">*</span>
+            </Label>
+            <button
+              type="button"
+              onClick={() => setCategoriaModalOpen(true)}
+              className="text-accent-600 inline-flex items-center gap-1 text-xs font-medium hover:underline"
+            >
+              <PlusCircle className="size-3.5" aria-hidden />
+              Nueva categoría
+            </button>
+          </div>
+          <select
+            id="categoria_id"
+            name="categoria_id"
+            value={categoriaId}
+            onChange={(e) => setCategoriaId(e.target.value)}
+            className={SELECT_CLASS}
+            required
+          >
+            {categoriasLista.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.nombre}
+              </option>
+            ))}
+          </select>
+          {fe.categoria_id ? <p className="text-danger text-xs">{fe.categoria_id}</p> : null}
         </div>
 
         <div className="space-y-1.5">
@@ -301,6 +359,12 @@ export function OtroIngresoForm({
           </SubmitButton>
         </div>
       </form>
+
+      <Dialog open={categoriaModalOpen} onOpenChange={setCategoriaModalOpen}>
+        <DialogContent className="max-w-md">
+          <CategoriaMovimientoForm tipo="otro_ingreso" onDone={onCategoriaCreada} />
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
