@@ -21,6 +21,7 @@ import { createClient } from "@/lib/supabase/server";
 import { requirePermisoAccion } from "@/lib/minimarket/permisos";
 import { getTipoNegocioOpcion, TIPO_NEGOCIO_VALUES } from "@/lib/minimarket/tipos-negocio";
 import { guardarLogoNegocio, type LogoResult } from "@/lib/minimarket/config-negocio";
+import { aprovisionarMinimarketInicial } from "@/lib/minimarket/onboarding";
 
 export interface BienvenidaResult {
   ok?: boolean;
@@ -272,6 +273,16 @@ export async function completarDatosNegocioInicialAction(
     { tipos_negocio: tipos },
   );
   if (error) return { error };
+
+  // Al completar este paso el negocio queda "listo" de cara al dueño (ver el
+  // mensaje de cierre del asistente) — por eso es el punto correcto para
+  // aprovisionar sucursal/asignación/caja inicial, no solo la config y las
+  // categorías. Sin esto, `aprovisionarMinimarketInicial` nunca se invocaba
+  // desde ningún flujo real y "Abrir caja" fallaba con "No hay una sucursal
+  // configurada" para todo negocio nuevo. Idempotente (ver su propia
+  // documentación) y usa el cliente RLS del dueño, que ya tiene rol
+  // "propietario" en su tenant desde `asegurarNegocioInicial`.
+  await aprovisionarMinimarketInicial(ctx.supabase, ctx.tenantId, ctx.userId);
 
   const categoriasCreadas = await crearCategoriasSugeridas(ctx, tipos);
 
