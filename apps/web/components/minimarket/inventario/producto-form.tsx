@@ -305,6 +305,7 @@ export function ProductoForm({
 
   React.useEffect(() => {
     if (state.ok) {
+      if (state.aviso) toast.warning(state.aviso);
       router.refresh();
       onDone(
         !editando && state.productoId
@@ -823,49 +824,111 @@ export function ProductoForm({
         </div>
 
         {/* Stock */}
-        <div className="grid gap-4 sm:grid-cols-3">
-          {!editando ? (
+        {sucursales.length > 1 ? (
+          <div className="space-y-3">
+            <Label>Stock por sucursal</Label>
+            <div className="divide-border border-border divide-y rounded-lg border">
+              {sucursales.map((s) => {
+                const fila = producto?.stockPorSucursal.find((row) => row.sucursal_id === s.id);
+                const disponible = fila?.disponible ?? true;
+                return (
+                  <div key={s.id} className="space-y-2 p-3">
+                    <label className="flex items-center gap-2 text-sm font-medium">
+                      <input
+                        type="checkbox"
+                        name={`disponible_${s.id}`}
+                        value="1"
+                        defaultChecked={disponible}
+                        className="size-4 accent-[var(--brand-500)]"
+                      />
+                      Disponible en {s.nombre}
+                    </label>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {!editando ? (
+                        <div className="space-y-1.5">
+                          <Label htmlFor={`stock_inicial_${s.id}`} className="text-xs">
+                            Stock inicial
+                          </Label>
+                          <Input
+                            id={`stock_inicial_${s.id}`}
+                            name={`stock_inicial_${s.id}`}
+                            type="number"
+                            step="0.001"
+                            min="0"
+                            inputMode="decimal"
+                            placeholder="0"
+                          />
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          <Label className="text-xs">Stock actual</Label>
+                          <p className="text-muted-foreground text-sm tabular-nums">
+                            {fila ? fila.stock_actual : 0} {unidadValor}
+                          </p>
+                        </div>
+                      )}
+                      <div className="space-y-1.5">
+                        <Label htmlFor={`stock_minimo_${s.id}`} className="text-xs">
+                          Stock mínimo (alerta)
+                        </Label>
+                        <Input
+                          id={`stock_minimo_${s.id}`}
+                          name={`stock_minimo_${s.id}`}
+                          type="number"
+                          step="0.001"
+                          min="0"
+                          inputMode="decimal"
+                          defaultValue={
+                            fila && fila.stock_minimo > 0 ? String(fila.stock_minimo) : ""
+                          }
+                          placeholder="0"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {editando ? (
+              <p className="text-muted-foreground text-xs">
+                Para cambiar el stock, usa Ajustes/Movimientos.
+              </p>
+            ) : null}
+          </div>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-3">
+            {!editando ? (
+              <div className="space-y-2">
+                <Label htmlFor="stock_inicial">Stock inicial</Label>
+                <Input
+                  id="stock_inicial"
+                  name="stock_inicial"
+                  type="number"
+                  step="0.001"
+                  min="0"
+                  inputMode="decimal"
+                  placeholder="0"
+                />
+              </div>
+            ) : null}
             <div className="space-y-2">
-              <Label htmlFor="stock_inicial">Stock inicial</Label>
+              <Label htmlFor="stock_minimo">Stock mínimo (alerta)</Label>
               <Input
-                id="stock_inicial"
-                name="stock_inicial"
+                id="stock_minimo"
+                name="stock_minimo"
                 type="number"
                 step="0.001"
                 min="0"
                 inputMode="decimal"
+                defaultValue={producto?.stock_minimo != null ? String(producto.stock_minimo) : ""}
                 placeholder="0"
               />
             </div>
-          ) : null}
-          <div className="space-y-2">
-            <Label htmlFor="stock_minimo">Stock mínimo (alerta)</Label>
-            <Input
-              id="stock_minimo"
-              name="stock_minimo"
-              type="number"
-              step="0.001"
-              min="0"
-              inputMode="decimal"
-              defaultValue={producto?.stock_minimo != null ? String(producto.stock_minimo) : ""}
-              placeholder="0"
-            />
+            {sucursales.length === 1 ? (
+              <input type="hidden" name="sucursal_id" value={sucursales[0]?.id ?? ""} />
+            ) : null}
           </div>
-          {sucursales.length > 1 ? (
-            <div className="space-y-2">
-              <Label htmlFor="sucursal_id">Sucursal</Label>
-              <select id="sucursal_id" name="sucursal_id" className={SELECT_CLASS}>
-                {sucursales.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.nombre}
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : sucursales.length === 1 ? (
-            <input type="hidden" name="sucursal_id" value={sucursales[0]?.id ?? ""} />
-          ) : null}
-        </div>
+        )}
 
         {/* Etiquetas */}
         <div className="space-y-2">

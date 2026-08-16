@@ -20,6 +20,15 @@ import type {
 
 type Client = SupabaseClient<Database>;
 
+export interface StockPorSucursal {
+  sucursal_id: string;
+  stock_actual: number;
+  stock_minimo: number;
+  /** false = el producto nunca tuvo presencia en esta sucursal (sin fila en
+   * mm_inventario ni movimientos) — se muestra "No disponible aquí". */
+  disponible: boolean;
+}
+
 export interface ProductoConStock extends MmProducto {
   categoria_nombre: string | null;
   proveedor_nombre: string | null;
@@ -31,6 +40,8 @@ export interface ProductoConStock extends MmProducto {
   stock_minimo: number | null;
   /** Si el stock actual está en o por debajo del mínimo configurado (> 0). */
   bajo_minimo: boolean;
+  /** Desglose por sucursal — permite filtrar/mostrar sin recalcular en el servidor. */
+  stockPorSucursal: StockPorSucursal[];
 }
 
 export interface InventarioResumen {
@@ -59,7 +70,7 @@ export async function listCategorias(client: Client, tenantId: string): Promise<
 
 /** Lista los productos activos con su categoría, proveedor, códigos y stock. */
 export async function listProductos(client: Client, tenantId: string): Promise<ProductoConStock[]> {
-  const [prodRes, catRes, provRes, codRes, stockRes, invRes] = await Promise.all([
+  const [prodRes, catRes, provRes, codRes, stockRes, invRes, sucRes] = await Promise.all([
     client
       .from("mm_productos")
       .select("*")
@@ -69,20 +80,25 @@ export async function listProductos(client: Client, tenantId: string): Promise<P
     client.from("mm_categorias").select("id, nombre").eq("tenant_id", tenantId),
     client.from("mm_proveedores").select("id, nombre").eq("tenant_id", tenantId),
     client.from("mm_producto_codigos").select("producto_id, codigo").eq("tenant_id", tenantId),
-    client.from("mm_v_stock").select("producto_id, stock_actual").eq("tenant_id", tenantId),
+    client
+      .from("mm_v_stock")
+      .select("producto_id, sucursal_id, stock_actual")
+      .eq("tenant_id", tenantId),
     client
       .from("mm_inventario")
-      .select("producto_id, stock_minimo")
+      .select("producto_id, sucursal_id, stock_minimo")
       .eq("tenant_id", tenantId)
       .is("deleted_at", null),
+    client.from("mm_sucursales").select("id").eq("tenant_id", tenantId).is("deleted_at", null),
   ]);
 
-  for (const res of [prodRes, catRes, provRes, codRes, stockRes, invRes]) {
+  for (const res of [prodRes, catRes, provRes, codRes, stockRes, invRes, sucRes]) {
     if (res.error) throw new Error(`No se pudo cargar el inventario: ${res.error.message}`);
   }
 
   const categorias = new Map((catRes.data ?? []).map((c) => [c.id, c.nombre]));
   const proveedores = new Map((provRes.data ?? []).map((p) => [p.id, p.nombre]));
+  const sucursalIds = (sucRes.data ?? []).map((s) => s.id);
 
   const codigosPorProducto = new Map<string, string[]>();
   for (const row of codRes.data ?? []) {
@@ -91,28 +107,46 @@ export async function listProductos(client: Client, tenantId: string): Promise<P
     codigosPorProducto.set(row.producto_id, arr);
   }
 
+  // Claves compuestas `producto_id:sucursal_id` — permiten sumar el total por
+  // producto (comportamiento agregado, sin cambios) y a la vez desglosar por
+  // sucursal (nuevo) a partir de las MISMAS filas ya traídas, sin queries extra.
   const stockPorProducto = new Map<string, number>();
+  const stockPorProductoSucursal = new Map<string, number>();
   for (const row of stockRes.data ?? []) {
-    if (!row.producto_id) continue;
-    stockPorProducto.set(
-      row.producto_id,
-      (stockPorProducto.get(row.producto_id) ?? 0) + Number(row.stock_actual ?? 0),
-    );
+    if (!row.producto_id || !row.sucursal_id) continue;
+    const monto = Number(row.stock_actual ?? 0);
+    stockPorProducto.set(row.producto_id, (stockPorProducto.get(row.producto_id) ?? 0) + monto);
+    const key = `${row.producto_id}:${row.sucursal_id}`;
+    stockPorProductoSucursal.set(key, (stockPorProductoSucursal.get(key) ?? 0) + monto);
   }
 
   const minimoPorProducto = new Map<string, number>();
+  const minimoPorProductoSucursal = new Map<string, number>();
+  const inventarioPresente = new Set<string>();
   for (const row of invRes.data ?? []) {
-    minimoPorProducto.set(
-      row.producto_id,
-      (minimoPorProducto.get(row.producto_id) ?? 0) + Number(row.stock_minimo ?? 0),
-    );
+    const monto = Number(row.stock_minimo ?? 0);
+    minimoPorProducto.set(row.producto_id, (minimoPorProducto.get(row.producto_id) ?? 0) + monto);
+    const key = `${row.producto_id}:${row.sucursal_id}`;
+    minimoPorProductoSucursal.set(key, monto);
+    inventarioPresente.add(key);
   }
+
+  const stockPresente = new Set(stockPorProductoSucursal.keys());
 
   return (prodRes.data ?? []).map((producto) => {
     const stock = stockPorProducto.get(producto.id) ?? 0;
     const minimo = minimoPorProducto.has(producto.id)
       ? (minimoPorProducto.get(producto.id) ?? 0)
       : null;
+    const stockPorSucursal: StockPorSucursal[] = sucursalIds.map((sucursal_id) => {
+      const key = `${producto.id}:${sucursal_id}`;
+      return {
+        sucursal_id,
+        stock_actual: stockPorProductoSucursal.get(key) ?? 0,
+        stock_minimo: minimoPorProductoSucursal.get(key) ?? 0,
+        disponible: inventarioPresente.has(key) || stockPresente.has(key),
+      };
+    });
     return {
       ...producto,
       categoria_nombre: producto.categoria_id
@@ -125,6 +159,7 @@ export async function listProductos(client: Client, tenantId: string): Promise<P
       stock_actual: stock,
       stock_minimo: minimo,
       bajo_minimo: minimo !== null && minimo > 0 && stock <= minimo,
+      stockPorSucursal,
     };
   });
 }
@@ -156,6 +191,8 @@ export interface StockSucursal {
   sucursal_nombre: string;
   stock_actual: number;
   stock_minimo: number;
+  /** false = el producto nunca tuvo presencia en esta sucursal. */
+  disponible: boolean;
 }
 
 export interface PrecioHistorico {
@@ -240,19 +277,25 @@ export async function getProductoDetalle(
   ]);
 
   const stockPorSuc = new Map<string, number>();
+  const stockPresenteSuc = new Set<string>();
   for (const row of stockRes.data ?? []) {
     if (!row.sucursal_id) continue;
     stockPorSuc.set(row.sucursal_id, Number(row.stock_actual ?? 0));
+    stockPresenteSuc.add(row.sucursal_id);
   }
   const minimoPorSuc = new Map<string, number>();
-  for (const row of invRes.data ?? [])
+  const inventarioPresenteSuc = new Set<string>();
+  for (const row of invRes.data ?? []) {
     minimoPorSuc.set(row.sucursal_id, Number(row.stock_minimo ?? 0));
+    inventarioPresenteSuc.add(row.sucursal_id);
+  }
 
   const stockPorSucursal: StockSucursal[] = (sucRes.data ?? []).map((s) => ({
     sucursal_id: s.id,
     sucursal_nombre: s.nombre,
     stock_actual: stockPorSuc.get(s.id) ?? 0,
     stock_minimo: minimoPorSuc.get(s.id) ?? 0,
+    disponible: inventarioPresenteSuc.has(s.id) || stockPresenteSuc.has(s.id),
   }));
 
   const stockTotal = stockPorSucursal.reduce((acc, s) => acc + s.stock_actual, 0);
@@ -267,6 +310,14 @@ export async function getProductoDetalle(
     stock_actual: stockTotal,
     stock_minimo: minimoTotal > 0 ? minimoTotal : null,
     bajo_minimo: minimoTotal > 0 && stockTotal <= minimoTotal,
+    stockPorSucursal: stockPorSucursal.map(
+      ({ sucursal_id, stock_actual, stock_minimo, disponible }) => ({
+        sucursal_id,
+        stock_actual,
+        stock_minimo,
+        disponible,
+      }),
+    ),
   };
 
   return {

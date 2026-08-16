@@ -36,6 +36,9 @@ export interface ActionResult {
    * seleccionarla de inmediato sin recargar ni volver a buscarla. */
   categoriaId?: string;
   categoriaNombre?: string;
+  /** Aviso no bloqueante (ok=true igual) — ej. una sucursal con stock que no
+   * se pudo desmarcar como disponible en `actualizarProducto`. */
+  aviso?: string;
 }
 
 const opcional = (v: FormDataEntryValue | null): string | undefined => {
@@ -115,6 +118,32 @@ async function primeraSucursal(
   return data?.id ?? null;
 }
 
+/** Todas las sucursales activas del tenant (para el desglose de stock por sucursal). */
+async function listarSucursales(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  tenantId: string,
+): Promise<{ id: string; nombre: string }[]> {
+  const { data } = await supabase
+    .from("mm_sucursales")
+    .select("id, nombre")
+    .eq("tenant_id", tenantId)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: true });
+  return data ?? [];
+}
+
+/** true si el checkbox `name` vino marcado en el FormData. */
+function marcado(formData: FormData, name: string): boolean {
+  const v = formData.get(name);
+  return v === "1" || v === "on";
+}
+
+/** Número >= 0 de un campo del FormData; 0 si viene vacío o inválido. */
+function numeroCampo(formData: FormData, name: string): number {
+  const n = Number(String(formData.get(name) ?? "").replace(",", "."));
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 async function aplicarStockMinimo(
   supabase: Awaited<ReturnType<typeof createClient>>,
   tenantId: string,
@@ -128,6 +157,7 @@ async function aplicarStockMinimo(
       producto_id: productoId,
       sucursal_id: sucursalId,
       stock_minimo: stockMinimo,
+      deleted_at: null,
     },
     { onConflict: "tenant_id,producto_id,sucursal_id" },
   );
@@ -323,21 +353,48 @@ export async function crearProducto(
     usuario_id: ctx.userId,
   });
 
-  const sucursalId = v.sucursal_id ?? (await primeraSucursal(ctx.supabase, ctx.tenantId));
-  if (sucursalId) {
-    if (v.stock_minimo !== undefined) {
-      await aplicarStockMinimo(ctx.supabase, ctx.tenantId, producto.id, sucursalId, v.stock_minimo);
+  const sucursales = await listarSucursales(ctx.supabase, ctx.tenantId);
+  if (sucursales.length > 1) {
+    for (const s of sucursales) {
+      if (!marcado(formData, `disponible_${s.id}`)) continue;
+      const stockMinimo = numeroCampo(formData, `stock_minimo_${s.id}`);
+      await aplicarStockMinimo(ctx.supabase, ctx.tenantId, producto.id, s.id, stockMinimo);
+      const stockInicial = numeroCampo(formData, `stock_inicial_${s.id}`);
+      if (stockInicial > 0) {
+        await ctx.supabase.from("mm_movimientos_inventario").insert({
+          tenant_id: ctx.tenantId,
+          producto_id: producto.id,
+          sucursal_id: s.id,
+          tipo: "entrada",
+          cantidad: stockInicial,
+          motivo: "Stock inicial",
+          usuario_id: ctx.userId,
+        });
+      }
     }
-    if (v.stock_inicial !== undefined && v.stock_inicial > 0) {
-      await ctx.supabase.from("mm_movimientos_inventario").insert({
-        tenant_id: ctx.tenantId,
-        producto_id: producto.id,
-        sucursal_id: sucursalId,
-        tipo: "entrada",
-        cantidad: v.stock_inicial,
-        motivo: "Stock inicial",
-        usuario_id: ctx.userId,
-      });
+  } else {
+    const sucursalId = v.sucursal_id ?? (await primeraSucursal(ctx.supabase, ctx.tenantId));
+    if (sucursalId) {
+      if (v.stock_minimo !== undefined) {
+        await aplicarStockMinimo(
+          ctx.supabase,
+          ctx.tenantId,
+          producto.id,
+          sucursalId,
+          v.stock_minimo,
+        );
+      }
+      if (v.stock_inicial !== undefined && v.stock_inicial > 0) {
+        await ctx.supabase.from("mm_movimientos_inventario").insert({
+          tenant_id: ctx.tenantId,
+          producto_id: producto.id,
+          sucursal_id: sucursalId,
+          tipo: "entrada",
+          cantidad: v.stock_inicial,
+          motivo: "Stock inicial",
+          usuario_id: ctx.userId,
+        });
+      }
     }
   }
 
@@ -436,7 +493,53 @@ export async function actualizarProducto(
     });
   }
 
-  if (v.stock_minimo !== undefined) {
+  const sucursales = await listarSucursales(ctx.supabase, ctx.tenantId);
+  let aviso: string | undefined;
+  if (sucursales.length > 1) {
+    const [{ data: stockRows }, { data: invRows }] = await Promise.all([
+      ctx.supabase
+        .from("mm_v_stock")
+        .select("sucursal_id, stock_actual")
+        .eq("tenant_id", ctx.tenantId)
+        .eq("producto_id", id),
+      ctx.supabase
+        .from("mm_inventario")
+        .select("sucursal_id")
+        .eq("tenant_id", ctx.tenantId)
+        .eq("producto_id", id)
+        .is("deleted_at", null),
+    ]);
+    const stockPorSucursal = new Map(
+      (stockRows ?? []).map((r) => [r.sucursal_id, Number(r.stock_actual ?? 0)]),
+    );
+    const filaViva = new Set((invRows ?? []).map((r) => r.sucursal_id));
+    const noQuitadas: string[] = [];
+
+    for (const s of sucursales) {
+      if (marcado(formData, `disponible_${s.id}`)) {
+        const stockMinimo = numeroCampo(formData, `stock_minimo_${s.id}`);
+        await aplicarStockMinimo(ctx.supabase, ctx.tenantId, id, s.id, stockMinimo);
+        continue;
+      }
+      // Desmarcado: solo quita disponibilidad si no tiene stock real — nunca
+      // se oculta una sucursal con stock existente.
+      if (!filaViva.has(s.id)) continue;
+      if ((stockPorSucursal.get(s.id) ?? 0) > 0) {
+        noQuitadas.push(s.nombre);
+        continue;
+      }
+      await ctx.supabase
+        .from("mm_inventario")
+        .update({ deleted_at: new Date().toISOString() })
+        .eq("tenant_id", ctx.tenantId)
+        .eq("producto_id", id)
+        .eq("sucursal_id", s.id);
+    }
+
+    if (noQuitadas.length > 0) {
+      aviso = `Tiene stock en ${noQuitadas.join(", ")} — ajústalo a 0 desde Movimientos antes de quitarlo de esa sucursal.`;
+    }
+  } else if (v.stock_minimo !== undefined) {
     const sucursalId = v.sucursal_id ?? (await primeraSucursal(ctx.supabase, ctx.tenantId));
     if (sucursalId) {
       await aplicarStockMinimo(ctx.supabase, ctx.tenantId, id, sucursalId, v.stock_minimo);
@@ -444,7 +547,7 @@ export async function actualizarProducto(
   }
 
   revalidatePath(INVENTARIO_PATH);
-  return { ok: true };
+  return { ok: true, aviso };
 }
 
 /** Edición rápida del precio de venta desde la lista (sin abrir el formulario). */

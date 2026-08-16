@@ -88,6 +88,7 @@ export function InventarioCliente({
   const [query, setQuery] = React.useState("");
   const [catFiltro, setCatFiltro] = React.useState("");
   const [tagFiltro, setTagFiltro] = React.useState("");
+  const [sucursalFiltro, setSucursalFiltro] = React.useState("");
   const [estado, setEstado] = React.useState<Estado>("todos");
   const [orden, setOrden] = React.useState<Orden>("nombre");
 
@@ -122,6 +123,33 @@ export function InventarioCliente({
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [productos]);
 
+  /** Resuelve stock/mínimo/bajo-mínimo/disponibilidad de un producto según el
+   * filtro de sucursal activo. Sin filtro (o una sola sucursal): exactamente
+   * los totales agregados de siempre, sin cambio de comportamiento. */
+  const resolverStock = React.useCallback(
+    (p: ProductoConStock) => {
+      if (!sucursalFiltro) {
+        return {
+          stock: p.stock_actual,
+          minimo: p.stock_minimo,
+          bajoMinimo: p.bajo_minimo,
+          disponible: true,
+        };
+      }
+      const fila = p.stockPorSucursal.find((s) => s.sucursal_id === sucursalFiltro);
+      if (!fila || !fila.disponible) {
+        return { stock: 0, minimo: null, bajoMinimo: false, disponible: false };
+      }
+      return {
+        stock: fila.stock_actual,
+        minimo: fila.stock_minimo > 0 ? fila.stock_minimo : null,
+        bajoMinimo: fila.stock_minimo > 0 && fila.stock_actual <= fila.stock_minimo,
+        disponible: true,
+      };
+    },
+    [sucursalFiltro],
+  );
+
   const filtrados = React.useMemo(() => {
     const q = query.trim().toLowerCase();
     const lista = productos.filter((p) => {
@@ -147,7 +175,7 @@ export function InventarioCliente({
         case "precio_asc":
           return Number(a.precio_usd) - Number(b.precio_usd);
         case "stock_asc":
-          return a.stock_actual - b.stock_actual;
+          return resolverStock(a).stock - resolverStock(b).stock;
         case "margen_desc":
           return (
             (margenSobreCosto(Number(b.costo_usd), Number(b.precio_usd)) ?? -Infinity) -
@@ -158,7 +186,7 @@ export function InventarioCliente({
       }
     });
     return ordenada;
-  }, [productos, query, catFiltro, tagFiltro, estado, orden]);
+  }, [productos, query, catFiltro, tagFiltro, estado, orden, resolverStock]);
 
   // Si un producto seleccionado deja de existir en la lista (p. ej. tras
   // refrescar después de otra eliminación), se quita de la selección.
@@ -247,7 +275,9 @@ export function InventarioCliente({
     });
   }
 
-  const hayFiltros = Boolean(query || catFiltro || tagFiltro || estado !== "todos");
+  const hayFiltros = Boolean(
+    query || catFiltro || tagFiltro || estado !== "todos" || sucursalFiltro,
+  );
 
   return (
     <div className="space-y-4">
@@ -336,6 +366,21 @@ export function InventarioCliente({
           <option value="activos">Solo activos</option>
           <option value="inactivos">Solo inactivos</option>
         </select>
+        {sucursales.length > 1 ? (
+          <select
+            className={SELECT_CLASS}
+            value={sucursalFiltro}
+            onChange={(e) => setSucursalFiltro(e.target.value)}
+            aria-label="Filtrar por sucursal"
+          >
+            <option value="">Todas las sucursales</option>
+            {sucursales.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.nombre}
+              </option>
+            ))}
+          </select>
+        ) : null}
         <select
           className={SELECT_CLASS}
           value={orden}
@@ -357,6 +402,7 @@ export function InventarioCliente({
               setCatFiltro("");
               setTagFiltro("");
               setEstado("todos");
+              setSucursalFiltro("");
             }}
           >
             <X className="size-4" />
@@ -429,6 +475,7 @@ export function InventarioCliente({
             {filtrados.map((p) => {
               const margen = margenSobreCosto(Number(p.costo_usd), Number(p.precio_usd));
               const gananciaUsd = Number(p.precio_usd) - Number(p.costo_usd);
+              const info = resolverStock(p);
               return (
                 <Card key={p.id} className="space-y-3 p-3">
                   <div className="flex items-start gap-3">
@@ -473,11 +520,15 @@ export function InventarioCliente({
                         </div>
                       ) : null}
                     </div>
-                    {!p.activo ? (
+                    {!info.disponible ? (
+                      <span className="bg-muted text-muted-foreground inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium">
+                        No disponible aquí
+                      </span>
+                    ) : !p.activo ? (
                       <span className="bg-muted text-muted-foreground inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium">
                         Inactivo
                       </span>
-                    ) : p.bajo_minimo ? (
+                    ) : info.bajoMinimo ? (
                       <span className="bg-warning/15 text-warning inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium">
                         <AlertTriangle className="size-3" aria-hidden />
                         Bajo mínimo
@@ -519,9 +570,13 @@ export function InventarioCliente({
                     </div>
                     <div>
                       <p className="text-muted-foreground text-xs">Stock</p>
-                      <p className="tabular-nums">
-                        {p.stock_actual} <span className="text-muted-foreground">{p.unidad}</span>
-                      </p>
+                      {info.disponible ? (
+                        <p className="tabular-nums">
+                          {info.stock} <span className="text-muted-foreground">{p.unidad}</span>
+                        </p>
+                      ) : (
+                        <p className="text-muted-foreground">No disponible aquí</p>
+                      )}
                     </div>
                   </div>
 
@@ -599,6 +654,7 @@ export function InventarioCliente({
                   {filtrados.map((p) => {
                     const margen = margenSobreCosto(Number(p.costo_usd), Number(p.precio_usd));
                     const gananciaUsd = Number(p.precio_usd) - Number(p.costo_usd);
+                    const info = resolverStock(p);
                     return (
                       <tr key={p.id} className="border-border/70 border-b last:border-0">
                         <td className="px-4 py-3">
@@ -681,15 +737,25 @@ export function InventarioCliente({
                           )}
                         </td>
                         <td className="px-4 py-3 text-right tabular-nums">
-                          {p.stock_actual}
-                          <span className="text-muted-foreground"> {p.unidad}</span>
+                          {info.disponible ? (
+                            <>
+                              {info.stock}
+                              <span className="text-muted-foreground"> {p.unidad}</span>
+                            </>
+                          ) : (
+                            <span className="text-muted-foreground">No disponible aquí</span>
+                          )}
                         </td>
                         <td className="px-4 py-3">
-                          {!p.activo ? (
+                          {!info.disponible ? (
+                            <span className="bg-muted text-muted-foreground inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium">
+                              No disponible aquí
+                            </span>
+                          ) : !p.activo ? (
                             <span className="bg-muted text-muted-foreground inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium">
                               Inactivo
                             </span>
-                          ) : p.bajo_minimo ? (
+                          ) : info.bajoMinimo ? (
                             <span className="bg-warning/15 text-warning inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium">
                               <AlertTriangle className="size-3" aria-hidden />
                               Bajo mínimo
