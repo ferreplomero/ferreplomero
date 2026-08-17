@@ -9,10 +9,10 @@ import {
   listCategorias,
   listProductos,
   listProveedores,
-  listSucursales,
   resumirInventario,
   siguienteCorrelativoSku,
 } from "@/lib/minimarket/data/inventario";
+import { getSucursalActiva } from "@/lib/minimarket/sucursal-acceso";
 import { getTasaVigente } from "@/lib/minimarket/exchange-rate";
 import { defaultsFiscalesProducto, opcionesImpuesto } from "@/lib/minimarket/producto-opciones";
 import { InventarioCliente } from "@/components/minimarket/inventario/inventario-cliente";
@@ -27,20 +27,40 @@ export default async function InventarioPage() {
   const supabase = await createClient();
   const country = getCountryConfig(session.activeTenant?.country);
 
-  const [productos, categorias, sucursales, proveedores, skuSugerido, tasa, configRes] =
-    await Promise.all([
-      listProductos(supabase, tenantId),
-      listCategorias(supabase, tenantId),
-      listSucursales(supabase, tenantId),
-      listProveedores(supabase, tenantId),
-      siguienteCorrelativoSku(supabase, tenantId),
-      getTasaVigente(supabase, tenantId),
-      supabase
-        .from("mm_config_negocio")
-        .select("parametros")
-        .eq("tenant_id", tenantId)
-        .maybeSingle(),
-    ]);
+  // La lista de sucursales viene primero: `listProductos` la necesita para
+  // saber sobre cuáles construir el desglose por sucursal de cada producto
+  // (el aislamiento real de los NÚMEROS de stock ya lo impone RLS).
+  const { activa: sucursalActiva, permitidas: sucursales } = await getSucursalActiva(
+    supabase,
+    tenantId,
+    session.user.id,
+  );
+
+  if (sucursales.length === 0) {
+    return (
+      <div className="mx-auto max-w-2xl">
+        <Card className="flex flex-col items-center gap-3 p-12 text-center">
+          <span className="bg-warning/12 text-warning inline-flex size-12 items-center justify-center rounded-2xl">
+            <TriangleAlert className="size-6" aria-hidden />
+          </span>
+          <p className="text-heading font-medium">No tienes ninguna sucursal asignada</p>
+          <p className="text-muted-foreground max-w-sm text-sm">
+            Pídele al administrador que te asigne una sucursal desde Personal para poder ver el
+            inventario.
+          </p>
+        </Card>
+      </div>
+    );
+  }
+
+  const [productos, categorias, proveedores, skuSugerido, tasa, configRes] = await Promise.all([
+    listProductos(supabase, tenantId, sucursales),
+    listCategorias(supabase, tenantId),
+    listProveedores(supabase, tenantId),
+    siguienteCorrelativoSku(supabase, tenantId),
+    getTasaVigente(supabase, tenantId),
+    supabase.from("mm_config_negocio").select("parametros").eq("tenant_id", tenantId).maybeSingle(),
+  ]);
 
   const parametrosNegocio =
     configRes.data?.parametros &&
@@ -114,7 +134,8 @@ export default async function InventarioPage() {
       <InventarioCliente
         productos={productos}
         categorias={categorias.map((c) => ({ id: c.id, nombre: c.nombre }))}
-        sucursales={sucursales.map((s) => ({ id: s.id, nombre: s.nombre }))}
+        sucursales={sucursales}
+        sucursalActivaId={sucursales.length > 1 ? (sucursalActiva?.id ?? null) : null}
         proveedores={proveedores.map((p) => ({ id: p.id, nombre: p.nombre }))}
         impuestos={impuestos}
         impuestoIdDefault={impuestoIdDefault}

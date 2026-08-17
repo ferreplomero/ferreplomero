@@ -10,9 +10,11 @@ import { BienvenidaSplash } from "@/components/bienvenida/bienvenida-splash";
 import { CerrarSesionBoton } from "@/components/cerrar-sesion-boton";
 import { SaldosInicialesModal } from "@/components/minimarket/tablero/saldos-iniciales-modal";
 import { SoporteWhatsappBoton } from "@/components/soporte/soporte-whatsapp-boton";
+import { SucursalSwitcher } from "@/components/minimarket/sucursal-switcher";
 import type { ContextoSoporte } from "@/lib/soporte-mensaje";
 import { MINIMARKET_BASE, MINIMARKET_NAV } from "@/lib/minimarket/nav";
 import { moduloPermitido, type ContextoPermisos } from "@/lib/minimarket/permisos";
+import type { SucursalAcceso } from "@/lib/minimarket/sucursal-acceso";
 import { precalentarRutasCriticas } from "@/lib/minimarket/prefetch-warmup";
 
 // `@powersync/react` arrastra @powersync/common (varios MB): se difiere por
@@ -38,6 +40,10 @@ interface VerticalShellProps {
   businessName: string;
   /** Contexto de permisos del usuario en el tenant activo; null = sin restricción. */
   permisos: ContextoPermisos | null;
+  /** Sucursal activa (null si el usuario no tiene ninguna asignada). */
+  sucursalActivaId: string | null;
+  /** Sucursales a las que el usuario tiene acceso (para el selector). */
+  sucursalesPermitidas: SucursalAcceso[];
   /** true = el usuario aún no completó el tour de bienvenida de Arki (calculado en el servidor). */
   mostrarOnboarding: boolean;
   /** Datos para la pantalla breve de bienvenida (saludo + nombre); null = no mostrarla ahora. */
@@ -206,6 +212,8 @@ function NavLinks({
 export function VerticalShell({
   businessName,
   permisos,
+  sucursalActivaId,
+  sucursalesPermitidas,
   mostrarOnboarding,
   bienvenida,
   saldosIniciales,
@@ -265,6 +273,7 @@ export function VerticalShell({
           <p className="text-muted-foreground truncate px-2 text-xs" title={businessName}>
             {businessName}
           </p>
+          <SucursalSwitcher activaId={sucursalActivaId} permitidas={sucursalesPermitidas} />
           <CerrarSesionBoton />
         </div>
       </aside>
@@ -294,6 +303,7 @@ export function VerticalShell({
               <NavLinks permisos={permisos} onNavigate={() => setDrawerOpen(false)} />
             </div>
             <div className="border-border space-y-2 border-t p-3">
+              <SucursalSwitcher activaId={sucursalActivaId} permitidas={sucursalesPermitidas} />
               <CerrarSesionBoton />
             </div>
           </aside>

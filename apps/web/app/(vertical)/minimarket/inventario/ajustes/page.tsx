@@ -5,7 +5,8 @@ import { Layers } from "lucide-react";
 import { Card } from "@arkiteq/ui";
 import { getSessionContext } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
-import { listProductos, listSucursales, listMovimientos } from "@/lib/minimarket/data/inventario";
+import { listProductos, listMovimientos } from "@/lib/minimarket/data/inventario";
+import { sucursalesPermitidas } from "@/lib/minimarket/sucursal-acceso";
 import { getTimezoneNegocio } from "@/lib/minimarket/timezone";
 import { fmtFechaHora } from "@/lib/minimarket/date-format";
 import { AjusteForm } from "./ajuste-form";
@@ -26,9 +27,9 @@ export default async function AjustesPage() {
 
   const supabase = await createClient();
 
-  const [productos, sucursales, movimientos, tz] = await Promise.all([
-    listProductos(supabase, tenantId),
-    listSucursales(supabase, tenantId),
+  const sucursales = await sucursalesPermitidas(supabase, tenantId, session.user.id);
+  const [productos, movimientos, tz] = await Promise.all([
+    listProductos(supabase, tenantId, sucursales),
     listMovimientos(supabase, tenantId, { tipos: ["ajuste", "merma"], limit: 50 }),
     getTimezoneNegocio(supabase, tenantId),
   ]);

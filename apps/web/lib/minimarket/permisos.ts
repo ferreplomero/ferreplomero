@@ -41,6 +41,13 @@ export interface ContextoPermisos {
   roles: RolAsignado[];
   /** Permisos combinados (OR) de todos sus roles activos, por módulo. */
   permisos: PermisosPorModulo;
+  /** Sucursales de sus asignaciones activas (`mm_usuarios_sucursal.sucursal_id`). */
+  sucursalIds: string[];
+  /** true si algún rol asignado es dueño/administrador — ve todas las
+   * sucursales del tenant sin necesitar una fila por cada una (mismo
+   * criterio que `auth_sucursal_ids()` en la migración 0111, para que UI y
+   * RLS nunca diverjan). */
+  todasLasSucursales: boolean;
 }
 
 interface ModuloDeRuta {
@@ -137,7 +144,7 @@ export async function resolverContextoPermisos(
 ): Promise<ContextoPermisos | null> {
   const { data: asignaciones } = await supabase
     .from("mm_usuarios_sucursal")
-    .select("rol_id")
+    .select("rol_id, sucursal_id")
     .eq("tenant_id", tenantId)
     .eq("profile_id", profileId)
     .eq("activo", true)
@@ -146,6 +153,7 @@ export async function resolverContextoPermisos(
   if (!asignaciones || asignaciones.length === 0) return null;
 
   const rolIds = [...new Set(asignaciones.map((a) => a.rol_id))];
+  const sucursalIds = [...new Set(asignaciones.map((a) => a.sucursal_id))];
 
   const [{ data: roles }, { data: permisosRows }] = await Promise.all([
     supabase.from("mm_roles").select("id, slug, nombre, es_sistema").in("id", rolIds),
@@ -178,7 +186,11 @@ export async function resolverContextoPermisos(
     };
   }
 
-  return { roles: rolesAsignados, permisos };
+  const todasLasSucursales = rolesAsignados.some(
+    (r) => r.slug === "dueno" || r.slug === "administrador",
+  );
+
+  return { roles: rolesAsignados, permisos, sucursalIds, todasLasSucursales };
 }
 
 /**

@@ -5,7 +5,6 @@ import { useActionState } from "react";
 import { CheckCircle, WifiOff } from "lucide-react";
 import { Button, Card, toast } from "@arkiteq/ui";
 import { PowerSyncContext } from "@powersync/react";
-import type { MmSucursal } from "@arkiteq/db";
 import type { ProductoConStock } from "@/lib/minimarket/data/inventario";
 import { registrarMovimientoInventarioLocal } from "@/lib/minimarket/powersync/registrar-producto-local";
 import type { TipoMovimientoInventario } from "@/lib/minimarket/inventario-calc";
@@ -14,7 +13,7 @@ import { registrarMovimiento } from "../actions";
 
 interface Props {
   productos: ProductoConStock[];
-  sucursales: MmSucursal[];
+  sucursales: { id: string; nombre: string }[];
   tenantId: string;
   usuarioId: string;
 }

@@ -48,6 +48,8 @@ interface InventarioClienteProps {
   productos: ProductoConStock[];
   categorias: { id: string; nombre: string }[];
   sucursales: { id: string; nombre: string }[];
+  /** Sucursal activa del usuario — preselecciona el filtro (null/1 sucursal = sin preselección). */
+  sucursalActivaId?: string | null;
   proveedores: { id: string; nombre: string }[];
   impuestos: OpcionImpuesto[];
   /** Defaults fiscales para un producto NUEVO, heredados de Configuración. */
@@ -72,6 +74,7 @@ export function InventarioCliente({
   productos,
   categorias,
   sucursales,
+  sucursalActivaId,
   proveedores,
   impuestos,
   impuestoIdDefault,
@@ -88,7 +91,7 @@ export function InventarioCliente({
   const [query, setQuery] = React.useState("");
   const [catFiltro, setCatFiltro] = React.useState("");
   const [tagFiltro, setTagFiltro] = React.useState("");
-  const [sucursalFiltro, setSucursalFiltro] = React.useState("");
+  const [sucursalFiltro, setSucursalFiltro] = React.useState(sucursalActivaId ?? "");
   const [estado, setEstado] = React.useState<Estado>("todos");
   const [orden, setOrden] = React.useState<Orden>("nombre");
 

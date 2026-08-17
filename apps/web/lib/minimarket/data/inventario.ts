@@ -68,9 +68,31 @@ export async function listCategorias(client: Client, tenantId: string): Promise<
   return data ?? [];
 }
 
-/** Lista los productos activos con su categoría, proveedor, códigos y stock. */
-export async function listProductos(client: Client, tenantId: string): Promise<ProductoConStock[]> {
-  const [prodRes, catRes, provRes, codRes, stockRes, invRes, sucRes] = await Promise.all([
+/**
+ * Lista los productos activos con su categoría, proveedor, códigos y stock.
+ *
+ * `sucursales` es la lista de sucursales PERMITIDAS del usuario que pide el
+ * listado (ver `lib/minimarket/sucursal-acceso.ts`) — se usa solo para saber
+ * sobre qué sucursales construir el desglose `stockPorSucursal` de cada
+ * producto (así no aparecen sucursales ajenas como "no disponible" en vez de
+ * simplemente no aparecer). El aislamiento real de los NÚMEROS de stock ya
+ * lo impone RLS (migración 0111): aunque `mm_v_stock`/`mm_inventario` se
+ * consulten sin filtro explícito de sucursal, Postgres nunca devuelve filas
+ * de sucursales fuera del alcance del usuario.
+ *
+ * `sucursales` es opcional (default `[]`) para los llamadores que todavía no
+ * están aislados por sucursal (Ventas, Presupuestos, exportar — fuera del
+ * alcance de esta fase): sin la lista, el desglose `stockPorSucursal` de
+ * cada producto queda vacío, pero los totales agregados (`stock_actual`,
+ * `stock_minimo`, `bajo_minimo`) siguen siendo correctos porque ya vienen
+ * filtrados por RLS, no por este parámetro.
+ */
+export async function listProductos(
+  client: Client,
+  tenantId: string,
+  sucursales: { id: string }[] = [],
+): Promise<ProductoConStock[]> {
+  const [prodRes, catRes, provRes, codRes, stockRes, invRes] = await Promise.all([
     client
       .from("mm_productos")
       .select("*")
@@ -89,16 +111,15 @@ export async function listProductos(client: Client, tenantId: string): Promise<P
       .select("producto_id, sucursal_id, stock_minimo")
       .eq("tenant_id", tenantId)
       .is("deleted_at", null),
-    client.from("mm_sucursales").select("id").eq("tenant_id", tenantId).is("deleted_at", null),
   ]);
 
-  for (const res of [prodRes, catRes, provRes, codRes, stockRes, invRes, sucRes]) {
+  for (const res of [prodRes, catRes, provRes, codRes, stockRes, invRes]) {
     if (res.error) throw new Error(`No se pudo cargar el inventario: ${res.error.message}`);
   }
 
   const categorias = new Map((catRes.data ?? []).map((c) => [c.id, c.nombre]));
   const proveedores = new Map((provRes.data ?? []).map((p) => [p.id, p.nombre]));
-  const sucursalIds = (sucRes.data ?? []).map((s) => s.id);
+  const sucursalIds = sucursales.map((s) => s.id);
 
   const codigosPorProducto = new Map<string, string[]>();
   for (const row of codRes.data ?? []) {
@@ -207,11 +228,16 @@ export interface ProductoDetalle {
   movimientos: MovimientoConDetalle[];
 }
 
-/** Carga el detalle completo de un producto: stock por sucursal + históricos. */
+/**
+ * Carga el detalle completo de un producto: stock por sucursal + históricos.
+ * `sucursales` es la lista de sucursales PERMITIDAS del usuario (mismo
+ * criterio que `listProductos` — ver su comentario).
+ */
 export async function getProductoDetalle(
   client: Client,
   tenantId: string,
   productoId: string,
+  sucursales: { id: string; nombre: string }[],
 ): Promise<ProductoDetalle | null> {
   const { data: prod, error: prodErr } = await client
     .from("mm_productos")
@@ -223,7 +249,7 @@ export async function getProductoDetalle(
   if (prodErr) throw new Error(`No se pudo cargar el producto: ${prodErr.message}`);
   if (!prod) return null;
 
-  const [catRes, provRes, codRes, sucRes, stockRes, invRes, precioRes, movRes] = await Promise.all([
+  const [catRes, provRes, codRes, stockRes, invRes, precioRes, movRes] = await Promise.all([
     prod.categoria_id
       ? client.from("mm_categorias").select("nombre").eq("id", prod.categoria_id).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
@@ -235,11 +261,6 @@ export async function getProductoDetalle(
       .select("codigo")
       .eq("tenant_id", tenantId)
       .eq("producto_id", productoId),
-    client
-      .from("mm_sucursales")
-      .select("id, nombre")
-      .eq("tenant_id", tenantId)
-      .is("deleted_at", null),
     client
       .from("mm_v_stock")
       .select("sucursal_id, stock_actual")
@@ -290,7 +311,7 @@ export async function getProductoDetalle(
     inventarioPresenteSuc.add(row.sucursal_id);
   }
 
-  const stockPorSucursal: StockSucursal[] = (sucRes.data ?? []).map((s) => ({
+  const stockPorSucursal: StockSucursal[] = sucursales.map((s) => ({
     sucursal_id: s.id,
     sucursal_nombre: s.nombre,
     stock_actual: stockPorSuc.get(s.id) ?? 0,

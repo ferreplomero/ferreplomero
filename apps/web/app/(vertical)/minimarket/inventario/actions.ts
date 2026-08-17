@@ -13,6 +13,7 @@ import {
 } from "@/lib/minimarket/producto-opciones";
 import { deltaConSigno } from "@/lib/minimarket/inventario-calc";
 import { requirePermisoAccion } from "@/lib/minimarket/permisos";
+import { sucursalesPermitidas } from "@/lib/minimarket/sucursal-acceso";
 import {
   getTipoPreferido,
   getTodasLasTasas,
@@ -102,34 +103,27 @@ async function contexto() {
   return { supabase, tenantId, userId: session.user.id, country };
 }
 
-/** Primera sucursal activa del tenant (respaldo cuando no se indica una). */
+/** Primera sucursal PERMITIDA del usuario (respaldo cuando no se indica una)
+ * — nunca "la primera del tenant": eso dejaría insertar stock en una
+ * sucursal ajena al usuario aunque el formulario no la mencione. */
 async function primeraSucursal(
   supabase: Awaited<ReturnType<typeof createClient>>,
   tenantId: string,
+  profileId: string,
 ): Promise<string | null> {
-  const { data } = await supabase
-    .from("mm_sucursales")
-    .select("id")
-    .eq("tenant_id", tenantId)
-    .is("deleted_at", null)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  return data?.id ?? null;
+  const sucursales = await sucursalesPermitidas(supabase, tenantId, profileId);
+  return sucursales[0]?.id ?? null;
 }
 
-/** Todas las sucursales activas del tenant (para el desglose de stock por sucursal). */
+/** Sucursales PERMITIDAS del usuario (para el desglose de stock por sucursal
+ * y para no ofrecer/escribir en sucursales ajenas — la RLS de la migración
+ * 0111 también lo bloquearía, esto evita el intento). */
 async function listarSucursales(
   supabase: Awaited<ReturnType<typeof createClient>>,
   tenantId: string,
+  profileId: string,
 ): Promise<{ id: string; nombre: string }[]> {
-  const { data } = await supabase
-    .from("mm_sucursales")
-    .select("id, nombre")
-    .eq("tenant_id", tenantId)
-    .is("deleted_at", null)
-    .order("created_at", { ascending: true });
-  return data ?? [];
+  return sucursalesPermitidas(supabase, tenantId, profileId);
 }
 
 /** true si el checkbox `name` vino marcado en el FormData. */
@@ -353,7 +347,7 @@ export async function crearProducto(
     usuario_id: ctx.userId,
   });
 
-  const sucursales = await listarSucursales(ctx.supabase, ctx.tenantId);
+  const sucursales = await listarSucursales(ctx.supabase, ctx.tenantId, ctx.userId);
   if (sucursales.length > 1) {
     for (const s of sucursales) {
       if (!marcado(formData, `disponible_${s.id}`)) continue;
@@ -373,7 +367,8 @@ export async function crearProducto(
       }
     }
   } else {
-    const sucursalId = v.sucursal_id ?? (await primeraSucursal(ctx.supabase, ctx.tenantId));
+    const sucursalId =
+      v.sucursal_id ?? (await primeraSucursal(ctx.supabase, ctx.tenantId, ctx.userId));
     if (sucursalId) {
       if (v.stock_minimo !== undefined) {
         await aplicarStockMinimo(
@@ -493,7 +488,7 @@ export async function actualizarProducto(
     });
   }
 
-  const sucursales = await listarSucursales(ctx.supabase, ctx.tenantId);
+  const sucursales = await listarSucursales(ctx.supabase, ctx.tenantId, ctx.userId);
   let aviso: string | undefined;
   if (sucursales.length > 1) {
     const [{ data: stockRows }, { data: invRows }] = await Promise.all([
@@ -540,7 +535,8 @@ export async function actualizarProducto(
       aviso = `Tiene stock en ${noQuitadas.join(", ")} — ajústalo a 0 desde Movimientos antes de quitarlo de esa sucursal.`;
     }
   } else if (v.stock_minimo !== undefined) {
-    const sucursalId = v.sucursal_id ?? (await primeraSucursal(ctx.supabase, ctx.tenantId));
+    const sucursalId =
+      v.sucursal_id ?? (await primeraSucursal(ctx.supabase, ctx.tenantId, ctx.userId));
     if (sucursalId) {
       await aplicarStockMinimo(ctx.supabase, ctx.tenantId, id, sucursalId, v.stock_minimo);
     }
@@ -861,7 +857,8 @@ export async function registrarMovimiento(
   if (!parsed.success) return { fieldErrors: fieldErrors(parsed.error) };
   const v = parsed.data;
 
-  const sucursalId = v.sucursal_id ?? (await primeraSucursal(ctx.supabase, ctx.tenantId));
+  const sucursalId =
+    v.sucursal_id ?? (await primeraSucursal(ctx.supabase, ctx.tenantId, ctx.userId));
   if (!sucursalId) return { error: "No hay una sucursal configurada." };
 
   const { error } = await ctx.supabase.from("mm_movimientos_inventario").insert({
@@ -1350,7 +1347,7 @@ export async function cargaMasiva(_prev: CargaResult, formData: FormData): Promi
     ivaActivo: Boolean(paramsNegocio.iva_activo ?? false),
     igtfActivo: paramsNegocio.igtf_activo !== false,
   });
-  const sucursalId = await primeraSucursal(ctx.supabase, ctx.tenantId);
+  const sucursalId = await primeraSucursal(ctx.supabase, ctx.tenantId, ctx.userId);
 
   const errores: { linea: number; motivo: string }[] = [];
   let creados = 0;

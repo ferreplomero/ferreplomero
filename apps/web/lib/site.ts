@@ -45,6 +45,9 @@ export const APP_HOME = "/minimarket";
 /** Cookie que recuerda el negocio (tenant) activo del usuario. */
 export const ACTIVE_TENANT_COOKIE = "arkiteq_tenant";
 
+/** Cookie que recuerda la sucursal activa del usuario dentro del Minimarket. */
+export const ACTIVE_SUCURSAL_COOKIE = "arkiteq_sucursal";
+
 export interface NavItem {
   label: string;
   href: string;

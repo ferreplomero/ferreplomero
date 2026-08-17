@@ -9,6 +9,7 @@ import { PowerSyncProvider } from "@/components/minimarket/powersync-provider";
 import { VerticalShell } from "@/components/minimarket/vertical-shell";
 import { MINIMARKET_BASE } from "@/lib/minimarket/nav";
 import { moduloPermitido, resolverContextoPermisos } from "@/lib/minimarket/permisos";
+import { getSucursalActiva } from "@/lib/minimarket/sucursal-acceso";
 import { getTimezoneNegocio } from "@/lib/minimarket/timezone";
 import { saludoPorHora } from "@/lib/saludo";
 
@@ -74,7 +75,7 @@ export default async function MinimarketLayout({ children }: { children: React.R
   // navegación (incluida Ventas, la más visitada) — las consultas de arriba
   // son independientes entre sí (ninguna necesita el resultado de otra), así
   // que se piden en paralelo en vez de en cadena.
-  const [permisos, { data: membresia }] = await Promise.all([
+  const [permisos, { data: membresia }, sucursalActiva] = await Promise.all([
     resolverContextoPermisos(supabase, tenantId, session.user.id),
     supabase
       .from("memberships")
@@ -82,6 +83,7 @@ export default async function MinimarketLayout({ children }: { children: React.R
       .eq("tenant_id", tenantId)
       .eq("profile_id", session.user.id)
       .maybeSingle(),
+    getSucursalActiva(supabase, tenantId, session.user.id),
   ]);
 
   const pathname = (await headers()).get("x-pathname") ?? MINIMARKET_BASE;
@@ -151,6 +153,8 @@ export default async function MinimarketLayout({ children }: { children: React.R
       <VerticalShell
         businessName={businessName}
         permisos={permisos}
+        sucursalActivaId={sucursalActiva.activa?.id ?? null}
+        sucursalesPermitidas={sucursalActiva.permitidas}
         mostrarOnboarding={mostrarOnboarding}
         bienvenida={mostrarBienvenida ? { nombre: nombreUsuario, saludo: saludoPorHora(tz) } : null}
         saldosIniciales={
