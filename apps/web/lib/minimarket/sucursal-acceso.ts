@@ -6,7 +6,7 @@
  * primera disponible.
  *
  * El alcance real (qué filas puede leer/escribir en la base de datos) lo
- * impone RLS (`auth_sucursal_ids()`, migración 0111) — este archivo solo
+ * impone RLS (`auth_sucursal_ids()`, migración 0112) — este archivo solo
  * decide qué mostrar en la interfaz, con el MISMO criterio (dueño/
  * administrador ven todas; el resto, solo sus asignaciones activas; sin
  * ninguna asignación, ninguna) para que UI y base de datos nunca diverjan.
@@ -25,12 +25,52 @@ export interface SucursalAcceso {
   nombre: string;
 }
 
+/** Todas las sucursales activas del tenant (bypass de dueño/administrador). */
+async function todasLasSucursalesDelTenant(
+  supabase: Client,
+  tenantId: string,
+): Promise<SucursalAcceso[]> {
+  const { data } = await supabase
+    .from("mm_sucursales")
+    .select("id, nombre")
+    .eq("tenant_id", tenantId)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: true });
+  return data ?? [];
+}
+
+/**
+ * true si el usuario es propietario/administrador de PLATAFORMA del tenant
+ * (`memberships.role`, ver `auth_has_tenant_role()` en la migración 0003).
+ * Es la señal confiable para "es el dueño": se crea de forma atómica en el
+ * registro (`asegurarNegocioInicial`) — a diferencia de la fila operativa en
+ * `mm_usuarios_sucursal` (rol "dueno"), que solo se crea al terminar el
+ * asistente de bienvenida (opcional) y puede no existir todavía.
+ */
+async function esAdminPlataforma(
+  supabase: Client,
+  tenantId: string,
+  profileId: string,
+): Promise<boolean> {
+  const { data } = await supabase
+    .from("memberships")
+    .select("role")
+    .eq("tenant_id", tenantId)
+    .eq("profile_id", profileId)
+    .maybeSingle();
+  return data?.role === "propietario" || data?.role === "administrador";
+}
+
 /** Sucursales del tenant a las que el usuario tiene acceso (ver cabecera). */
 export async function sucursalesPermitidas(
   supabase: Client,
   tenantId: string,
   profileId: string,
 ): Promise<SucursalAcceso[]> {
+  if (await esAdminPlataforma(supabase, tenantId, profileId)) {
+    return todasLasSucursalesDelTenant(supabase, tenantId);
+  }
+
   const ctx = await resolverContextoPermisos(supabase, tenantId, profileId);
 
   // Sin ninguna asignación operativa: a diferencia del permiso de módulo (que
@@ -39,13 +79,7 @@ export async function sucursalesPermitidas(
   if (!ctx) return [];
 
   if (ctx.todasLasSucursales) {
-    const { data } = await supabase
-      .from("mm_sucursales")
-      .select("id, nombre")
-      .eq("tenant_id", tenantId)
-      .is("deleted_at", null)
-      .order("created_at", { ascending: true });
-    return data ?? [];
+    return todasLasSucursalesDelTenant(supabase, tenantId);
   }
 
   if (ctx.sucursalIds.length === 0) return [];
