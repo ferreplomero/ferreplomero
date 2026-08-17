@@ -4,6 +4,7 @@ import { getCountryConfig } from "@arkiteq/core";
 import { getSessionContext } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { listProductos, listSucursales } from "@/lib/minimarket/data/inventario";
+import { esCatalogoIrrestricto } from "@/lib/minimarket/sucursal-acceso";
 import { listClientes } from "@/lib/minimarket/data/clientes";
 import { getTasaVigente } from "@/lib/minimarket/exchange-rate";
 import { siguienteNumeroPresupuesto } from "@/lib/minimarket/data/presupuestos";
@@ -20,8 +21,9 @@ export default async function NuevoPresupuestoPage() {
   const supabase = await createClient();
   const country = getCountryConfig(session.activeTenant?.country);
 
+  const irrestricto = await esCatalogoIrrestricto(supabase, tenantId, session.user.id);
   const [productos, sucursales, clientes, tasa, configRes, numeroSugerido] = await Promise.all([
-    listProductos(supabase, tenantId),
+    listProductos(supabase, tenantId, [], irrestricto),
     listSucursales(supabase, tenantId),
     listClientes(supabase, tenantId),
     getTasaVigente(supabase, tenantId),

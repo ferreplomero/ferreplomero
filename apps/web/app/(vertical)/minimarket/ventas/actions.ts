@@ -32,7 +32,7 @@ import { getSesionAbierta } from "@/lib/minimarket/data/caja";
 import { listCuentasBancarias } from "@/lib/minimarket/data/bancos";
 import type { MmCreditoClienteTipo, MmCuentaBancaria, MmMetodoPago } from "@arkiteq/db";
 import { requirePermisoAccion } from "@/lib/minimarket/permisos";
-import { sucursalesPermitidas } from "@/lib/minimarket/sucursal-acceso";
+import { sucursalesPermitidas, esCatalogoIrrestricto } from "@/lib/minimarket/sucursal-acceso";
 
 export interface VentaItemInput {
   producto_id: string;
@@ -363,6 +363,38 @@ export async function registrarVenta(input: VentaInput): Promise<VentaResult> {
     const sucursalId = v.sucursal_id ?? permitidas[0]?.id ?? null;
     if (!sucursalId) return { error: "No tienes ninguna sucursal asignada." };
 
+    // Blindaje de servidor: cada producto vendido debe tener presencia en la
+    // sucursal de ESTA venta. El picker del POS ya filtra el catálogo que
+    // ofrece, pero eso es solo UI — esto es lo que lo hace cumplir aunque el
+    // cajero mande un producto_id ajeno directo al action, saltándose la UI.
+    // Ancla en mm_inventario/mm_v_stock, ya blindadas por RLS (0111/0112):
+    // aunque alguien manipule este chequeo, la consulta nunca puede devolver
+    // filas de una sucursal fuera del alcance del usuario.
+    const irrestricto = await esCatalogoIrrestricto(supabase, tenantId, session.user.id);
+    let presentesEnSucursal: Set<string> | null = null;
+    if (!irrestricto) {
+      const [{ data: invPresente }, { data: stockPresente }] = await Promise.all([
+        supabase
+          .from("mm_inventario")
+          .select("producto_id")
+          .eq("tenant_id", tenantId)
+          .eq("sucursal_id", sucursalId)
+          .in("producto_id", ids)
+          .is("deleted_at", null),
+        supabase
+          .from("mm_v_stock")
+          .select("producto_id")
+          .eq("tenant_id", tenantId)
+          .eq("sucursal_id", sucursalId)
+          .in("producto_id", ids),
+      ]);
+      presentesEnSucursal = new Set(
+        [...(invPresente ?? []), ...(stockPresente ?? [])]
+          .map((r) => r.producto_id)
+          .filter((id): id is string => id !== null),
+      );
+    }
+
     // Cuentas bancarias elegidas por el cajero, revalidadas contra la base:
     // deben existir, pertenecer al tenant y coincidir con el método del pago.
     // Un id que ya no aplica (ej. la cuenta se eliminó a mitad del cobro) se
@@ -402,6 +434,7 @@ export async function registrarVenta(input: VentaInput): Promise<VentaResult> {
     const lineas = v.items.map((item) => {
       const prod = mapa.get(item.producto_id);
       if (!prod) return null;
+      if (presentesEnSucursal && !presentesEnSucursal.has(prod.id)) return null;
       // El precio ajustado SOLO se aplica si el usuario tiene el permiso —
       // de lo contrario cobra el precio de catálogo, exactamente como hoy.
       // `mm_productos.precio_usd` nunca se toca en ningún caso: el ajuste

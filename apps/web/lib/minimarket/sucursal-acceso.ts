@@ -94,6 +94,24 @@ export async function sucursalesPermitidas(
   return data ?? [];
 }
 
+/**
+ * true si el usuario ve el catálogo COMPLETO del tenant sin restricción de
+ * sucursal — MISMO criterio que `sucursalesPermitidas` (dueño/administrador
+ * de plataforma, o rol operativo con `todasLasSucursales`), expuesto aquí
+ * como booleano para las capas que necesitan distinguir "ver todo el
+ * catálogo" de "ver solo los productos con presencia en mis sucursales"
+ * (filtro de catálogo en Inventario/POS — ver `listProductos`).
+ */
+export async function esCatalogoIrrestricto(
+  supabase: Client,
+  tenantId: string,
+  profileId: string,
+): Promise<boolean> {
+  if (await esAdminPlataforma(supabase, tenantId, profileId)) return true;
+  const ctx = await resolverContextoPermisos(supabase, tenantId, profileId);
+  return Boolean(ctx?.todasLasSucursales);
+}
+
 export interface SucursalActivaResult {
   activa: SucursalAcceso | null;
   permitidas: SucursalAcceso[];

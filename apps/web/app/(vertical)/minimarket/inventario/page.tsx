@@ -12,7 +12,7 @@ import {
   resumirInventario,
   siguienteCorrelativoSku,
 } from "@/lib/minimarket/data/inventario";
-import { getSucursalActiva } from "@/lib/minimarket/sucursal-acceso";
+import { getSucursalActiva, esCatalogoIrrestricto } from "@/lib/minimarket/sucursal-acceso";
 import { getTasaVigente } from "@/lib/minimarket/exchange-rate";
 import { defaultsFiscalesProducto, opcionesImpuesto } from "@/lib/minimarket/producto-opciones";
 import { InventarioCliente } from "@/components/minimarket/inventario/inventario-cliente";
@@ -35,6 +35,7 @@ export default async function InventarioPage() {
     tenantId,
     session.user.id,
   );
+  const irrestricto = await esCatalogoIrrestricto(supabase, tenantId, session.user.id);
 
   if (sucursales.length === 0) {
     return (
@@ -54,7 +55,7 @@ export default async function InventarioPage() {
   }
 
   const [productos, categorias, proveedores, skuSugerido, tasa, configRes] = await Promise.all([
-    listProductos(supabase, tenantId, sucursales),
+    listProductos(supabase, tenantId, sucursales, irrestricto),
     listCategorias(supabase, tenantId),
     listProveedores(supabase, tenantId),
     siguienteCorrelativoSku(supabase, tenantId),

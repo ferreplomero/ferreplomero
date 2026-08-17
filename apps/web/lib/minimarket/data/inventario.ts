@@ -80,17 +80,29 @@ export async function listCategorias(client: Client, tenantId: string): Promise<
  * consulten sin filtro explícito de sucursal, Postgres nunca devuelve filas
  * de sucursales fuera del alcance del usuario.
  *
- * `sucursales` es opcional (default `[]`) para los llamadores que todavía no
- * están aislados por sucursal (Ventas, Presupuestos, exportar — fuera del
- * alcance de esta fase): sin la lista, el desglose `stockPorSucursal` de
- * cada producto queda vacío, pero los totales agregados (`stock_actual`,
- * `stock_minimo`, `bajo_minimo`) siguen siendo correctos porque ya vienen
- * filtrados por RLS, no por este parámetro.
+ * `sucursales` es opcional (default `[]`): solo decide sobre qué sucursales
+ * construir el desglose `stockPorSucursal` (sin la lista, ese desglose queda
+ * vacío, pero los totales agregados siguen correctos porque ya vienen
+ * filtrados por RLS).
+ *
+ * `irrestricto` decide qué PRODUCTOS entran en la lista, no solo sus
+ * números: `mm_productos` es catálogo compartido por tenant (RLS solo por
+ * tenant_id, migración 0007 — filtrarlo con RLS por sucursal rompería
+ * Compras/Presupuestos/Reportes, que necesitan verlo completo). Con
+ * `irrestricto=false` (empleado de una o varias sucursales), se descartan
+ * los productos sin presencia (fila en `mm_inventario` o `mm_v_stock`) en
+ * NINGUNA sucursal permitida del usuario — usando `stockRes`/`invRes`, que
+ * ya vienen recortados por RLS a esas sucursales, así que el filtro no
+ * puede ampliarse aunque alguien manipule este parámetro: como mucho puede
+ * quedar más restrictivo que la RLS real, nunca menos. `irrestricto=true`
+ * (dueño/administrador) no filtra nada — ve el catálogo completo, incluidos
+ * productos sin stock en ninguna sucursal todavía (alta reciente).
  */
 export async function listProductos(
   client: Client,
   tenantId: string,
   sucursales: { id: string }[] = [],
+  irrestricto = false,
 ): Promise<ProductoConStock[]> {
   const [prodRes, catRes, provRes, codRes, stockRes, invRes] = await Promise.all([
     client
@@ -154,7 +166,19 @@ export async function listProductos(
 
   const stockPresente = new Set(stockPorProductoSucursal.keys());
 
-  return (prodRes.data ?? []).map((producto) => {
+  // Presencia del producto en CUALQUIER sucursal permitida del usuario
+  // (unión) — `stockRes`/`invRes` ya vienen recortados por RLS, así que
+  // basta con haber aparecido en cualquiera de las dos.
+  const presenteEnMisSucursales = new Set<string>([
+    ...stockPorProducto.keys(),
+    ...minimoPorProducto.keys(),
+  ]);
+
+  const productosBase = irrestricto
+    ? (prodRes.data ?? [])
+    : (prodRes.data ?? []).filter((p) => presenteEnMisSucursales.has(p.id));
+
+  return productosBase.map((producto) => {
     const stock = stockPorProducto.get(producto.id) ?? 0;
     const minimo = minimoPorProducto.has(producto.id)
       ? (minimoPorProducto.get(producto.id) ?? 0)
@@ -231,13 +255,18 @@ export interface ProductoDetalle {
 /**
  * Carga el detalle completo de un producto: stock por sucursal + históricos.
  * `sucursales` es la lista de sucursales PERMITIDAS del usuario (mismo
- * criterio que `listProductos` — ver su comentario).
+ * criterio que `listProductos` — ver su comentario). `irrestricto` (mismo
+ * criterio también) hace que un empleado sin presencia del producto en
+ * ninguna de sus sucursales reciba `null` (404 en la página), igual que si
+ * el producto no existiera — no debe poder llegar al detalle de un producto
+ * ajeno ni por URL directa.
  */
 export async function getProductoDetalle(
   client: Client,
   tenantId: string,
   productoId: string,
   sucursales: { id: string; nombre: string }[],
+  irrestricto = false,
 ): Promise<ProductoDetalle | null> {
   const { data: prod, error: prodErr } = await client
     .from("mm_productos")
@@ -309,6 +338,13 @@ export async function getProductoDetalle(
   for (const row of invRes.data ?? []) {
     minimoPorSuc.set(row.sucursal_id, Number(row.stock_minimo ?? 0));
     inventarioPresenteSuc.add(row.sucursal_id);
+  }
+
+  // Mismo criterio que `listProductos`: sin presencia en ninguna sucursal
+  // permitida (datos ya recortados por RLS), el producto no existe para
+  // este usuario — 404, no "0 en stock".
+  if (!irrestricto && stockPresenteSuc.size === 0 && inventarioPresenteSuc.size === 0) {
+    return null;
   }
 
   const stockPorSucursal: StockSucursal[] = sucursales.map((s) => ({

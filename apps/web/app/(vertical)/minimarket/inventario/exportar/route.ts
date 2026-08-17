@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSessionContext } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { listProductos } from "@/lib/minimarket/data/inventario";
+import { esCatalogoIrrestricto } from "@/lib/minimarket/sucursal-acceso";
 
 /** Escapa un valor para CSV (comillas dobles si contiene coma, comilla o salto). */
 function csv(value: string | number | null | undefined): string {
@@ -35,7 +36,8 @@ export async function GET() {
   }
 
   const supabase = await createClient();
-  const productos = await listProductos(supabase, tenantId);
+  const irrestricto = await esCatalogoIrrestricto(supabase, tenantId, session.user.id);
+  const productos = await listProductos(supabase, tenantId, [], irrestricto);
 
   const filas = productos.map((p) =>
     [

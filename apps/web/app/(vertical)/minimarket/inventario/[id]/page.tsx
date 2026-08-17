@@ -8,7 +8,7 @@ import { getCountryConfig } from "@arkiteq/core";
 import { getSessionContext } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getProductoDetalle, type MovimientoConDetalle } from "@/lib/minimarket/data/inventario";
-import { sucursalesPermitidas } from "@/lib/minimarket/sucursal-acceso";
+import { sucursalesPermitidas, esCatalogoIrrestricto } from "@/lib/minimarket/sucursal-acceso";
 import { getTasaVigente } from "@/lib/minimarket/exchange-rate";
 import { getTimezoneNegocio } from "@/lib/minimarket/timezone";
 import { fmtFechaHora, fmtFechaCorta } from "@/lib/minimarket/date-format";
@@ -33,8 +33,9 @@ export default async function ProductoDetallePage({ params }: { params: Promise<
   const country = getCountryConfig(session.activeTenant?.country);
 
   const sucursales = await sucursalesPermitidas(supabase, tenantId, session.user.id);
+  const irrestricto = await esCatalogoIrrestricto(supabase, tenantId, session.user.id);
   const [detalle, tasa, tz] = await Promise.all([
-    getProductoDetalle(supabase, tenantId, id, sucursales),
+    getProductoDetalle(supabase, tenantId, id, sucursales, irrestricto),
     getTasaVigente(supabase, tenantId),
     getTimezoneNegocio(supabase, tenantId),
   ]);

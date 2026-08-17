@@ -6,6 +6,7 @@ import { getCountryConfig } from "@arkiteq/core";
 import { getSessionContext } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { listProductos, listSucursales } from "@/lib/minimarket/data/inventario";
+import { esCatalogoIrrestricto } from "@/lib/minimarket/sucursal-acceso";
 import { listClientes } from "@/lib/minimarket/data/clientes";
 import { getPresupuestoDetalle } from "@/lib/minimarket/data/presupuestos";
 import { getTimezoneNegocio } from "@/lib/minimarket/timezone";
@@ -29,9 +30,10 @@ export default async function EditarPresupuestoPage({ params }: Props) {
   const country = getCountryConfig(session.activeTenant?.country);
   const tz = await getTimezoneNegocio(supabase, tenantId);
 
+  const irrestricto = await esCatalogoIrrestricto(supabase, tenantId, session.user.id);
   const [presupuesto, productos, sucursales, clientes, configRes] = await Promise.all([
     getPresupuestoDetalle(supabase, tenantId, id, tz),
-    listProductos(supabase, tenantId),
+    listProductos(supabase, tenantId, [], irrestricto),
     listSucursales(supabase, tenantId),
     listClientes(supabase, tenantId),
     supabase.from("mm_config_negocio").select("parametros").eq("tenant_id", tenantId).maybeSingle(),

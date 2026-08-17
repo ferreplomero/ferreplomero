@@ -7,7 +7,7 @@ import { getCountryConfig } from "@arkiteq/core";
 import { getSessionContext } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { listProductos } from "@/lib/minimarket/data/inventario";
-import { getSucursalActiva } from "@/lib/minimarket/sucursal-acceso";
+import { getSucursalActiva, esCatalogoIrrestricto } from "@/lib/minimarket/sucursal-acceso";
 import { SucursalSwitcher } from "@/components/minimarket/sucursal-switcher";
 import { listClientes } from "@/lib/minimarket/data/clientes";
 import { getTodasLasTasas, getTipoPreferido } from "@/lib/minimarket/exchange-rate";
@@ -45,6 +45,7 @@ export default async function NuevaVentaPage({ searchParams }: Props) {
     tenantId,
     session.user.id,
   );
+  const irrestricto = await esCatalogoIrrestricto(supabase, tenantId, session.user.id);
 
   if (sucursales.length === 0 || !sucursalActiva) {
     return (
@@ -73,7 +74,7 @@ export default async function NuevaVentaPage({ searchParams }: Props) {
     cuentasBancarias,
     permisosCtx,
   ] = await Promise.all([
-    listProductos(supabase, tenantId, sucursales),
+    listProductos(supabase, tenantId, sucursales, irrestricto),
     getTodasLasTasas(supabase, tenantId),
     getTipoPreferido(supabase, tenantId),
     listClientes(supabase, tenantId),
