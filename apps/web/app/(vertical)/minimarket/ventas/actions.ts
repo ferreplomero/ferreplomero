@@ -32,6 +32,7 @@ import { getSesionAbierta } from "@/lib/minimarket/data/caja";
 import { listCuentasBancarias } from "@/lib/minimarket/data/bancos";
 import type { MmCreditoClienteTipo, MmCuentaBancaria, MmMetodoPago } from "@arkiteq/db";
 import { requirePermisoAccion } from "@/lib/minimarket/permisos";
+import { sucursalesPermitidas } from "@/lib/minimarket/sucursal-acceso";
 
 export interface VentaItemInput {
   producto_id: string;
@@ -261,7 +262,6 @@ export async function registrarVenta(input: VentaInput): Promise<VentaResult> {
     // Promise.all. Las condicionales usan un Promise.resolve de respaldo
     // para no complicar el paralelismo con ramas opcionales.
     const ids = v.items.map((i) => i.producto_id);
-    const necesitaSucursal = !v.sucursal_id;
     const clienteIdParaFiado = tieneFiado ? (v.cliente_id ?? null) : null;
     const clienteIdParaCredito = tieneCredito ? (v.cliente_id ?? null) : null;
 
@@ -279,7 +279,7 @@ export async function registrarVenta(input: VentaInput): Promise<VentaResult> {
     const [
       tasa,
       configRes,
-      sucRes,
+      permitidas,
       prodRes,
       countRes,
       clResult,
@@ -293,16 +293,7 @@ export async function registrarVenta(input: VentaInput): Promise<VentaResult> {
         .select("parametros")
         .eq("tenant_id", tenantId)
         .maybeSingle(),
-      necesitaSucursal
-        ? supabase
-            .from("mm_sucursales")
-            .select("id")
-            .eq("tenant_id", tenantId)
-            .is("deleted_at", null)
-            .order("created_at", { ascending: true })
-            .limit(1)
-            .maybeSingle()
-        : Promise.resolve({ data: null, error: null }),
+      sucursalesPermitidas(supabase, tenantId, session.user.id),
       supabase
         .from("mm_productos")
         .select("id, nombre, precio_usd, impuesto_id, aplica_igtf")
@@ -362,9 +353,15 @@ export async function registrarVenta(input: VentaInput): Promise<VentaResult> {
     const ivaActivo = v.iva_activo_override ?? Boolean(params.iva_activo ?? false);
     const ivaPct = Number(params.iva_pct ?? 16);
 
-    // Sucursal destino.
-    const sucursalId = v.sucursal_id ?? sucRes.data?.id ?? null;
-    if (!sucursalId) return { error: "No hay una sucursal configurada." };
+    // Sucursal destino: si el cajero mandó una, debe ser una a la que tiene
+    // acceso (nunca se confía a ciegas, mismo criterio que
+    // `cambiarSucursalActivaAction`); si no mandó ninguna, se usa su primera
+    // sucursal permitida — nunca "la primera del tenant".
+    if (v.sucursal_id && !permitidas.some((s) => s.id === v.sucursal_id)) {
+      return { error: "No tienes acceso a esa sucursal." };
+    }
+    const sucursalId = v.sucursal_id ?? permitidas[0]?.id ?? null;
+    if (!sucursalId) return { error: "No tienes ninguna sucursal asignada." };
 
     // Cuentas bancarias elegidas por el cajero, revalidadas contra la base:
     // deben existir, pertenecer al tenant y coincidir con el método del pago.

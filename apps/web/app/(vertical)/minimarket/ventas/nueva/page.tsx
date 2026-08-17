@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { LockKeyhole } from "lucide-react";
-import { Button } from "@arkiteq/ui";
+import { LockKeyhole, Store } from "lucide-react";
+import { Button, Card } from "@arkiteq/ui";
 import { getCountryConfig } from "@arkiteq/core";
 import { getSessionContext } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
-import { listProductos, listSucursales } from "@/lib/minimarket/data/inventario";
+import { listProductos } from "@/lib/minimarket/data/inventario";
+import { getSucursalActiva } from "@/lib/minimarket/sucursal-acceso";
+import { SucursalSwitcher } from "@/components/minimarket/sucursal-switcher";
 import { listClientes } from "@/lib/minimarket/data/clientes";
 import { getTodasLasTasas, getTipoPreferido } from "@/lib/minimarket/exchange-rate";
 import { getSesionAbierta } from "@/lib/minimarket/data/caja";
@@ -35,9 +37,33 @@ export default async function NuevaVentaPage({ searchParams }: Props) {
   const supabase = await createClient();
   const country = getCountryConfig(session.activeTenant?.country);
 
+  // La sucursal activa primero: `listProductos` la necesita para el
+  // desglose por sucursal, y el catálogo del POS se remapea a sus números
+  // (ver más abajo) — nunca al agregado del tenant.
+  const { activa: sucursalActiva, permitidas: sucursales } = await getSucursalActiva(
+    supabase,
+    tenantId,
+    session.user.id,
+  );
+
+  if (sucursales.length === 0 || !sucursalActiva) {
+    return (
+      <div className="mx-auto max-w-2xl">
+        <Card className="flex flex-col items-center gap-3 p-12 text-center">
+          <span className="bg-warning/12 text-warning inline-flex size-12 items-center justify-center rounded-2xl">
+            <LockKeyhole className="size-6" aria-hidden />
+          </span>
+          <p className="text-heading font-medium">No tienes ninguna sucursal asignada</p>
+          <p className="text-muted-foreground max-w-sm text-sm">
+            Pídele al administrador que te asigne una sucursal desde Personal para poder vender.
+          </p>
+        </Card>
+      </div>
+    );
+  }
+
   const [
-    productos,
-    sucursales,
+    productosRaw,
     tasas,
     fuentePreferida,
     clientes,
@@ -47,8 +73,7 @@ export default async function NuevaVentaPage({ searchParams }: Props) {
     cuentasBancarias,
     permisosCtx,
   ] = await Promise.all([
-    listProductos(supabase, tenantId),
-    listSucursales(supabase, tenantId),
+    listProductos(supabase, tenantId, sucursales),
     getTodasLasTasas(supabase, tenantId),
     getTipoPreferido(supabase, tenantId),
     listClientes(supabase, tenantId),
@@ -62,6 +87,23 @@ export default async function NuevaVentaPage({ searchParams }: Props) {
     listCuentasBancarias(supabase, tenantId),
     resolverContextoPermisos(supabase, tenantId, session.user.id),
   ]);
+
+  // Catálogo remapeado a la sucursal ACTIVA: solo productos con presencia
+  // ahí, con SU stock (no el agregado del tenant) — así el filtro
+  // "vendibles" de más abajo ya solo deja pasar lo disponible en esta
+  // sucursal, sin tocar ese filtro ni `pos-cliente.tsx`.
+  const productos = productosRaw.flatMap((p) => {
+    const fila = p.stockPorSucursal.find((s) => s.sucursal_id === sucursalActiva.id);
+    if (!fila?.disponible) return [];
+    return [
+      {
+        ...p,
+        stock_actual: fila.stock_actual,
+        stock_minimo: fila.stock_minimo > 0 ? fila.stock_minimo : null,
+        bajo_minimo: fila.stock_minimo > 0 && fila.stock_actual <= fila.stock_minimo,
+      },
+    ];
+  });
   // Sin asignación operativa (ver `permisos.ts`) = sin restricción, igual
   // criterio que el resto del sistema de roles/permisos.
   const puedeAjustarPrecio = permisosCtx ? Boolean(permisosCtx.permisos.ventas?.editar) : true;
@@ -171,11 +213,21 @@ export default async function NuevaVentaPage({ searchParams }: Props) {
 
   return (
     <div className="space-y-5">
-      <header className="space-y-1">
-        <h1 className="font-display text-heading text-2xl font-semibold">Nueva venta</h1>
-        <p className="text-muted-foreground">
-          Toca los productos para armar el carrito. Puedes cobrar con varios métodos a la vez.
-        </p>
+      <header className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
+          <h1 className="font-display text-heading text-2xl font-semibold">Nueva venta</h1>
+          <p className="text-muted-foreground">
+            Toca los productos para armar el carrito. Puedes cobrar con varios métodos a la vez.
+          </p>
+        </div>
+        <div className="border-border bg-surface-2 flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2">
+          <Store className="text-accent-600 size-4 shrink-0" aria-hidden />
+          {sucursales.length > 1 ? (
+            <SucursalSwitcher activaId={sucursalActiva.id} permitidas={sucursales} />
+          ) : (
+            <span className="text-heading text-sm font-medium">{sucursalActiva.nombre}</span>
+          )}
+        </div>
       </header>
 
       {!tasa ? (
@@ -199,7 +251,7 @@ export default async function NuevaVentaPage({ searchParams }: Props) {
         }}
         fuentePreferida={fuentePreferida}
         locale={country.locale}
-        sucursalId={sucursales[0]?.id ?? null}
+        sucursalId={sucursalActiva.id}
         igtfActivo={igtfActivo}
         ivaActivo={ivaActivo}
         ivaPct={ivaPct}
