@@ -54,23 +54,37 @@ export default async function PersonalPage() {
   const rolMap = new Map(roles.map((r) => [r.id, r]));
   const sucursalMap = new Map(sucursales.map((s) => [s.id, s.nombre]));
 
-  const miembros: MiembroPersonal[] = asignaciones.map((a) => {
+  // Una persona por fila, no una fila por asignación: alguien con varias
+  // sucursales tenía tantas filas idénticas (mismo nombre/correo) como
+  // asignaciones — confuso, y el botón "Eliminar" de cualquiera de esas
+  // filas borraba la cuenta ENTERA, no solo esa sucursal.
+  const porPersona = new Map<string, MiembroPersonal>();
+  for (const a of asignaciones) {
     const perfil = profileMap.get(a.profile_id);
     const rol = rolMap.get(a.rol_id);
-    return {
+    const asignacionItem = {
       asignacionId: a.id,
-      profileId: a.profile_id,
-      nombre: perfil?.full_name ?? "(sin nombre)",
-      email: perfil?.email ?? "",
-      whatsapp: perfil?.whatsapp ?? "",
       sucursalId: a.sucursal_id,
       sucursalNombre: sucursalMap.get(a.sucursal_id) ?? "Sucursal",
       rolId: a.rol_id,
       rolNombre: rol?.nombre ?? "Rol",
+    };
+    const existente = porPersona.get(a.profile_id);
+    if (existente) {
+      existente.asignaciones.push(asignacionItem);
+      continue;
+    }
+    porPersona.set(a.profile_id, {
+      profileId: a.profile_id,
+      nombre: perfil?.full_name ?? "(sin nombre)",
+      email: perfil?.email ?? "",
+      whatsapp: perfil?.whatsapp ?? "",
       activo: a.activo,
       esDuenoPrincipal: a.profile_id === duenoPrincipalId,
-    };
-  });
+      asignaciones: [asignacionItem],
+    });
+  }
+  const miembros: MiembroPersonal[] = [...porPersona.values()];
 
   const rolesDisponibles: RolDisponible[] = roles.map((r) => ({
     id: r.id,

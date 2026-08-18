@@ -16,7 +16,7 @@ import { cookies } from "next/headers";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@arkiteq/db";
 import { ACTIVE_SUCURSAL_COOKIE } from "@/lib/site";
-import { resolverContextoPermisos } from "@/lib/minimarket/permisos";
+import { resolverContextoPermisos, esAdminPlataforma } from "@/lib/minimarket/permisos";
 
 type Client = SupabaseClient<Database>;
 
@@ -37,28 +37,6 @@ async function todasLasSucursalesDelTenant(
     .is("deleted_at", null)
     .order("created_at", { ascending: true });
   return data ?? [];
-}
-
-/**
- * true si el usuario es propietario/administrador de PLATAFORMA del tenant
- * (`memberships.role`, ver `auth_has_tenant_role()` en la migración 0003).
- * Es la señal confiable para "es el dueño": se crea de forma atómica en el
- * registro (`asegurarNegocioInicial`) — a diferencia de la fila operativa en
- * `mm_usuarios_sucursal` (rol "dueno"), que solo se crea al terminar el
- * asistente de bienvenida (opcional) y puede no existir todavía.
- */
-async function esAdminPlataforma(
-  supabase: Client,
-  tenantId: string,
-  profileId: string,
-): Promise<boolean> {
-  const { data } = await supabase
-    .from("memberships")
-    .select("role")
-    .eq("tenant_id", tenantId)
-    .eq("profile_id", profileId)
-    .maybeSingle();
-  return data?.role === "propietario" || data?.role === "administrador";
 }
 
 /** Sucursales del tenant a las que el usuario tiene acceso (ver cabecera). */

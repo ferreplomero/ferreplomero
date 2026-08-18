@@ -10,7 +10,11 @@
 import { revalidatePath } from "next/cache";
 import { getSessionContext } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
-import { moduloPermitido, resolverContextoPermisos } from "@/lib/minimarket/permisos";
+import {
+  esAdminPlataforma,
+  moduloPermitido,
+  resolverContextoPermisos,
+} from "@/lib/minimarket/permisos";
 
 export async function marcarAvisoSaldosVistoAction(): Promise<{ ok: boolean }> {
   const session = await getSessionContext();
@@ -18,8 +22,11 @@ export async function marcarAvisoSaldosVistoAction(): Promise<{ ok: boolean }> {
   if (!session || !tenantId) return { ok: false };
 
   const supabase = await createClient();
-  const permisos = await resolverContextoPermisos(supabase, tenantId, session.user.id);
-  if (!moduloPermitido("/minimarket/configuracion", permisos)) return { ok: false };
+  const [permisos, esAdmin] = await Promise.all([
+    resolverContextoPermisos(supabase, tenantId, session.user.id),
+    esAdminPlataforma(supabase, tenantId, session.user.id),
+  ]);
+  if (!moduloPermitido("/minimarket/configuracion", permisos, esAdmin)) return { ok: false };
 
   const { error } = await supabase
     .from("mm_config_negocio")

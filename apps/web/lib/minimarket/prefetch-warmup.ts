@@ -42,13 +42,14 @@ export function _reiniciarPrecalentamientoParaPruebas(): void {
 export function precalentarRutasCriticas(
   router: RouterConPrefetch,
   permisos: ContextoPermisos | null,
+  esAdmin: boolean,
 ): void {
   if (yaPrecalentado) return;
   if (typeof navigator === "undefined" || !navigator.onLine) return;
   yaPrecalentado = true;
 
   for (const ruta of RUTAS_CRITICAS) {
-    if (!moduloPermitido(ruta, permisos)) continue;
+    if (!moduloPermitido(ruta, permisos, esAdmin)) continue;
     try {
       router.prefetch(ruta);
     } catch (error) {

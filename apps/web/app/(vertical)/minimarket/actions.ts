@@ -12,7 +12,11 @@ import { revalidatePath } from "next/cache";
 import { getSessionContext } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import type { TablesUpdate } from "@arkiteq/db";
-import { moduloPermitido, resolverContextoPermisos } from "@/lib/minimarket/permisos";
+import {
+  esAdminPlataforma,
+  moduloPermitido,
+  resolverContextoPermisos,
+} from "@/lib/minimarket/permisos";
 
 export type TipoAvisoBienvenida = "caja" | "fiscal" | "pagos";
 
@@ -31,8 +35,11 @@ export async function descartarAvisoAction(tipo: TipoAvisoBienvenida): Promise<{
   if (!session || !tenantId) return { ok: false };
 
   const supabase = await createClient();
-  const permisos = await resolverContextoPermisos(supabase, tenantId, session.user.id);
-  if (!moduloPermitido(RUTA_REQUERIDA[tipo], permisos)) return { ok: false };
+  const [permisos, esAdmin] = await Promise.all([
+    resolverContextoPermisos(supabase, tenantId, session.user.id),
+    esAdminPlataforma(supabase, tenantId, session.user.id),
+  ]);
+  if (!moduloPermitido(RUTA_REQUERIDA[tipo], permisos, esAdmin)) return { ok: false };
 
   let datos: ActualizacionConfig;
   switch (tipo) {

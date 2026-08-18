@@ -41,7 +41,11 @@ import { getTimezoneNegocio } from "@/lib/minimarket/timezone";
 import { fmtFechaLarga } from "@/lib/minimarket/date-format";
 import { METODOS_PAGO } from "@/lib/minimarket/constants";
 import { parseMetodosPago, tieneMedioPagoConfigurado } from "@/lib/minimarket/metodos-pago";
-import { moduloPermitido, resolverContextoPermisos } from "@/lib/minimarket/permisos";
+import {
+  esAdminPlataforma,
+  moduloPermitido,
+  resolverContextoPermisos,
+} from "@/lib/minimarket/permisos";
 import { TableroHeader } from "@/components/minimarket/tablero/tablero-header";
 import { MetricaCard } from "@/components/minimarket/tablero/metrica-card";
 import { NegocioCard } from "@/components/minimarket/tablero/negocio-card";
@@ -144,9 +148,12 @@ export default async function TableroPage({
   // de "recién aprovisionado" — no dependen solo del flag, así que un negocio
   // que ya activó sus impuestos o ya cargó medios de pago deja de verlos aunque
   // nunca los haya descartado a mano.
-  const permisos = await resolverContextoPermisos(supabase, tenantId, session.user.id);
-  const puedeCaja = moduloPermitido("/minimarket/caja", permisos);
-  const puedeConfigurar = moduloPermitido("/minimarket/configuracion", permisos);
+  const [permisos, esAdmin] = await Promise.all([
+    resolverContextoPermisos(supabase, tenantId, session.user.id),
+    esAdminPlataforma(supabase, tenantId, session.user.id),
+  ]);
+  const puedeCaja = moduloPermitido("/minimarket/caja", permisos, esAdmin);
+  const puedeConfigurar = moduloPermitido("/minimarket/configuracion", permisos, esAdmin);
 
   const cajaEnCero =
     Boolean(sesionCaja) &&

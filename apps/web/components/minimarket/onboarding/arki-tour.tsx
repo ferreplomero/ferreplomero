@@ -18,6 +18,7 @@ export interface ArkiTourProps {
   /** true = onboarding pendiente en el servidor: autoinicia el tour al montar. */
   mostrarInicial: boolean;
   permisos: ContextoPermisos | null;
+  esAdmin: boolean;
   drawerOpen: boolean;
   onSetDrawerOpen: (open: boolean) => void;
 }
@@ -70,7 +71,13 @@ function ajustarPopoverAlViewport(wrapper: HTMLElement) {
   }
 }
 
-export function ArkiTour({ mostrarInicial, permisos, drawerOpen, onSetDrawerOpen }: ArkiTourProps) {
+export function ArkiTour({
+  mostrarInicial,
+  permisos,
+  esAdmin,
+  drawerOpen,
+  onSetDrawerOpen,
+}: ArkiTourProps) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -81,12 +88,12 @@ export function ArkiTour({ mostrarInicial, permisos, drawerOpen, onSetDrawerOpen
   // un cajero nunca ve pasos de Inventario/Tasa/Reportes, por ejemplo.
   const pasos = React.useMemo(() => {
     const idsPermitidos = new Set(
-      MINIMARKET_NAV.filter((item) => item.tourId && moduloPermitido(item.href, permisos)).map(
-        (item) => item.tourId,
-      ),
+      MINIMARKET_NAV.filter(
+        (item) => item.tourId && moduloPermitido(item.href, permisos, esAdmin),
+      ).map((item) => item.tourId),
     );
     return ARKI_TOUR_STEPS.filter((paso) => !paso.tourId || idsPermitidos.has(paso.tourId));
-  }, [permisos]);
+  }, [permisos, esAdmin]);
 
   const driverRef = React.useRef<Driver | null>(null);
   const drawerOpenRef = React.useRef(drawerOpen);

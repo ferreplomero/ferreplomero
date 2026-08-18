@@ -40,6 +40,10 @@ interface VerticalShellProps {
   businessName: string;
   /** Contexto de permisos del usuario en el tenant activo; null = sin restricción. */
   permisos: ContextoPermisos | null;
+  /** true = dueño/administrador de PLATAFORMA (ver `esAdminPlataforma`) — decide
+   * el acceso a módulos sensibles (Personal/Configuración) cuando `permisos` es
+   * null, ver `moduloPermitido`. */
+  esAdmin: boolean;
   /** Sucursal activa (null si el usuario no tiene ninguna asignada). */
   sucursalActivaId: string | null;
   /** Sucursales a las que el usuario tiene acceso (para el selector). */
@@ -90,15 +94,17 @@ function Brand() {
 
 function NavLinks({
   permisos,
+  esAdmin,
   onNavigate,
 }: {
   permisos: ContextoPermisos | null;
+  esAdmin: boolean;
   onNavigate?: () => void;
 }) {
   const pathname = usePathname();
   const items = React.useMemo(
-    () => MINIMARKET_NAV.filter((item) => moduloPermitido(item.href, permisos)),
-    [permisos],
+    () => MINIMARKET_NAV.filter((item) => moduloPermitido(item.href, permisos, esAdmin)),
+    [permisos, esAdmin],
   );
 
   const [openMenus, setOpenMenus] = React.useState<Record<string, boolean>>(() => {
@@ -212,6 +218,7 @@ function NavLinks({
 export function VerticalShell({
   businessName,
   permisos,
+  esAdmin,
   sucursalActivaId,
   sucursalesPermitidas,
   mostrarOnboarding,
@@ -235,7 +242,7 @@ export function VerticalShell({
   // actual. No hace nada si no hay conexión; como mucho una vez por sesión.
   React.useEffect(() => {
     const id = window.setTimeout(() => {
-      precalentarRutasCriticas(router, permisos);
+      precalentarRutasCriticas(router, permisos, esAdmin);
     }, 2000);
     return () => window.clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -267,7 +274,7 @@ export function VerticalShell({
           <Brand />
         </div>
         <div className="flex-1 overflow-y-auto p-3">
-          <NavLinks permisos={permisos} />
+          <NavLinks permisos={permisos} esAdmin={esAdmin} />
         </div>
         <div className="border-border space-y-2 border-t p-3">
           <p className="text-muted-foreground truncate px-2 text-xs" title={businessName}>
@@ -300,7 +307,11 @@ export function VerticalShell({
               </Button>
             </div>
             <div className="flex-1 overflow-y-auto p-3">
-              <NavLinks permisos={permisos} onNavigate={() => setDrawerOpen(false)} />
+              <NavLinks
+                permisos={permisos}
+                esAdmin={esAdmin}
+                onNavigate={() => setDrawerOpen(false)}
+              />
             </div>
             <div className="border-border space-y-2 border-t p-3">
               <SucursalSwitcher activaId={sucursalActivaId} permitidas={sucursalesPermitidas} />
@@ -339,6 +350,7 @@ export function VerticalShell({
       <ArkiTour
         mostrarInicial={mostrarOnboarding}
         permisos={permisos}
+        esAdmin={esAdmin}
         drawerOpen={drawerOpen}
         onSetDrawerOpen={setDrawerOpen}
       />

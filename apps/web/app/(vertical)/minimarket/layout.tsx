@@ -8,7 +8,11 @@ import { getPlatformSettings } from "@/lib/platform/settings";
 import { PowerSyncProvider } from "@/components/minimarket/powersync-provider";
 import { VerticalShell } from "@/components/minimarket/vertical-shell";
 import { MINIMARKET_BASE } from "@/lib/minimarket/nav";
-import { moduloPermitido, resolverContextoPermisos } from "@/lib/minimarket/permisos";
+import {
+  esAdminPlataforma,
+  moduloPermitido,
+  resolverContextoPermisos,
+} from "@/lib/minimarket/permisos";
 import { getSucursalActiva } from "@/lib/minimarket/sucursal-acceso";
 import { getTimezoneNegocio } from "@/lib/minimarket/timezone";
 import { saludoPorHora } from "@/lib/saludo";
@@ -75,7 +79,7 @@ export default async function MinimarketLayout({ children }: { children: React.R
   // navegación (incluida Ventas, la más visitada) — las consultas de arriba
   // son independientes entre sí (ninguna necesita el resultado de otra), así
   // que se piden en paralelo en vez de en cadena.
-  const [permisos, { data: membresia }, sucursalActiva] = await Promise.all([
+  const [permisos, { data: membresia }, sucursalActiva, esAdmin] = await Promise.all([
     resolverContextoPermisos(supabase, tenantId, session.user.id),
     supabase
       .from("memberships")
@@ -84,12 +88,13 @@ export default async function MinimarketLayout({ children }: { children: React.R
       .eq("profile_id", session.user.id)
       .maybeSingle(),
     getSucursalActiva(supabase, tenantId, session.user.id),
+    esAdminPlataforma(supabase, tenantId, session.user.id),
   ]);
 
   const pathname = (await headers()).get("x-pathname") ?? MINIMARKET_BASE;
   const enBienvenida = pathname.startsWith(`${MINIMARKET_BASE}/bienvenida`);
 
-  if (!moduloPermitido(pathname, permisos)) {
+  if (!moduloPermitido(pathname, permisos, esAdmin)) {
     redirect(`${MINIMARKET_BASE}?acceso=restringido`);
   }
 
@@ -101,7 +106,7 @@ export default async function MinimarketLayout({ children }: { children: React.R
   // le falta pasar por ahí, para ofrecerle la tarjeta descartable en el
   // tablero (`NegocioCard`). Si nunca la completa, el sistema sigue
   // funcionando con los valores por defecto (nombre genérico, sin RIF/rubro).
-  const puedeConfigurar = moduloPermitido(`${MINIMARKET_BASE}/configuracion`, permisos);
+  const puedeConfigurar = moduloPermitido(`${MINIMARKET_BASE}/configuracion`, permisos, esAdmin);
   const necesitaDatosIniciales =
     puedeConfigurar && !configError && !configBase?.datos_completados_en;
 
@@ -153,6 +158,7 @@ export default async function MinimarketLayout({ children }: { children: React.R
       <VerticalShell
         businessName={businessName}
         permisos={permisos}
+        esAdmin={esAdmin}
         sucursalActivaId={sucursalActiva.activa?.id ?? null}
         sucursalesPermitidas={sucursalActiva.permitidas}
         mostrarOnboarding={mostrarOnboarding}

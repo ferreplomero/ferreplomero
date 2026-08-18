@@ -6,6 +6,7 @@ import { getSessionContext } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getOrCreateConfigId, guardarLogoNegocio } from "@/lib/minimarket/config-negocio";
 import { METODOS_PAGO_IDS } from "@/lib/minimarket/metodos-pago";
+import { requirePermisoAccion } from "@/lib/minimarket/permisos";
 
 const CONFIG_PATH = "/minimarket/configuracion";
 
@@ -74,6 +75,15 @@ export async function actualizarNegocio(
 ): Promise<ConfigResult> {
   const ctx = await contexto();
   if (!ctx) return { error: "Sesión no válida." };
+
+  const permisoError = await requirePermisoAccion(
+    ctx.supabase,
+    ctx.tenantId,
+    ctx.userId,
+    "configuracion",
+    "editar",
+  );
+  if (permisoError) return { error: permisoError };
 
   const raw = {
     nombre_comercial: formData.get("nombre_comercial"),
@@ -401,6 +411,15 @@ export async function crearSucursal(
   const ctx = await contexto();
   if (!ctx) return { error: "Sesión no válida." };
 
+  const permisoError = await requirePermisoAccion(
+    ctx.supabase,
+    ctx.tenantId,
+    ctx.userId,
+    "configuracion",
+    "crear",
+  );
+  if (permisoError) return { error: permisoError };
+
   const parsed = sucursalSchema.safeParse({
     nombre: formData.get("nombre"),
     direccion: (formData.get("direccion") as string | null)?.trim() || undefined,
@@ -430,6 +449,15 @@ export async function actualizarSucursal(
   const ctx = await contexto();
   if (!ctx) return { error: "Sesión no válida." };
 
+  const permisoError = await requirePermisoAccion(
+    ctx.supabase,
+    ctx.tenantId,
+    ctx.userId,
+    "configuracion",
+    "editar",
+  );
+  if (permisoError) return { error: permisoError };
+
   const parsed = sucursalSchema.safeParse({
     nombre: formData.get("nombre"),
     direccion: (formData.get("direccion") as string | null)?.trim() || undefined,
@@ -457,6 +485,15 @@ export async function actualizarSucursal(
 export async function toggleSucursal(formData: FormData): Promise<ConfigResult> {
   const ctx = await contexto();
   if (!ctx) return { error: "Sesión no válida." };
+
+  const permisoError = await requirePermisoAccion(
+    ctx.supabase,
+    ctx.tenantId,
+    ctx.userId,
+    "configuracion",
+    "editar",
+  );
+  if (permisoError) return { error: permisoError };
 
   const id = (formData.get("id") as string | null)?.trim();
   if (!id) return { error: "Sucursal no identificada." };

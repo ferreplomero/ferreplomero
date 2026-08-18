@@ -1,7 +1,17 @@
 "use client";
 
 import * as React from "react";
-import { AlertCircle, Ban, KeyRound, Pencil, Plus, Trash2, UserCheck, UserCog } from "lucide-react";
+import {
+  AlertCircle,
+  Ban,
+  KeyRound,
+  Pencil,
+  Plus,
+  Trash2,
+  UserCheck,
+  UserCog,
+  X,
+} from "lucide-react";
 import {
   Badge,
   Button,
@@ -20,26 +30,33 @@ import { PasswordInput } from "@/components/auth/password-input";
 import { PasswordStrengthMeter } from "@/components/auth/password-strength-meter";
 import {
   actualizarDatosPersonalAction,
+  agregarAsignacionPersonalAction,
   cambiarAsignacionPersonalAction,
   desactivarPersonalAction,
   eliminarPersonalAction,
   establecerPasswordPersonalAction,
+  quitarAsignacionSucursalAction,
   reactivarPersonalAction,
   registrarPersonalAction,
 } from "./actions";
 
-export interface MiembroPersonal {
+export interface AsignacionPersonal {
   asignacionId: string;
-  profileId: string;
-  nombre: string;
-  email: string;
-  whatsapp: string;
   sucursalId: string;
   sucursalNombre: string;
   rolId: string;
   rolNombre: string;
+}
+
+export interface MiembroPersonal {
+  profileId: string;
+  nombre: string;
+  email: string;
+  whatsapp: string;
   activo: boolean;
   esDuenoPrincipal: boolean;
+  /** Una entrada por sucursal asignada — puede ser más de una. */
+  asignaciones: AsignacionPersonal[];
 }
 
 export interface RolDisponible {
@@ -104,7 +121,7 @@ export function PersonalPanel({ miembros, roles, sucursales }: Props) {
         <div className="divide-border divide-y">
           {miembros.map((m) => (
             <div
-              key={m.asignacionId}
+              key={m.profileId}
               className="flex flex-col gap-2 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
             >
               <div className="min-w-0">
@@ -120,9 +137,18 @@ export function PersonalPanel({ miembros, roles, sucursales }: Props) {
                   </Badge>
                 </div>
                 <p className="text-muted-foreground break-words text-xs">{m.email}</p>
-                <p className="text-muted-foreground text-xs">
-                  <span className="font-medium">{m.rolNombre}</span> · {m.sucursalNombre}
-                </p>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {m.asignaciones.map((a) => (
+                    <span
+                      key={a.asignacionId}
+                      className="bg-surface-2 text-muted-foreground inline-flex items-center rounded-full px-2 py-0.5 text-[11px]"
+                    >
+                      <span className="font-medium">{a.rolNombre}</span>
+                      <span className="mx-1">·</span>
+                      {a.sucursalNombre}
+                    </span>
+                  ))}
+                </div>
               </div>
 
               <div className="flex flex-wrap items-center gap-1.5">
@@ -352,7 +378,19 @@ function RegistrarPersonalDialog({
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="reg-rol">Rol</Label>
-              <select id="reg-rol" name="rol_id" required className={SELECT} disabled={pending}>
+              {/* Sin preseleccionar: que un registro apurado no le dé por
+                  accidente el rol de mayor privilegio a alguien. */}
+              <select
+                id="reg-rol"
+                name="rol_id"
+                required
+                defaultValue=""
+                className={SELECT}
+                disabled={pending}
+              >
+                <option value="" disabled>
+                  Selecciona un rol…
+                </option>
                 {roles.map((r) => (
                   <option key={r.id} value={r.id}>
                     {r.nombre}
@@ -411,6 +449,224 @@ function RegistrarPersonalDialog({
   );
 }
 
+/** Una fila de asignación existente dentro de "Editar": su propio select de
+ * sucursal/rol (cambiarAsignacionPersonalAction) + "Quitar" (borra SOLO esta
+ * fila, nunca la cuenta — quitarAsignacionSucursalAction). Confirmación en
+ * dos pasos (sin modal aparte) que avisa explícitamente si es la última. */
+function FilaAsignacion({
+  asignacion,
+  esUltima,
+  roles,
+  sucursales,
+  disabled,
+  onQuitada,
+}: {
+  asignacion: AsignacionPersonal;
+  esUltima: boolean;
+  roles: RolDisponible[];
+  sucursales: SucursalSimple[];
+  disabled: boolean;
+  onQuitada: (asignacionId: string) => void;
+}) {
+  const [pending, setPending] = React.useState(false);
+  const [confirmando, setConfirmando] = React.useState(false);
+
+  async function guardar(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setPending(true);
+    const fd = new FormData(e.currentTarget);
+    const res = await cambiarAsignacionPersonalAction(asignacion.asignacionId, {}, fd);
+    setPending(false);
+    if (res.ok) toast.success("Sucursal y rol actualizados.");
+    else toast.error(res.error ?? Object.values(res.fieldErrors ?? {})[0] ?? "No se pudo guardar.");
+  }
+
+  async function quitar() {
+    setPending(true);
+    const res = await quitarAsignacionSucursalAction(asignacion.asignacionId);
+    setPending(false);
+    if (res.ok) {
+      toast.success("Sucursal quitada.");
+      onQuitada(asignacion.asignacionId);
+    } else {
+      toast.error(res.error ?? "No se pudo quitar.");
+    }
+    setConfirmando(false);
+  }
+
+  return (
+    <form onSubmit={guardar} className="flex flex-wrap items-end gap-2" noValidate>
+      <div className="min-w-0 flex-1 space-y-1">
+        <span className={LABEL}>Sucursal</span>
+        <select
+          name="sucursal_id"
+          defaultValue={asignacion.sucursalId}
+          required
+          className={SELECT}
+          disabled={disabled || pending}
+        >
+          {sucursales.map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.nombre}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div className="min-w-0 flex-1 space-y-1">
+        <span className={LABEL}>Rol</span>
+        <select
+          name="rol_id"
+          defaultValue={asignacion.rolId}
+          required
+          className={SELECT}
+          disabled={disabled || pending}
+        >
+          {roles.map((r) => (
+            <option key={r.id} value={r.id}>
+              {r.nombre}
+            </option>
+          ))}
+        </select>
+      </div>
+      <Button type="submit" size="sm" variant="outline" disabled={disabled || pending}>
+        Guardar
+      </Button>
+      {confirmando ? (
+        <div className="flex items-center gap-1">
+          <Button
+            type="button"
+            size="sm"
+            variant="danger"
+            disabled={disabled || pending}
+            onClick={quitar}
+          >
+            {esUltima ? "Sí, dejar sin sucursales" : "Confirmar"}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={pending}
+            onClick={() => setConfirmando(false)}
+          >
+            Cancelar
+          </Button>
+        </div>
+      ) : (
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          disabled={disabled || pending}
+          aria-label={`Quitar ${asignacion.sucursalNombre}`}
+          onClick={() => setConfirmando(true)}
+        >
+          <X className="size-3.5" />
+          Quitar
+        </Button>
+      )}
+      {confirmando && esUltima ? (
+        <p className="text-warning w-full text-xs">
+          Es su única sucursal — se queda sin acceso a Inventario/POS hasta que le asignes otra.
+        </p>
+      ) : null}
+    </form>
+  );
+}
+
+/** Mini-formulario para sumar una sucursal MÁS a una persona ya existente
+ * (agregarAsignacionPersonalAction) — junto con `FilaAsignacion`, es lo que
+ * permite asignar varias sucursales desde Personal. */
+function AgregarAsignacion({
+  profileId,
+  roles,
+  sucursales,
+  onAgregada,
+}: {
+  profileId: string;
+  roles: RolDisponible[];
+  sucursales: SucursalSimple[];
+  onAgregada: (asignacion: AsignacionPersonal) => void;
+}) {
+  const [abierto, setAbierto] = React.useState(false);
+  const [pending, setPending] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  if (!abierto) {
+    return (
+      <Button type="button" size="sm" variant="outline" onClick={() => setAbierto(true)}>
+        <Plus className="size-3.5" />
+        Agregar sucursal
+      </Button>
+    );
+  }
+
+  async function enviar(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    setPending(true);
+    const fd = new FormData(e.currentTarget);
+    const sucursalId = fd.get("sucursal_id") as string;
+    const rolId = fd.get("rol_id") as string;
+    const res = await agregarAsignacionPersonalAction(profileId, {}, fd);
+    setPending(false);
+    if (res.ok) {
+      const sucursal = sucursales.find((s) => s.id === sucursalId);
+      const rol = roles.find((r) => r.id === rolId);
+      toast.success("Sucursal agregada.");
+      onAgregada({
+        // El id real lo trae la próxima recarga del servidor; mientras
+        // tanto, uno temporal alcanza para mostrar la fila en esta sesión.
+        asignacionId: `temp-${sucursalId}`,
+        sucursalId,
+        sucursalNombre: sucursal?.nombre ?? "Sucursal",
+        rolId,
+        rolNombre: rol?.nombre ?? "Rol",
+      });
+      setAbierto(false);
+    } else {
+      setError(res.error ?? Object.values(res.fieldErrors ?? {})[0] ?? "No se pudo agregar.");
+    }
+  }
+
+  return (
+    <form onSubmit={enviar} className="border-border space-y-2 rounded-md border border-dashed p-3">
+      {error ? <p className="text-danger text-xs">{error}</p> : null}
+      <div className="flex flex-wrap items-end gap-2">
+        <div className="min-w-0 flex-1 space-y-1">
+          <span className={LABEL}>Sucursal</span>
+          <select name="sucursal_id" required className={SELECT} disabled={pending}>
+            {sucursales.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.nombre}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="min-w-0 flex-1 space-y-1">
+          <span className={LABEL}>Rol</span>
+          <select name="rol_id" required defaultValue="" className={SELECT} disabled={pending}>
+            <option value="" disabled>
+              Selecciona un rol…
+            </option>
+            {roles.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.nombre}
+              </option>
+            ))}
+          </select>
+        </div>
+        <Button type="submit" size="sm" disabled={pending}>
+          {pending ? "Agregando…" : "Agregar"}
+        </Button>
+        <Button type="button" size="sm" variant="ghost" onClick={() => setAbierto(false)}>
+          Cancelar
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 function EditarPersonalDialog({
   miembro,
   roles,
@@ -426,6 +682,7 @@ function EditarPersonalDialog({
   const [error, setError] = React.useState<string | null>(null);
   const [mostrarPassword, setMostrarPassword] = React.useState(false);
   const [password, setPassword] = React.useState("");
+  const [asignaciones, setAsignaciones] = React.useState(miembro.asignaciones);
   const { nombre: nombreInicial, apellido: apellidoInicial } = splitNombre(miembro.nombre);
 
   async function guardarDatos(e: React.FormEvent<HTMLFormElement>) {
@@ -437,21 +694,6 @@ function EditarPersonalDialog({
     setPending(false);
     if (res.ok) {
       toast.success("Datos actualizados.");
-    } else {
-      setError(res.error ?? Object.values(res.fieldErrors ?? {})[0] ?? "No se pudo guardar.");
-    }
-  }
-
-  async function guardarAsignacion(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    setError(null);
-    setPending(true);
-    const fd = new FormData(e.currentTarget);
-    const res = await cambiarAsignacionPersonalAction(miembro.asignacionId, {}, fd);
-    setPending(false);
-    if (res.ok) {
-      toast.success("Rol y sucursal actualizados.");
-      onOpenChange(false);
     } else {
       setError(res.error ?? Object.values(res.fieldErrors ?? {})[0] ?? "No se pudo guardar.");
     }
@@ -479,7 +721,7 @@ function EditarPersonalDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !pending && onOpenChange(o)}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Editar a {miembro.nombre}</DialogTitle>
           <DialogDescription>{miembro.email}</DialogDescription>
@@ -537,46 +779,32 @@ function EditarPersonalDialog({
         </form>
 
         {!miembro.esDuenoPrincipal ? (
-          <form
-            onSubmit={guardarAsignacion}
-            className="border-border space-y-3 border-t pt-4"
-            noValidate
-          >
-            <p className={LABEL}>Rol y sucursal</p>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <select
-                name="sucursal_id"
-                defaultValue={miembro.sucursalId}
-                required
-                className={SELECT}
-                disabled={pending}
-              >
-                {sucursales.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.nombre}
-                  </option>
-                ))}
-              </select>
-              <select
-                name="rol_id"
-                defaultValue={miembro.rolId}
-                required
-                className={SELECT}
-                disabled={pending}
-              >
-                {roles.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.nombre}
-                  </option>
-                ))}
-              </select>
+          <div className="border-border space-y-3 border-t pt-4">
+            <p className={LABEL}>Sucursales y roles</p>
+            <div className="space-y-3">
+              {asignaciones.map((a) => (
+                <FilaAsignacion
+                  key={a.asignacionId}
+                  asignacion={a}
+                  esUltima={asignaciones.length === 1}
+                  roles={roles}
+                  sucursales={sucursales}
+                  disabled={pending}
+                  onQuitada={(id) =>
+                    setAsignaciones((prev) => prev.filter((x) => x.asignacionId !== id))
+                  }
+                />
+              ))}
             </div>
-            <div className="flex justify-end">
-              <Button type="submit" size="sm" variant="outline" disabled={pending}>
-                Guardar rol y sucursal
-              </Button>
-            </div>
-          </form>
+            <AgregarAsignacion
+              profileId={miembro.profileId}
+              roles={roles}
+              sucursales={sucursales.filter(
+                (s) => !asignaciones.some((a) => a.sucursalId === s.id),
+              )}
+              onAgregada={(a) => setAsignaciones((prev) => [...prev, a])}
+            />
+          </div>
         ) : null}
 
         <div className="border-border space-y-2 border-t pt-4">
@@ -653,14 +881,26 @@ function EliminarPersonalDialog({
     }
   }
 
+  const sucursalesTexto = miembro.asignaciones.map((a) => a.sucursalNombre).join(", ");
+
   return (
     <Dialog open onOpenChange={(o) => !pending && onOpenChange(o)}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>Eliminar a {miembro.nombre}</DialogTitle>
           <DialogDescription>
-            Esto borra su cuenta y su acceso de forma permanente. No se puede deshacer. Si solo
-            quieres revocarle el acceso temporalmente, usa &quot;Desactivar&quot; en vez de esto.
+            Esto borra su <strong>cuenta completa</strong> y su acceso de forma permanente
+            {sucursalesTexto ? (
+              <>
+                {" "}
+                — pierde acceso a {miembro.asignaciones.length === 1 ? "su sucursal" : "sus"}{" "}
+                {miembro.asignaciones.length} sucursal
+                {miembro.asignaciones.length !== 1 ? "es" : ""} ({sucursalesTexto})
+              </>
+            ) : null}
+            . No se puede deshacer. Si solo quieres revocarle el acceso temporalmente, usa
+            &quot;Desactivar&quot; en vez de esto; si solo quieres quitarle UNA sucursal sin borrar
+            su cuenta, usa &quot;Editar&quot;.
           </DialogDescription>
         </DialogHeader>
 

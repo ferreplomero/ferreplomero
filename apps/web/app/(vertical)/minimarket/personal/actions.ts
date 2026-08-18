@@ -29,7 +29,7 @@ import {
 } from "@arkiteq/core";
 import { getSessionContext } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
-import { requirePermisoAccion } from "@/lib/minimarket/permisos";
+import { esAdminPlataforma, requirePermisoAccion } from "@/lib/minimarket/permisos";
 
 const PERSONAL_PATH = "/minimarket/personal";
 // ~100 años: equivalente a indefinido, se levanta con reactivarPersonalAction.
@@ -70,6 +70,79 @@ async function esDuenoPrincipal(
     .eq("id", tenantId)
     .maybeSingle();
   return data?.created_by === profileId;
+}
+
+type Ctx = NonNullable<Awaited<ReturnType<typeof contexto>>>;
+
+/**
+ * Roles operativos que implican control total del negocio — mismo criterio
+ * que `auth_sucursal_ids()` (migración 0112) para "ve todas las sucursales
+ * sin fila propia". Asignar cualquiera de estos exige, y a la vez otorga, el
+ * rol de PLATAFORMA (`memberships.role`) que la RLS de `mm_sucursales`/
+ * `mm_config_negocio` realmente exige (migración 0007) — ver
+ * `sincronizarMembresiaPlataforma` más abajo.
+ */
+const ROLES_ADMIN_TIER = new Set(["dueno", "administrador"]);
+
+/**
+ * Si `slug` es un rol admin-tier, exige que quien actúa YA sea dueño/
+ * administrador de PLATAFORMA — así nadie sin ese rol puede promoverse a sí
+ * mismo ni promover a otros a "Administrador" asignándoselo desde Personal.
+ * Para roles que no son admin-tier, no hace ningún chequeo extra (sigue
+ * dependiendo solo de `personal.crear`/`personal.editar`, como siempre).
+ */
+async function requierePromocion(ctx: Ctx, slug: string | null): Promise<string | null> {
+  if (!slug || !ROLES_ADMIN_TIER.has(slug)) return null;
+  const puede = await esAdminPlataforma(ctx.supabase, ctx.tenantId, ctx.userId);
+  return puede ? null : "Solo el dueño o un administrador existente pueden asignar este rol.";
+}
+
+/**
+ * Mantiene `memberships.role` sincronizado con si la persona todavía tiene,
+ * en ALGUNA de sus asignaciones activas, un rol admin-tier — promueve a
+ * 'administrador' o degrada a 'colaborador' según corresponda (para no dejar
+ * privilegios de plataforma huérfanos tras quitarle el rol o la sucursal).
+ * Se escribe con el cliente de SESIÓN (`ctx.supabase`), no `service_role`: la
+ * política RLS `memberships_manage` (migración 0003, propietario/
+ * administrador únicamente) es el respaldo real de que solo alguien ya
+ * promovido puede ejecutar esta promoción — `requierePromocion` de arriba
+ * solo existe para dar un mensaje claro antes de intentarlo. Nunca toca al
+ * dueño principal (`role = 'propietario'`).
+ */
+async function sincronizarMembresiaPlataforma(ctx: Ctx, profileId: string): Promise<void> {
+  const [{ data: asignaciones }, { data: membresia }] = await Promise.all([
+    ctx.supabase
+      .from("mm_usuarios_sucursal")
+      .select("rol_id")
+      .eq("tenant_id", ctx.tenantId)
+      .eq("profile_id", profileId)
+      .eq("activo", true)
+      .is("deleted_at", null),
+    ctx.supabase
+      .from("memberships")
+      .select("role")
+      .eq("tenant_id", ctx.tenantId)
+      .eq("profile_id", profileId)
+      .maybeSingle(),
+  ]);
+
+  if (!membresia || membresia.role === "propietario") return;
+
+  const rolIds = [...new Set((asignaciones ?? []).map((a) => a.rol_id))];
+  const { data: roles } =
+    rolIds.length > 0
+      ? await ctx.supabase.from("mm_roles").select("id, slug").in("id", rolIds)
+      : { data: [] as { id: string; slug: string }[] };
+  const debeSerAdmin = (roles ?? []).some((r) => ROLES_ADMIN_TIER.has(r.slug));
+  const nuevoRol = debeSerAdmin ? "administrador" : "colaborador";
+  if (membresia.role === nuevoRol) return;
+
+  const { error } = await ctx.supabase
+    .from("memberships")
+    .update({ role: nuevoRol })
+    .eq("tenant_id", ctx.tenantId)
+    .eq("profile_id", profileId);
+  if (error) console.error("[sincronizarMembresiaPlataforma]", error);
 }
 
 const registrarSchema = z.object({
@@ -119,13 +192,16 @@ export async function registrarPersonalAction(
       .maybeSingle(),
     ctx.supabase
       .from("mm_roles")
-      .select("id")
+      .select("id, slug")
       .or(`tenant_id.is.null,tenant_id.eq.${ctx.tenantId}`)
       .eq("id", parsed.data.rol_id)
       .maybeSingle(),
   ]);
   if (!sucursal) return { error: "Sucursal inválida." };
   if (!rol) return { error: "Rol inválido." };
+
+  const promoError = await requierePromocion(ctx, rol.slug);
+  if (promoError) return { error: promoError };
 
   const service = createServiceClient();
   const fullName = `${parsed.data.nombre} ${parsed.data.apellido}`.trim();
@@ -170,6 +246,8 @@ export async function registrarPersonalAction(
     await service.auth.admin.deleteUser(profileId);
     return { error: "No se pudo asignar el rol. Inténtalo de nuevo." };
   }
+
+  await sincronizarMembresiaPlataforma(ctx, profileId);
 
   revalidatePath(PERSONAL_PATH);
   return { ok: true };
@@ -297,6 +375,17 @@ export async function cambiarAsignacionPersonalAction(
     return { error: "No se puede cambiar el rol del dueño principal del negocio." };
   }
 
+  const { data: rol } = await ctx.supabase
+    .from("mm_roles")
+    .select("slug")
+    .or(`tenant_id.is.null,tenant_id.eq.${ctx.tenantId}`)
+    .eq("id", parsed.data.rol_id)
+    .maybeSingle();
+  if (!rol) return { error: "Rol inválido." };
+
+  const promoError = await requierePromocion(ctx, rol.slug);
+  if (promoError) return { error: promoError };
+
   const service = createServiceClient();
   const { error } = await service
     .from("mm_usuarios_sucursal")
@@ -308,6 +397,8 @@ export async function cambiarAsignacionPersonalAction(
     console.error("[cambiarAsignacionPersonalAction]", error);
     return { error: "No se pudo actualizar la asignación." };
   }
+
+  await sincronizarMembresiaPlataforma(ctx, asignacion.profile_id);
 
   revalidatePath(PERSONAL_PATH);
   return { ok: true };
@@ -347,6 +438,8 @@ export async function desactivarPersonalAction(profileId: string): Promise<Perso
     .eq("profile_id", profileId);
   if (rolError) console.error("[desactivarPersonalAction] rol", rolError);
 
+  await sincronizarMembresiaPlataforma(ctx, profileId);
+
   revalidatePath(PERSONAL_PATH);
   return { ok: true };
 }
@@ -381,6 +474,8 @@ export async function reactivarPersonalAction(profileId: string): Promise<Person
     .eq("profile_id", profileId);
   if (rolError) console.error("[reactivarPersonalAction] rol", rolError);
 
+  await sincronizarMembresiaPlataforma(ctx, profileId);
+
   revalidatePath(PERSONAL_PATH);
   return { ok: true };
 }
@@ -409,6 +504,133 @@ export async function eliminarPersonalAction(profileId: string): Promise<Persona
     console.error("[eliminarPersonalAction]", error);
     return { error: "No se pudo eliminar la cuenta." };
   }
+
+  revalidatePath(PERSONAL_PATH);
+  return { ok: true };
+}
+
+/**
+ * Quita UNA sucursal/rol de la persona (borrado suave de esa fila de
+ * `mm_usuarios_sucursal`) sin tocar su cuenta ni sus otras asignaciones —
+ * distinto de `eliminarPersonalAction`, que borra la cuenta completa. Si es
+ * su última asignación, queda sin ninguna sucursal (pierde acceso a
+ * Inventario/POS/Personal/Configuración, correctamente) pero conserva su
+ * cuenta — el diálogo de confirmación en el cliente avisa de esto antes de
+ * llamar la acción.
+ */
+export async function quitarAsignacionSucursalAction(
+  asignacionId: string,
+): Promise<PersonalResult> {
+  const ctx = await contexto();
+  if (!ctx) return { error: "Sesión no válida." };
+
+  const permisoError = await requirePermisoAccion(
+    ctx.supabase,
+    ctx.tenantId,
+    ctx.userId,
+    "personal",
+    "eliminar",
+  );
+  if (permisoError) return { error: permisoError };
+
+  const { data: asignacion } = await ctx.supabase
+    .from("mm_usuarios_sucursal")
+    .select("profile_id")
+    .eq("tenant_id", ctx.tenantId)
+    .eq("id", asignacionId)
+    .maybeSingle();
+  if (!asignacion) return { error: "Asignación no encontrada." };
+
+  if (await esDuenoPrincipal(ctx.supabase, ctx.tenantId, asignacion.profile_id)) {
+    return { error: "No se puede quitar una sucursal del dueño principal del negocio." };
+  }
+
+  const service = createServiceClient();
+  const { error } = await service
+    .from("mm_usuarios_sucursal")
+    .update({ deleted_at: new Date().toISOString(), activo: false })
+    .eq("tenant_id", ctx.tenantId)
+    .eq("id", asignacionId);
+  if (error) {
+    console.error("[quitarAsignacionSucursalAction]", error);
+    return { error: "No se pudo quitar la sucursal." };
+  }
+
+  await sincronizarMembresiaPlataforma(ctx, asignacion.profile_id);
+
+  revalidatePath(PERSONAL_PATH);
+  return { ok: true };
+}
+
+/**
+ * Agrega una sucursal/rol MÁS a una persona ya existente (no crea cuenta
+ * nueva) — junto con `quitarAsignacionSucursalAction`, es lo que permite
+ * asignar a alguien varias sucursales desde Personal. `upsert` sobre el
+ * `unique (tenant_id, profile_id, sucursal_id)` existente: si ya tenía esa
+ * sucursal (activa o previamente quitada), la deja activa con el rol nuevo
+ * en vez de fallar con un choque de duplicado.
+ */
+export async function agregarAsignacionPersonalAction(
+  profileId: string,
+  _prev: PersonalResult,
+  formData: FormData,
+): Promise<PersonalResult> {
+  const ctx = await contexto();
+  if (!ctx) return { error: "Sesión no válida." };
+
+  const permisoError = await requirePermisoAccion(
+    ctx.supabase,
+    ctx.tenantId,
+    ctx.userId,
+    "personal",
+    "editar",
+  );
+  if (permisoError) return { error: permisoError };
+
+  const parsed = asignacionSchema.safeParse({
+    sucursal_id: formData.get("sucursal_id"),
+    rol_id: formData.get("rol_id"),
+  });
+  if (!parsed.success) return { fieldErrors: fieldErr(parsed.error) };
+
+  const [{ data: sucursal }, { data: rol }] = await Promise.all([
+    ctx.supabase
+      .from("mm_sucursales")
+      .select("id")
+      .eq("tenant_id", ctx.tenantId)
+      .eq("id", parsed.data.sucursal_id)
+      .maybeSingle(),
+    ctx.supabase
+      .from("mm_roles")
+      .select("slug")
+      .or(`tenant_id.is.null,tenant_id.eq.${ctx.tenantId}`)
+      .eq("id", parsed.data.rol_id)
+      .maybeSingle(),
+  ]);
+  if (!sucursal) return { error: "Sucursal inválida." };
+  if (!rol) return { error: "Rol inválido." };
+
+  const promoError = await requierePromocion(ctx, rol.slug);
+  if (promoError) return { error: promoError };
+
+  const service = createServiceClient();
+  const { error } = await service.from("mm_usuarios_sucursal").upsert(
+    {
+      tenant_id: ctx.tenantId,
+      profile_id: profileId,
+      sucursal_id: parsed.data.sucursal_id,
+      rol_id: parsed.data.rol_id,
+      activo: true,
+      deleted_at: null,
+    },
+    { onConflict: "tenant_id,profile_id,sucursal_id" },
+  );
+  if (error) {
+    console.error("[agregarAsignacionPersonalAction]", error);
+    return { error: "No se pudo agregar la sucursal." };
+  }
+
+  await sincronizarMembresiaPlataforma(ctx, profileId);
 
   revalidatePath(PERSONAL_PATH);
   return { ok: true };

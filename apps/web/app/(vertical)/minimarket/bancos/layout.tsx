@@ -7,7 +7,11 @@ import { getCountryConfig } from "@arkiteq/core";
 import { getSessionContext } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { listCuentasConSaldo, saldoNativo } from "@/lib/minimarket/data/bancos";
-import { moduloPermitido, resolverContextoPermisos } from "@/lib/minimarket/permisos";
+import {
+  esAdminPlataforma,
+  moduloPermitido,
+  resolverContextoPermisos,
+} from "@/lib/minimarket/permisos";
 
 /**
  * Envuelve TODAS las sub-rutas de Bancos (`pago-movil`, `transferencia`,
@@ -28,7 +32,7 @@ export default async function BancosLayout({ children }: { children: React.React
   const supabase = await createClient();
   const country = getCountryConfig(session.activeTenant?.country);
 
-  const [cuentas, permisos, configRes] = await Promise.all([
+  const [cuentas, permisos, configRes, esAdmin] = await Promise.all([
     listCuentasConSaldo(supabase, tenantId),
     resolverContextoPermisos(supabase, tenantId, session.user.id),
     supabase
@@ -36,9 +40,10 @@ export default async function BancosLayout({ children }: { children: React.React
       .select("medios_saldos_completados_en")
       .eq("tenant_id", tenantId)
       .maybeSingle(),
+    esAdminPlataforma(supabase, tenantId, session.user.id),
   ]);
 
-  const puedeConfigurar = moduloPermitido("/minimarket/configuracion", permisos);
+  const puedeConfigurar = moduloPermitido("/minimarket/configuracion", permisos, esAdmin);
   // Cashea no participa del saldo inicial (regla de negocio: no aplica) — el
   // aviso se muestra en el resto de los medios (pago móvil, transferencia,
   // tarjeta, Zelle) pero nunca en /minimarket/bancos/cashea.
