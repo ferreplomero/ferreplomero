@@ -10,6 +10,7 @@ import { hoyEnTz } from "@/lib/minimarket/date-format";
 import { parseMetodosPago } from "@/lib/minimarket/metodos-pago";
 import { getOtroIngreso } from "@/lib/minimarket/data/ganancias";
 import { getImpactoCajaGasto, getSesionAbierta } from "@/lib/minimarket/data/caja";
+import { getSucursalActiva } from "@/lib/minimarket/sucursal-acceso";
 import { listCuentasBancarias } from "@/lib/minimarket/data/bancos";
 import { listCategoriasMovimiento } from "@/lib/minimarket/data/categorias-movimiento";
 import { actualizarOtroIngreso } from "../../actions";
@@ -36,6 +37,7 @@ export default async function EditarOtroIngresoPage({ params }: Props) {
   if (!session || !tenantId) redirect("/login");
 
   const supabase = await createClient();
+  const { activa: sucursalActiva } = await getSucursalActiva(supabase, tenantId, session.user.id);
 
   const [otroIngreso, tasa, tz, configRes, sesion, impacto, cuentasBancarias, categorias] =
     await Promise.all([
@@ -47,7 +49,9 @@ export default async function EditarOtroIngresoPage({ params }: Props) {
         .select("metodos_pago")
         .eq("tenant_id", tenantId)
         .maybeSingle(),
-      getSesionAbierta(supabase, tenantId),
+      sucursalActiva
+        ? getSesionAbierta(supabase, tenantId, sucursalActiva.id)
+        : Promise.resolve(null),
       getImpactoCajaGasto(supabase, tenantId, id),
       listCuentasBancarias(supabase, tenantId),
       listCategoriasMovimiento(supabase, tenantId, "otro_ingreso"),

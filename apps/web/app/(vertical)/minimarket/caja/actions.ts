@@ -10,6 +10,7 @@ import {
   resumirCaja,
 } from "@/lib/minimarket/data/caja";
 import { requirePermisoAccion } from "@/lib/minimarket/permisos";
+import { sucursalesPermitidas } from "@/lib/minimarket/sucursal-acceso";
 import { insertarSaldoInicial, MOTIVO_SALDO_INICIAL } from "@/lib/minimarket/data/saldos-iniciales";
 import { getOrCreateConfigId } from "@/lib/minimarket/config-negocio";
 
@@ -28,7 +29,22 @@ async function contexto() {
   const tenantId = session?.activeTenant?.id ?? null;
   if (!session || !tenantId) return null;
   const supabase = await createClient();
-  return { supabase, tenantId, userId: session.user.id };
+  const permitidas = await sucursalesPermitidas(supabase, tenantId, session.user.id);
+  return { supabase, tenantId, userId: session.user.id, permitidas };
+}
+
+/** true si la sesión de caja dada pertenece a una sucursal permitida del usuario. */
+async function sesionEnSucursalPermitida(
+  ctx: NonNullable<Awaited<ReturnType<typeof contexto>>>,
+  sesionId: string,
+): Promise<boolean> {
+  const { data: sesion } = await ctx.supabase
+    .from("mm_caja_sesiones")
+    .select("sucursal_id")
+    .eq("tenant_id", ctx.tenantId)
+    .eq("id", sesionId)
+    .maybeSingle();
+  return Boolean(sesion) && ctx.permitidas.some((s) => s.id === sesion?.sucursal_id);
 }
 
 /** Abre un turno de caja con el efectivo inicial. Falla si ya hay uno abierto. */
@@ -55,29 +71,36 @@ export async function abrirCaja(_prev: CajaResult, formData: FormData): Promise<
     return { error: "Ingresa montos iniciales válidos (0 o más)." };
   }
 
+  // Igual criterio que `registrarVenta`: nunca se confía en el sucursal_id
+  // del cliente sin revalidarlo contra las sucursales permitidas; sin uno
+  // explícito, se usa la primera permitida del usuario — nunca "la primera
+  // sucursal del tenant" (eso abriría la caja de un cajero en una sucursal
+  // ajena a la suya).
+  const sucursalIdForm = formData.get("sucursal_id");
+  const sucursalIdPedida =
+    typeof sucursalIdForm === "string" && sucursalIdForm ? sucursalIdForm : null;
+  if (sucursalIdPedida && !ctx.permitidas.some((s) => s.id === sucursalIdPedida)) {
+    return { error: "No tienes acceso a esa sucursal." };
+  }
+  const sucursalId = sucursalIdPedida ?? ctx.permitidas[0]?.id ?? null;
+  if (!sucursalId) return { error: "No tienes ninguna sucursal asignada." };
+
   const { data: abierta } = await ctx.supabase
     .from("mm_caja_sesiones")
     .select("id")
     .eq("tenant_id", ctx.tenantId)
+    .eq("sucursal_id", sucursalId)
     .eq("estado", "abierta")
     .is("deleted_at", null)
     .limit(1)
     .maybeSingle();
-  if (abierta) return { error: "Ya hay una caja abierta. Ciérrala antes de abrir otra." };
-
-  const { data: suc } = await ctx.supabase
-    .from("mm_sucursales")
-    .select("id")
-    .eq("tenant_id", ctx.tenantId)
-    .is("deleted_at", null)
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
-  if (!suc) return { error: "No hay una sucursal configurada." };
+  if (abierta) {
+    return { error: "Ya hay una caja abierta en esta sucursal. Ciérrala antes de abrir otra." };
+  }
 
   const { error } = await ctx.supabase.from("mm_caja_sesiones").insert({
     tenant_id: ctx.tenantId,
-    sucursal_id: suc.id,
+    sucursal_id: sucursalId,
     usuario_id: ctx.userId,
     monto_inicial_usd: inicialUsd,
     monto_inicial_bs: inicialBs,
@@ -124,6 +147,10 @@ export async function registrarMovimientoCaja(
     return { error: parsed.error.issues[0]?.message ?? "Datos inválidos." };
   }
   const v = parsed.data;
+
+  if (!(await sesionEnSucursalPermitida(ctx, v.sesion_id))) {
+    return { error: "No tienes acceso a esa caja." };
+  }
 
   const { error } = await insertarMovimientoCaja(ctx.supabase, {
     tenantId: ctx.tenantId,
@@ -179,6 +206,10 @@ export async function registrarSaldoInicialCaja(
     return { error: parsed.error.issues[0]?.message ?? "Datos inválidos." };
   }
   const v = parsed.data;
+
+  if (!(await sesionEnSucursalPermitida(ctx, v.sesion_id))) {
+    return { error: "No tienes acceso a esa caja." };
+  }
 
   const { data: sesion } = await ctx.supabase
     .from("mm_caja_sesiones")
@@ -259,6 +290,10 @@ export async function cerrarCaja(_prev: CajaResult, formData: FormData): Promise
   if (!sesionId) return { error: "Sesión no identificada." };
   if (!Number.isFinite(finalUsd) || !Number.isFinite(finalBs) || finalUsd < 0 || finalBs < 0) {
     return { error: "Ingresa los montos contados (0 o más)." };
+  }
+
+  if (!(await sesionEnSucursalPermitida(ctx, sesionId))) {
+    return { error: "No tienes acceso a esa caja." };
   }
 
   const { data: sesion } = await ctx.supabase

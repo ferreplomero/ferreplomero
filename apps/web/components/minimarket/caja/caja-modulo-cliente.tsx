@@ -17,6 +17,7 @@ interface Props {
   movimientosIniciales: MovimientoCaja[];
   tenantId: string;
   usuarioId: string;
+  sucursalId: string;
   locale: string;
   tz: string;
 }
@@ -33,6 +34,7 @@ export function CajaModuloCliente({
   movimientosIniciales,
   tenantId,
   usuarioId,
+  sucursalId,
   locale,
   tz,
 }: Props) {
@@ -72,6 +74,7 @@ export function CajaModuloCliente({
     <AbrirCajaForm
       tenantId={tenantId}
       usuarioId={usuarioId}
+      sucursalId={sucursalId}
       onAbiertaLocal={(nuevaSesion) => {
         setSesion(nuevaSesion);
         setMovimientos([]);

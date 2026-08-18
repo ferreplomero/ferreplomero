@@ -9,6 +9,7 @@ import { getTimezoneNegocio } from "@/lib/minimarket/timezone";
 import { hoyEnTz } from "@/lib/minimarket/date-format";
 import { parseMetodosPago } from "@/lib/minimarket/metodos-pago";
 import { getSesionAbierta } from "@/lib/minimarket/data/caja";
+import { getSucursalActiva } from "@/lib/minimarket/sucursal-acceso";
 import { listCuentasBancarias } from "@/lib/minimarket/data/bancos";
 import { listCategoriasMovimiento } from "@/lib/minimarket/data/categorias-movimiento";
 import { crearGastoOperativo } from "../actions";
@@ -22,6 +23,7 @@ export default async function NuevoGastoPage() {
   if (!session || !tenantId) redirect("/login");
 
   const supabase = await createClient();
+  const { activa: sucursalActiva } = await getSucursalActiva(supabase, tenantId, session.user.id);
   const [tasa, tz, configRes, sesion, cuentasBancarias, categorias] = await Promise.all([
     getTasaVigente(supabase, tenantId),
     getTimezoneNegocio(supabase, tenantId),
@@ -30,7 +32,9 @@ export default async function NuevoGastoPage() {
       .select("metodos_pago")
       .eq("tenant_id", tenantId)
       .maybeSingle(),
-    getSesionAbierta(supabase, tenantId),
+    sucursalActiva
+      ? getSesionAbierta(supabase, tenantId, sucursalActiva.id)
+      : Promise.resolve(null),
     listCuentasBancarias(supabase, tenantId),
     listCategoriasMovimiento(supabase, tenantId, "gasto"),
   ]);

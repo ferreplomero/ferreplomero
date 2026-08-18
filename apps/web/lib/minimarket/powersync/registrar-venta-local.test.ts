@@ -15,7 +15,7 @@ function mockDb(sesionAbierta: { id: string } | null = { id: "sesion-1" }) {
       ejecutadas.push({ sql, params });
       return { rowsAffected: 1 };
     }),
-    getOptional: vi.fn(async () => sesionAbierta),
+    getOptional: vi.fn(async (_sql: string, _params: unknown[] = []) => sesionAbierta),
   };
   const db = {
     writeTransaction: vi.fn(async (cb: (context: typeof tx) => Promise<void>) => cb(tx)),
@@ -140,6 +140,15 @@ describe("registrarVentaLocal", () => {
     const { db, ejecutadas } = mockDb(null);
     await registrarVentaLocal(db, baseInput());
     expect(tabla(ejecutadas, "mm_caja_movimientos")).toHaveLength(0);
+  });
+
+  it("busca la sesión de caja filtrando por la sucursal de la venta, no cualquier sucursal", async () => {
+    const { db, tx } = mockDb({ id: "sesion-1" });
+    await registrarVentaLocal(db, baseInput({ sucursalId: "s2" }));
+    expect(tx.getOptional.mock.calls).toHaveLength(1);
+    const [sql, params] = tx.getOptional.mock.calls[0] ?? [];
+    expect(sql).toContain("sucursal_id");
+    expect(params).toContain("s2");
   });
 
   it("registra el vuelto como egreso, para que el efectivo neto sea el correcto", async () => {

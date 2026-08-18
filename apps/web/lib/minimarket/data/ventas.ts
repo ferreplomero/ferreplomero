@@ -357,7 +357,13 @@ export async function anularVentaConDevolucion(
     }
 
     if (esEfectivo(devolucion.metodo)) {
-      const sesion = await getSesionAbierta(client, tenantId);
+      const { data: venta } = await client
+        .from("mm_ventas")
+        .select("sucursal_id")
+        .eq("tenant_id", tenantId)
+        .eq("id", ventaId)
+        .maybeSingle();
+      const sesion = venta ? await getSesionAbierta(client, tenantId, venta.sucursal_id) : null;
       if (!sesion) {
         return {
           ok: false,

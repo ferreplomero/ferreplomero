@@ -61,15 +61,20 @@ function chainable<T>(result: { data: T | null; error: { message: string } | nul
   return builder;
 }
 
-/** Cliente falso que solo sabe responder mm_caja_sesiones / mm_cuentas_bancarias
- * — si `anularVentaConDevolucion` llega a consultar cualquier otra tabla, es
- * porque no se detuvo en la validación (falla el test con un error claro). */
+/** Cliente falso que solo sabe responder mm_ventas (solo sucursal_id) /
+ * mm_caja_sesiones / mm_cuentas_bancarias — si `anularVentaConDevolucion`
+ * llega a consultar cualquier otra tabla, es porque no se detuvo en la
+ * validación (falla el test con un error claro). */
 function mockClienteValidacion(opts: {
+  sucursalId?: string | null;
   sesionAbierta?: { id: string } | null;
   cuenta?: { id: string; metodo: string } | null;
 }) {
   return {
     from: (tabla: string) => {
+      if (tabla === "mm_ventas") {
+        return chainable({ data: { sucursal_id: opts.sucursalId ?? "s1" }, error: null });
+      }
       if (tabla === "mm_caja_sesiones") {
         return chainable({ data: opts.sesionAbierta ?? null, error: null });
       }

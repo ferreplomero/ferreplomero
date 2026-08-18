@@ -27,15 +27,17 @@ export interface ResumenCaja {
   ventasBs: number;
 }
 
-/** Sesión de caja abierta del tenant, o null si no hay ninguna. */
+/** Sesión de caja abierta de la sucursal dada, o null si no hay ninguna. */
 export async function getSesionAbierta(
   client: Client,
   tenantId: string,
+  sucursalId: string,
 ): Promise<MmCajaSesion | null> {
   const { data, error } = await client
     .from("mm_caja_sesiones")
     .select("*")
     .eq("tenant_id", tenantId)
+    .eq("sucursal_id", sucursalId)
     .eq("estado", "abierta")
     .is("deleted_at", null)
     .order("abierta_en", { ascending: false })
@@ -44,6 +46,25 @@ export async function getSesionAbierta(
 
   if (error) throw new Error(`No se pudo cargar la caja: ${error.message}`);
   return data;
+}
+
+/** true si la sesión de caja dada (por id) sigue abierta hoy. */
+export async function esSesionAbierta(
+  client: Client,
+  tenantId: string,
+  sesionId: string,
+): Promise<boolean> {
+  const { data, error } = await client
+    .from("mm_caja_sesiones")
+    .select("id")
+    .eq("tenant_id", tenantId)
+    .eq("id", sesionId)
+    .eq("estado", "abierta")
+    .is("deleted_at", null)
+    .maybeSingle();
+
+  if (error) throw new Error(`No se pudo verificar la caja: ${error.message}`);
+  return Boolean(data);
 }
 
 /** Movimientos de una sesión de caja, más recientes primero. */
@@ -198,7 +219,7 @@ export async function getImpactoCajaGasto(
   }
 
   const sesionId = primero.sesion_id;
-  const abierta = await getSesionAbierta(client, tenantId);
+  const sesionAbierta = await esSesionAbierta(client, tenantId, sesionId);
 
   const netoMap = new Map<string, number>();
   for (const m of movimientos) {
@@ -213,7 +234,7 @@ export async function getImpactoCajaGasto(
     }))
     .filter((r) => Math.abs(r.monto) > 0.001);
 
-  return { sesionId, sesionAbierta: abierta?.id === sesionId, neto };
+  return { sesionId, sesionAbierta, neto };
 }
 
 export interface SesionHistorial {
@@ -226,10 +247,11 @@ export interface SesionHistorial {
   diferencia_bs: number | null;
 }
 
-/** Historial de sesiones cerradas del tenant. */
+/** Historial de sesiones cerradas de la sucursal dada. */
 export async function listSesionesCerradas(
   client: Client,
   tenantId: string,
+  sucursalId: string,
   limit = 20,
 ): Promise<SesionHistorial[]> {
   const { data, error } = await client
@@ -238,6 +260,7 @@ export async function listSesionesCerradas(
       "id, abierta_en, cerrada_en, monto_final_usd, monto_final_bs, diferencia_usd, diferencia_bs",
     )
     .eq("tenant_id", tenantId)
+    .eq("sucursal_id", sucursalId)
     .eq("estado", "cerrada")
     .is("deleted_at", null)
     .order("cerrada_en", { ascending: false })

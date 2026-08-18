@@ -24,6 +24,7 @@ interface AbonoFormProps {
   locale: string;
   tenantId: string;
   usuarioId: string;
+  sucursalId: string;
   /** Config del negocio (mm_config_negocio.parametros.igtf_activo) — si está
    * desactivado, el abono en divisa nunca cobra IGTF, ni en el preview ni en
    * el registro (server o local/offline). */
@@ -45,6 +46,7 @@ export function AbonoForm({
   locale,
   tenantId,
   usuarioId,
+  sucursalId,
   igtfActivo,
   cuentasBancarias,
 }: AbonoFormProps) {
@@ -112,6 +114,7 @@ export function AbonoForm({
       await registrarAbonoLocal(powerSyncDb, {
         tenantId,
         usuarioId,
+        sucursalId,
         clienteId,
         clienteNombre,
         montoUsd: montoNum,

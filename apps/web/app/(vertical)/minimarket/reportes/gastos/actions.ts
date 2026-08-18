@@ -14,6 +14,7 @@ import {
   getSesionAbierta,
   insertarMovimientoCaja,
 } from "@/lib/minimarket/data/caja";
+import { getSucursalActiva } from "@/lib/minimarket/sucursal-acceso";
 import {
   getImpactoCuentaPorReferencia,
   insertarMovimientoCuenta,
@@ -183,7 +184,18 @@ export async function crearGastoOperativo(
   let cuentaId: string | null = null;
   let montoCuenta: { montoUsd: number; montoBs: number; tasa: number } | null = null;
   if (esEfectivo(d.metodo_pago)) {
-    const sesion = await getSesionAbierta(ctx.supabase, ctx.tenantId);
+    const { activa: sucursalActiva } = await getSucursalActiva(
+      ctx.supabase,
+      ctx.tenantId,
+      ctx.userId,
+    );
+    if (!sucursalActiva) {
+      return {
+        error: "No tienes ninguna sucursal asignada.",
+        fieldErrors: { metodo_pago: "Requiere sucursal asignada." },
+      };
+    }
+    const sesion = await getSesionAbierta(ctx.supabase, ctx.tenantId, sucursalActiva.id);
     if (!sesion) {
       return {
         error: "Debes tener la caja abierta para registrar un gasto en efectivo.",
@@ -367,9 +379,17 @@ export async function actualizarGastoOperativo(
   if (cambioMontoOMetodo && esEfectivo(d.metodo_pago)) {
     // Sesión a usar: la misma donde ya vive este gasto si sigue abierta, o la
     // sesión abierta actual si el gasto nunca había tocado caja.
-    const sesion = impacto.sesionId
-      ? { id: impacto.sesionId }
-      : await getSesionAbierta(ctx.supabase, ctx.tenantId);
+    let sesion: { id: string } | null = impacto.sesionId ? { id: impacto.sesionId } : null;
+    if (!sesion) {
+      const { activa: sucursalActiva } = await getSucursalActiva(
+        ctx.supabase,
+        ctx.tenantId,
+        ctx.userId,
+      );
+      sesion = sucursalActiva
+        ? await getSesionAbierta(ctx.supabase, ctx.tenantId, sucursalActiva.id)
+        : null;
+    }
     if (!sesion) {
       return {
         error: "Debes tener la caja abierta para que este gasto en efectivo quede reflejado.",

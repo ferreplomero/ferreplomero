@@ -36,6 +36,7 @@ import {
   getClientesMasRecurrentes,
 } from "@/lib/minimarket/data/clientes";
 import { getSesionAbierta, listMovimientosCaja, resumirCaja } from "@/lib/minimarket/data/caja";
+import { getSucursalActiva } from "@/lib/minimarket/sucursal-acceso";
 import { listAvisosVigentes } from "@/lib/minimarket/data/avisos";
 import { getTimezoneNegocio } from "@/lib/minimarket/timezone";
 import { fmtFechaLarga } from "@/lib/minimarket/date-format";
@@ -85,6 +86,7 @@ export default async function TableroPage({
   const supabase = await createClient();
   const country = getCountryConfig(session.activeTenant?.country);
   const tz = await getTimezoneNegocio(supabase, tenantId);
+  const { activa: sucursalActiva } = await getSucursalActiva(supabase, tenantId, session.user.id);
 
   const periodoParam = periodoValido(params.periodo) ? params.periodo : "hoy";
   const desdeParam = typeof params.desde === "string" ? params.desde : undefined;
@@ -121,7 +123,9 @@ export default async function TableroPage({
     getClientesMasRecurrentes(supabase, tenantId, rango, tz, 5),
     listClientes(supabase, tenantId),
     getAlertasNegocio(supabase, tenantId, tz),
-    getSesionAbierta(supabase, tenantId),
+    sucursalActiva
+      ? getSesionAbierta(supabase, tenantId, sucursalActiva.id)
+      : Promise.resolve(null),
     listAvisosVigentes(supabase, session.user.id),
     supabase
       .from("mm_config_negocio")

@@ -22,10 +22,16 @@ interface SesionLocal {
 interface AbrirCajaFormProps {
   tenantId: string;
   usuarioId: string;
+  sucursalId: string;
   onAbiertaLocal: (sesion: SesionLocal) => void;
 }
 
-export function AbrirCajaForm({ tenantId, usuarioId, onAbiertaLocal }: AbrirCajaFormProps) {
+export function AbrirCajaForm({
+  tenantId,
+  usuarioId,
+  sucursalId,
+  onAbiertaLocal,
+}: AbrirCajaFormProps) {
   const router = useRouter();
   const powerSyncDb = React.useContext(PowerSyncContext);
   const offline = !useOnline();
@@ -55,6 +61,7 @@ export function AbrirCajaForm({ tenantId, usuarioId, onAbiertaLocal }: AbrirCaja
       const { sesionId } = await abrirCajaLocal(powerSyncDb, {
         tenantId,
         usuarioId,
+        sucursalId,
         montoInicialUsd,
         montoInicialBs,
       });
@@ -85,6 +92,7 @@ export function AbrirCajaForm({ tenantId, usuarioId, onAbiertaLocal }: AbrirCaja
       </div>
 
       <form action={formAction} onSubmit={onSubmit} className="space-y-4" noValidate>
+        <input type="hidden" name="sucursal_id" value={sucursalId} />
         {offline ? (
           <div
             role="status"

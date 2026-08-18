@@ -29,7 +29,7 @@ function mockDb(
       if (sql.includes("mm_abonos_fiado")) return abonosPorFiado.get(String(params[0])) ?? [];
       return [];
     }),
-    getOptional: vi.fn(async (sql: string) => {
+    getOptional: vi.fn(async (sql: string, _params: unknown[] = []) => {
       if (sql.includes("mm_caja_sesiones")) return sesionCajaAbierta;
       return null;
     }),
@@ -37,7 +37,7 @@ function mockDb(
   const db = {
     writeTransaction: vi.fn(async (cb: (context: typeof tx) => Promise<void>) => cb(tx)),
   } as unknown as AbstractPowerSyncDatabase;
-  return { db, ejecutadas, abonosPorFiado };
+  return { db, ejecutadas, abonosPorFiado, tx };
 }
 
 function tabla(ejecutadas: Ejecutada[], nombre: string): Ejecutada[] {
@@ -80,6 +80,7 @@ function abonoInput(overrides: Partial<AbonoLocalInput> = {}): AbonoLocalInput {
   return {
     tenantId: "t1",
     usuarioId: "u1",
+    sucursalId: "s1",
     clienteId: "c1",
     clienteNombre: "María Pérez",
     montoUsd: 20,
@@ -169,6 +170,15 @@ describe("registrarAbonoLocal", () => {
     const { db, ejecutadas } = mockDb([{ id: "f1", monto_usd: 30 }], null);
     await registrarAbonoLocal(db, abonoInput({ montoUsd: 20 }));
     expect(tabla(ejecutadas, "mm_caja_movimientos")).toHaveLength(0);
+  });
+
+  it("busca la sesión de caja filtrando por la sucursal del abono, no cualquier sucursal", async () => {
+    const { db, tx } = mockDb([{ id: "f1", monto_usd: 30 }], { id: "sesion1" });
+    await registrarAbonoLocal(db, abonoInput({ montoUsd: 20, sucursalId: "s2" }));
+    expect(tx.getOptional.mock.calls).toHaveLength(1);
+    const [sql, params] = tx.getOptional.mock.calls[0] ?? [];
+    expect(sql).toContain("sucursal_id");
+    expect(params).toContain("s2");
   });
 
   it("no registra ingreso de caja para métodos con cuenta bancaria (pago móvil/zelle/tarjeta)", async () => {

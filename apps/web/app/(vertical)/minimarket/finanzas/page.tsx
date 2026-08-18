@@ -25,6 +25,7 @@ import {
 import { METODOS_PAGO } from "@/lib/minimarket/constants";
 import { fmtFechaCorta, fmtFechaHora } from "@/lib/minimarket/date-format";
 import { getSesionAbierta, listMovimientosCaja, resumirCaja } from "@/lib/minimarket/data/caja";
+import { getSucursalActiva } from "@/lib/minimarket/sucursal-acceso";
 import { listCuentasConSaldo, saldoNativo } from "@/lib/minimarket/data/bancos";
 import { METODO_CUENTA_LABEL } from "@/lib/minimarket/bancos";
 import { getResumenSaldosIniciales } from "@/lib/minimarket/data/saldos-iniciales";
@@ -73,6 +74,7 @@ export default async function FinanzasPage({
   const supabase = await createClient();
   const country = getCountryConfig(session.activeTenant?.country);
   const tz = await getTimezoneNegocio(supabase, tenantId);
+  const { activa: sucursalActiva } = await getSucursalActiva(supabase, tenantId, session.user.id);
 
   const rango =
     desdeParam && hastaParam
@@ -96,7 +98,9 @@ export default async function FinanzasPage({
       .select("parametros, nombre_comercial")
       .eq("tenant_id", tenantId)
       .maybeSingle(),
-    getSesionAbierta(supabase, tenantId),
+    sucursalActiva
+      ? getSesionAbierta(supabase, tenantId, sucursalActiva.id)
+      : Promise.resolve(null),
     listCuentasConSaldo(supabase, tenantId),
     getResumenSaldosIniciales(supabase, tenantId),
   ]);

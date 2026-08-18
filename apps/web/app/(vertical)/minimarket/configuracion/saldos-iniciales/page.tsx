@@ -8,6 +8,7 @@ import { getSessionContext } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { listCuentasBancarias } from "@/lib/minimarket/data/bancos";
 import { getSesionAbierta } from "@/lib/minimarket/data/caja";
+import { getSucursalActiva } from "@/lib/minimarket/sucursal-acceso";
 import { getResumenSaldosIniciales } from "@/lib/minimarket/data/saldos-iniciales";
 import { getTasaVigente } from "@/lib/minimarket/exchange-rate";
 import { SaldosInicialesForm } from "./saldos-iniciales-form";
@@ -21,6 +22,7 @@ export default async function SaldosInicialesPage() {
 
   const supabase = await createClient();
   const country = getCountryConfig(session.activeTenant?.country);
+  const { activa: sucursalActiva } = await getSucursalActiva(supabase, tenantId, session.user.id);
 
   const [configRes, cuentas, sesionCaja, tasa] = await Promise.all([
     supabase
@@ -29,7 +31,9 @@ export default async function SaldosInicialesPage() {
       .eq("tenant_id", tenantId)
       .maybeSingle(),
     listCuentasBancarias(supabase, tenantId),
-    getSesionAbierta(supabase, tenantId),
+    sucursalActiva
+      ? getSesionAbierta(supabase, tenantId, sucursalActiva.id)
+      : Promise.resolve(null),
     getTasaVigente(supabase, tenantId),
   ]);
 

@@ -19,6 +19,7 @@ import { requirePermisoAccion } from "@/lib/minimarket/permisos";
 import { esEfectivo } from "@/lib/minimarket/pos-calc";
 import { esMetodoConCuenta } from "@/lib/minimarket/bancos";
 import { getSesionAbierta, insertarMovimientoCaja } from "@/lib/minimarket/data/caja";
+import { getSucursalActiva } from "@/lib/minimarket/sucursal-acceso";
 import { insertarMovimientoCuenta } from "@/lib/minimarket/data/bancos";
 import type { MmMetodoPago } from "@arkiteq/db";
 
@@ -264,11 +265,20 @@ export async function registrarAbono(_prev: AbonoResult, formData: FormData): Pr
   const metodoTyped = metodo as MmMetodoPago;
   const esCuentaMetodo = esMetodoConCuenta(metodoTyped);
 
+  const sucursalActiva = esEfectivo(metodoTyped)
+    ? (await getSucursalActiva(supabase, tenantId, session.user.id)).activa
+    : null;
+  if (esEfectivo(metodoTyped) && !sucursalActiva) {
+    return { error: "No tienes ninguna sucursal asignada." };
+  }
+
   const [cliente, tasa, configRes, sesionCaja, cuentaRes] = await Promise.all([
     getClienteConSaldo(supabase, tenantId, cliente_id),
     getTasaVigente(supabase, tenantId),
     supabase.from("mm_config_negocio").select("parametros").eq("tenant_id", tenantId).maybeSingle(),
-    esEfectivo(metodoTyped) ? getSesionAbierta(supabase, tenantId) : Promise.resolve(null),
+    sucursalActiva
+      ? getSesionAbierta(supabase, tenantId, sucursalActiva.id)
+      : Promise.resolve(null),
     esCuentaMetodo && cuenta_bancaria_id
       ? supabase
           .from("mm_cuentas_bancarias")

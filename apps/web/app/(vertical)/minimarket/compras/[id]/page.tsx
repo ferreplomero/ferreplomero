@@ -14,6 +14,7 @@ import { getTimezoneNegocio } from "@/lib/minimarket/timezone";
 import { fmtFechaCorta, fmtFechaLarga } from "@/lib/minimarket/date-format";
 import { parseMetodosPago } from "@/lib/minimarket/metodos-pago";
 import { getSesionAbierta } from "@/lib/minimarket/data/caja";
+import { getSucursalActiva } from "@/lib/minimarket/sucursal-acceso";
 import { listCuentasBancarias } from "@/lib/minimarket/data/bancos";
 import { CompraAcciones } from "./compra-acciones";
 import { RegistrarPagoCompra } from "./registrar-pago-compra";
@@ -63,6 +64,7 @@ export default async function CompraDetallePage({ params }: Props) {
 
   const supabase = await createClient();
   const country = getCountryConfig(session.activeTenant?.country);
+  const { activa: sucursalActiva } = await getSucursalActiva(supabase, tenantId, session.user.id);
 
   const [{ compra, tz }, tasa, configMetodosRes, sesion, cuentasBancarias] = await Promise.all([
     cargarCompraDetalle(tenantId, id),
@@ -72,7 +74,9 @@ export default async function CompraDetallePage({ params }: Props) {
       .select("metodos_pago")
       .eq("tenant_id", tenantId)
       .maybeSingle(),
-    getSesionAbierta(supabase, tenantId),
+    sucursalActiva
+      ? getSesionAbierta(supabase, tenantId, sucursalActiva.id)
+      : Promise.resolve(null),
     listCuentasBancarias(supabase, tenantId),
   ]);
 

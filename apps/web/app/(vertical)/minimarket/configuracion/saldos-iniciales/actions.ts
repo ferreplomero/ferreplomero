@@ -24,6 +24,7 @@ import { getOrCreateConfigId } from "@/lib/minimarket/config-negocio";
 import { parseMetodosPago } from "@/lib/minimarket/metodos-pago";
 import { monedaNativaCuenta, type MetodoConCuenta } from "@/lib/minimarket/bancos";
 import { getSesionAbierta, insertarMovimientoCaja } from "@/lib/minimarket/data/caja";
+import { getSucursalActiva } from "@/lib/minimarket/sucursal-acceso";
 import { insertarMovimientoCuenta } from "@/lib/minimarket/data/bancos";
 import { insertarSaldoInicial, MOTIVO_SALDO_INICIAL } from "@/lib/minimarket/data/saldos-iniciales";
 import { getTasaVigente } from "@/lib/minimarket/exchange-rate";
@@ -114,7 +115,15 @@ export async function guardarMediosSaldosIniciales(
   // en efectivo, en vez de dejar un saldo "fantasma" que nunca entró a la
   // gaveta — ver crearOtroIngreso en reportes/otros-ingresos/actions.ts).
   if (medioEfectivoBs || medioEfectivoUsd) {
-    const sesion = await getSesionAbierta(ctx.supabase, ctx.tenantId);
+    const { activa: sucursalActiva } = await getSucursalActiva(
+      ctx.supabase,
+      ctx.tenantId,
+      ctx.userId,
+    );
+    if (!sucursalActiva) {
+      return { error: "No tienes ninguna sucursal asignada." };
+    }
+    const sesion = await getSesionAbierta(ctx.supabase, ctx.tenantId, sucursalActiva.id);
     if (!sesion) {
       return {
         error:

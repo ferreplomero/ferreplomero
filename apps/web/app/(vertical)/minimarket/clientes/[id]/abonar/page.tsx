@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getTasaVigente } from "@/lib/minimarket/exchange-rate";
 import { getClienteConSaldo } from "@/lib/minimarket/data/clientes";
 import { listCuentasBancarias } from "@/lib/minimarket/data/bancos";
+import { getSucursalActiva } from "@/lib/minimarket/sucursal-acceso";
 import { AbonoForm } from "../../abono-form";
 
 interface Props {
@@ -33,6 +34,8 @@ export default async function AbonarPage({ params }: Props) {
 
   const supabase = await createClient();
   const country = getCountryConfig(session.activeTenant?.country);
+  const { activa: sucursalActiva } = await getSucursalActiva(supabase, tenantId, session.user.id);
+  if (!sucursalActiva) redirect("/minimarket");
 
   const [cliente, tasa, configRes, cuentasBancarias] = await Promise.all([
     getClienteConSaldo(supabase, tenantId, id),
@@ -85,6 +88,7 @@ export default async function AbonarPage({ params }: Props) {
         locale={country.locale}
         tenantId={tenantId}
         usuarioId={session.user.id}
+        sucursalId={sucursalActiva.id}
         igtfActivo={igtfActivo}
         cuentasBancarias={cuentasBancarias.filter((c) => c.activa)}
       />

@@ -10,6 +10,7 @@ import { getTimezoneNegocio } from "@/lib/minimarket/timezone";
 import { getDeudaConAbonos } from "@/lib/minimarket/data/deudas";
 import { parseMetodosPago } from "@/lib/minimarket/metodos-pago";
 import { getSesionAbierta } from "@/lib/minimarket/data/caja";
+import { getSucursalActiva } from "@/lib/minimarket/sucursal-acceso";
 import { listCuentasBancarias } from "@/lib/minimarket/data/bancos";
 import { AbonoDeudaForm } from "../../abono-deuda-form";
 
@@ -37,6 +38,7 @@ export default async function AbonarDeudaPage({ params }: Props) {
   const supabase = await createClient();
   const country = getCountryConfig(session.activeTenant?.country);
   const tz = await getTimezoneNegocio(supabase, tenantId);
+  const { activa: sucursalActiva } = await getSucursalActiva(supabase, tenantId, session.user.id);
 
   const [deuda, tasa, configRes, sesion, cuentasBancarias] = await Promise.all([
     getDeudaConAbonos(supabase, tenantId, id, tz),
@@ -46,7 +48,9 @@ export default async function AbonarDeudaPage({ params }: Props) {
       .select("metodos_pago")
       .eq("tenant_id", tenantId)
       .maybeSingle(),
-    getSesionAbierta(supabase, tenantId),
+    sucursalActiva
+      ? getSesionAbierta(supabase, tenantId, sucursalActiva.id)
+      : Promise.resolve(null),
     listCuentasBancarias(supabase, tenantId),
   ]);
   const metodosPago = parseMetodosPago(configRes.data?.metodos_pago);

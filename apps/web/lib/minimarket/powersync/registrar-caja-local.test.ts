@@ -16,7 +16,6 @@ interface Ejecutada {
 function mockDb(
   options: {
     sesionAbierta?: { id: string } | null;
-    sucursal?: { id: string } | null;
     sesionParaCierre?: { monto_inicial_usd: number; monto_inicial_bs: number } | null;
     movimientos?: { tipo: string; monto: number; moneda: string }[];
     configExistente?: { id: string } | null;
@@ -35,9 +34,6 @@ function mockDb(
         sql.includes("select id")
       ) {
         return options.sesionAbierta ?? null;
-      }
-      if (sql.includes("mm_sucursales")) {
-        return "sucursal" in options ? options.sucursal : { id: "s1" };
       }
       if (sql.includes("monto_inicial_usd")) return options.sesionParaCierre ?? null;
       if (sql.includes("mm_config_negocio")) {
@@ -59,10 +55,11 @@ function mockDb(
 
 describe("abrirCajaLocal", () => {
   it("crea la sesión cuando no hay una caja abierta", async () => {
-    const { db, ejecutadas } = mockDb({ sesionAbierta: null, sucursal: { id: "s1" } });
+    const { db, ejecutadas } = mockDb({ sesionAbierta: null });
     const { sesionId } = await abrirCajaLocal(db, {
       tenantId: "t1",
       usuarioId: "u1",
+      sucursalId: "s1",
       montoInicialUsd: 20,
       montoInicialBs: 1000,
     });
@@ -71,30 +68,20 @@ describe("abrirCajaLocal", () => {
     );
     expect(inserts).toHaveLength(1);
     expect(inserts[0]?.params[0]).toBe(sesionId);
+    expect(inserts[0]?.params[2]).toBe("s1");
   });
 
-  it("rechaza si ya hay una caja abierta", async () => {
+  it("rechaza si ya hay una caja abierta en esa sucursal", async () => {
     const { db } = mockDb({ sesionAbierta: { id: "existing" } });
     await expect(
       abrirCajaLocal(db, {
         tenantId: "t1",
         usuarioId: "u1",
+        sucursalId: "s1",
         montoInicialUsd: 0,
         montoInicialBs: 0,
       }),
     ).rejects.toThrow(/ya hay una caja abierta/i);
-  });
-
-  it("rechaza si no hay sucursal configurada", async () => {
-    const { db } = mockDb({ sesionAbierta: null, sucursal: null });
-    await expect(
-      abrirCajaLocal(db, {
-        tenantId: "t1",
-        usuarioId: "u1",
-        montoInicialUsd: 0,
-        montoInicialBs: 0,
-      }),
-    ).rejects.toThrow(/sucursal/i);
   });
 });
 

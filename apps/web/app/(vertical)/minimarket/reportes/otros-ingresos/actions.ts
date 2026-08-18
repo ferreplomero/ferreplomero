@@ -14,6 +14,7 @@ import {
   getSesionAbierta,
   insertarMovimientoCaja,
 } from "@/lib/minimarket/data/caja";
+import { getSucursalActiva } from "@/lib/minimarket/sucursal-acceso";
 import {
   getImpactoCuentaPorReferencia,
   insertarMovimientoCuenta,
@@ -173,7 +174,18 @@ export async function crearOtroIngreso(
     // Igual criterio que un gasto en efectivo: si no hay caja abierta, se
     // bloquea el registro completo en vez de dejar un ingreso "en efectivo"
     // que nunca entró a la gaveta (CLAUDE.md regla crítica #1).
-    const sesion = await getSesionAbierta(ctx.supabase, ctx.tenantId);
+    const { activa: sucursalActiva } = await getSucursalActiva(
+      ctx.supabase,
+      ctx.tenantId,
+      ctx.userId,
+    );
+    if (!sucursalActiva) {
+      return {
+        error: "No tienes ninguna sucursal asignada.",
+        fieldErrors: { metodo_pago: "Requiere sucursal asignada." },
+      };
+    }
+    const sesion = await getSesionAbierta(ctx.supabase, ctx.tenantId, sucursalActiva.id);
     if (!sesion) {
       return {
         error: "Debes tener la caja abierta para registrar un ingreso en efectivo.",
@@ -347,9 +359,17 @@ export async function actualizarOtroIngreso(
   let sesionIdNueva: string | null = null;
   let montoCajaNuevo: { monto: number; moneda: "USD" | "VES" } | null = null;
   if (cambioMontoOMetodo && esEfectivo(d.metodo_pago)) {
-    const sesion = impacto.sesionId
-      ? { id: impacto.sesionId }
-      : await getSesionAbierta(ctx.supabase, ctx.tenantId);
+    let sesion: { id: string } | null = impacto.sesionId ? { id: impacto.sesionId } : null;
+    if (!sesion) {
+      const { activa: sucursalActiva } = await getSucursalActiva(
+        ctx.supabase,
+        ctx.tenantId,
+        ctx.userId,
+      );
+      sesion = sucursalActiva
+        ? await getSesionAbierta(ctx.supabase, ctx.tenantId, sucursalActiva.id)
+        : null;
+    }
     if (!sesion) {
       return {
         error: "Debes tener la caja abierta para que este ingreso en efectivo quede reflejado.",

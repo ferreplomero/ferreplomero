@@ -9,6 +9,7 @@ import {
   listMovimientosCaja,
   listSesionesCerradas,
 } from "@/lib/minimarket/data/caja";
+import { getSucursalActiva } from "@/lib/minimarket/sucursal-acceso";
 import { CajaModuloCliente } from "@/components/minimarket/caja/caja-modulo-cliente";
 import { getTimezoneNegocio } from "@/lib/minimarket/timezone";
 import { fmtFechaHora } from "@/lib/minimarket/date-format";
@@ -23,9 +24,12 @@ export default async function CajaPage() {
   const supabase = await createClient();
   const country = getCountryConfig(session.activeTenant?.country);
 
+  const { activa: sucursalActiva } = await getSucursalActiva(supabase, tenantId, session.user.id);
+  if (!sucursalActiva) redirect("/minimarket");
+
   const [sesion, cerradas, tz] = await Promise.all([
-    getSesionAbierta(supabase, tenantId),
-    listSesionesCerradas(supabase, tenantId),
+    getSesionAbierta(supabase, tenantId, sucursalActiva.id),
+    listSesionesCerradas(supabase, tenantId, sucursalActiva.id),
     getTimezoneNegocio(supabase, tenantId),
   ]);
 
@@ -67,6 +71,7 @@ export default async function CajaPage() {
         movimientosIniciales={movimientos}
         tenantId={tenantId}
         usuarioId={session.user.id}
+        sucursalId={sucursalActiva.id}
         locale={country.locale}
         tz={tz}
       />

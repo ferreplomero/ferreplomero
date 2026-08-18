@@ -555,7 +555,7 @@ export async function crearCompra(_prev: CompraResult, formData: FormData): Prom
   const esCredito = d.metodo_pago === "credito_proveedor";
   if (!esCredito) {
     if (esEfectivo(d.metodo_pago)) {
-      const sesion = await getSesionAbierta(supabase, tenantId);
+      const sesion = await getSesionAbierta(supabase, tenantId, d.sucursal_id);
       if (!sesion) {
         return {
           error: "Debes tener la caja abierta para registrar una compra pagada en efectivo.",
@@ -912,7 +912,9 @@ export async function pagarCompra(
 
   const { data: compra } = await supabase
     .from("mm_compras")
-    .select("id, metodo_pago, pagada, estado, total_usd, iva_usd, igtf_usd, proveedor_id")
+    .select(
+      "id, metodo_pago, pagada, estado, total_usd, iva_usd, igtf_usd, proveedor_id, sucursal_id",
+    )
     .eq("tenant_id", tenantId)
     .eq("id", compraId)
     .is("deleted_at", null)
@@ -946,7 +948,7 @@ export async function pagarCompra(
   let montoCuenta: { montoUsd: number; montoBs: number; tasa: number } | null = null;
 
   if (esEfectivo(metodoReal)) {
-    const sesion = await getSesionAbierta(supabase, tenantId);
+    const sesion = await getSesionAbierta(supabase, tenantId, compra.sucursal_id);
     if (!sesion) {
       return { error: "Debes tener la caja abierta para registrar este pago en efectivo." };
     }

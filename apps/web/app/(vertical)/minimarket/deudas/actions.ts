@@ -10,6 +10,7 @@ import { METODOS_ABONO } from "@/lib/minimarket/constants";
 import { esEfectivo } from "@/lib/minimarket/pos-calc";
 import { esMetodoConCuenta } from "@/lib/minimarket/bancos";
 import { getSesionAbierta, insertarMovimientoCaja } from "@/lib/minimarket/data/caja";
+import { getSucursalActiva } from "@/lib/minimarket/sucursal-acceso";
 import { insertarMovimientoCuenta } from "@/lib/minimarket/data/bancos";
 import type { MmMetodoPago } from "@arkiteq/db";
 
@@ -437,7 +438,13 @@ export async function registrarAbonoDeuda(
   let sesionId: string | null = null;
   let cuentaId: string | null = null;
   if (esEfectivo(metodo)) {
-    const sesion = await getSesionAbierta(ctx.supabase, ctx.tenantId);
+    const { activa: sucursalActiva } = await getSucursalActiva(
+      ctx.supabase,
+      ctx.tenantId,
+      ctx.userId,
+    );
+    if (!sucursalActiva) return { error: "No tienes ninguna sucursal asignada." };
+    const sesion = await getSesionAbierta(ctx.supabase, ctx.tenantId, sucursalActiva.id);
     if (!sesion) {
       return { error: "Debes tener la caja abierta para registrar un abono en efectivo." };
     }

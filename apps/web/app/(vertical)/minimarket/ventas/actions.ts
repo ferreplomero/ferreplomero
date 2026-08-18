@@ -577,7 +577,7 @@ export async function registrarVenta(input: VentaInput): Promise<VentaResult> {
     // CLAUDE.md regla crítica #1). Los pagos digitales no dependen de esto.
     const tocaCaja = v.pagos.some((p) => esEfectivo(p.metodo)) || Boolean(v.vuelto);
     if (tocaCaja) {
-      const sesion = await getSesionAbierta(supabase, tenantId);
+      const sesion = await getSesionAbierta(supabase, tenantId, sucursalId);
       if (!sesion) {
         return {
           error:
@@ -635,12 +635,14 @@ export async function registrarVenta(input: VentaInput): Promise<VentaResult> {
       tenantIdActual: string,
       ventaId: string,
       usuarioId: string,
+      sucursalIdActual: string,
     ): Promise<void> {
       if (pagosEfectivo.length === 0 && !v.vuelto) return;
       const { data: sesion } = await supabase
         .from("mm_caja_sesiones")
         .select("id")
         .eq("tenant_id", tenantIdActual)
+        .eq("sucursal_id", sucursalIdActual)
         .eq("estado", "abierta")
         .is("deleted_at", null)
         .order("abierta_en", { ascending: false })
@@ -835,7 +837,7 @@ export async function registrarVenta(input: VentaInput): Promise<VentaResult> {
           cuenta_bancaria_id: cuentaValidaParaPago(p),
         })),
       ),
-      registrarMovimientoCaja(tenantId, venta.id, session.user.id),
+      registrarMovimientoCaja(tenantId, venta.id, session.user.id, sucursalId),
       registrarMovimientoCuenta(tenantId, venta.id, session.user.id),
       registrarMovimientosCredito(tenantId, venta.id, session.user.id),
       // Fiado: crea la cuenta por cobrar (solo por el monto en crédito).
@@ -921,9 +923,18 @@ export async function getVentaParaAnularAction(ventaId: string): Promise<VentaPa
 
   const country = getCountryConfig(session.activeTenant?.country);
 
+  const { data: ventaSucursal } = await supabase
+    .from("mm_ventas")
+    .select("sucursal_id")
+    .eq("tenant_id", tenantId)
+    .eq("id", ventaId)
+    .maybeSingle();
+
   const [venta, cajaSesion, cuentasBancarias, configRes] = await Promise.all([
     getVentaParaAnular(supabase, tenantId, ventaId),
-    getSesionAbierta(supabase, tenantId),
+    ventaSucursal
+      ? getSesionAbierta(supabase, tenantId, ventaSucursal.sucursal_id)
+      : Promise.resolve(null),
     listCuentasBancarias(supabase, tenantId),
     supabase
       .from("mm_config_negocio")

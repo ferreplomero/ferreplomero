@@ -16,6 +16,7 @@ import type { MmCajaMovTipo, MmTipoTasa } from "@arkiteq/db";
 export interface AbrirCajaLocalInput {
   tenantId: string;
   usuarioId: string;
+  sucursalId: string;
   montoInicialUsd: number;
   montoInicialBs: number;
 }
@@ -34,21 +35,15 @@ export async function abrirCajaLocal(
   await db.writeTransaction(async (tx) => {
     const abierta = await tx.getOptional<{ id: string }>(
       `select id from mm_caja_sesiones
-         where tenant_id = ? and estado = 'abierta' and deleted_at is null
+         where tenant_id = ? and sucursal_id = ? and estado = 'abierta' and deleted_at is null
          limit 1`,
-      [input.tenantId],
+      [input.tenantId, input.sucursalId],
     );
     if (abierta) {
-      throw new Error("Ya hay una caja abierta en este dispositivo. Ciérrala antes de abrir otra.");
+      throw new Error(
+        "Ya hay una caja abierta en esta sucursal en este dispositivo. Ciérrala antes de abrir otra.",
+      );
     }
-
-    const sucursal = await tx.getOptional<{ id: string }>(
-      `select id from mm_sucursales
-         where tenant_id = ? and deleted_at is null
-         order by created_at asc limit 1`,
-      [input.tenantId],
-    );
-    if (!sucursal) throw new Error("No hay una sucursal configurada en este dispositivo.");
 
     await tx.execute(
       `insert into mm_caja_sesiones
@@ -58,7 +53,7 @@ export async function abrirCajaLocal(
       [
         sesionId,
         input.tenantId,
-        sucursal.id,
+        input.sucursalId,
         input.usuarioId,
         input.montoInicialUsd,
         input.montoInicialBs,

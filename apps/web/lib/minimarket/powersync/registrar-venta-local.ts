@@ -178,9 +178,9 @@ export async function registrarVentaLocal(
     if (pagosEfectivo.length > 0 || input.vuelto) {
       const sesion = await tx.getOptional<{ id: string }>(
         `select id from mm_caja_sesiones
-           where tenant_id = ? and estado = 'abierta' and deleted_at is null
+           where tenant_id = ? and sucursal_id = ? and estado = 'abierta' and deleted_at is null
            order by abierta_en desc limit 1`,
-        [input.tenantId],
+        [input.tenantId, input.sucursalId],
       );
       if (sesion) {
         for (const pago of pagosEfectivo) {

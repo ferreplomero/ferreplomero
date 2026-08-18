@@ -11,6 +11,7 @@ import { listCategorias, siguienteCorrelativoSku } from "@/lib/minimarket/data/i
 import { defaultsFiscalesProducto, opcionesImpuesto } from "@/lib/minimarket/producto-opciones";
 import { parseMetodosPago } from "@/lib/minimarket/metodos-pago";
 import { getSesionAbierta } from "@/lib/minimarket/data/caja";
+import { getSucursalActiva } from "@/lib/minimarket/sucursal-acceso";
 import { listCuentasBancarias } from "@/lib/minimarket/data/bancos";
 import { CompraForm } from "../compra-form";
 
@@ -23,6 +24,7 @@ export default async function NuevaCompraPage() {
 
   const supabase = await createClient();
   const country = getCountryConfig(session.activeTenant?.country);
+  const { activa: sucursalActiva } = await getSucursalActiva(supabase, tenantId, session.user.id);
 
   const [
     { data: productos },
@@ -66,7 +68,9 @@ export default async function NuevaCompraPage() {
       .select("metodos_pago")
       .eq("tenant_id", tenantId)
       .maybeSingle(),
-    getSesionAbierta(supabase, tenantId),
+    sucursalActiva
+      ? getSesionAbierta(supabase, tenantId, sucursalActiva.id)
+      : Promise.resolve(null),
     listCuentasBancarias(supabase, tenantId),
   ]);
   const metodosPago = parseMetodosPago(configMetodosRes.data?.metodos_pago);

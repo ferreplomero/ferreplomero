@@ -109,6 +109,7 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 export interface AbonoLocalInput {
   tenantId: string;
   usuarioId: string;
+  sucursalId: string;
   clienteId: string;
   /** Solo para el motivo del movimiento de caja ("Abono — {nombre}"). */
   clienteNombre: string;
@@ -201,9 +202,9 @@ export async function registrarAbonoLocal(
     if (esEfectivoLocal(input.metodo) && abonoIds.length > 0) {
       const sesion = await tx.getOptional<{ id: string }>(
         `select id from mm_caja_sesiones
-           where tenant_id = ? and estado = 'abierta' and deleted_at is null
+           where tenant_id = ? and sucursal_id = ? and estado = 'abierta' and deleted_at is null
            order by abierta_en desc limit 1`,
-        [input.tenantId],
+        [input.tenantId, input.sucursalId],
       );
       if (sesion) {
         const montoRecibidoUsd = round2(input.montoUsd + input.igtfUsd);

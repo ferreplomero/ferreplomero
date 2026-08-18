@@ -78,7 +78,7 @@ export default async function NuevaVentaPage({ searchParams }: Props) {
     getTodasLasTasas(supabase, tenantId),
     getTipoPreferido(supabase, tenantId),
     listClientes(supabase, tenantId),
-    getSesionAbierta(supabase, tenantId),
+    getSesionAbierta(supabase, tenantId, sucursalActiva.id),
     getProductosFrecuentes(supabase, tenantId),
     supabase
       .from("mm_config_negocio")
