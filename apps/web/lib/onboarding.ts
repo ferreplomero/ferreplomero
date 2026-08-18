@@ -69,7 +69,7 @@ export async function asegurarNegocioInicial(user: User): Promise<ResultadoAprov
   }
 
   const cookieStore = await cookies();
-  cookieStore.set(ACTIVE_TENANT_COOKIE, tenantId, {
+  cookieStore.set(ACTIVE_TENANT_COOKIE, `${user.id}.${tenantId}`, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",

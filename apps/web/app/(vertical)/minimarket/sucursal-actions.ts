@@ -34,7 +34,7 @@ export async function cambiarSucursalActivaAction(
   }
 
   const cookieStore = await cookies();
-  cookieStore.set(ACTIVE_SUCURSAL_COOKIE, sucursalId, {
+  cookieStore.set(ACTIVE_SUCURSAL_COOKIE, `${session.user.id}.${sucursalId}`, {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",

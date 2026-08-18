@@ -101,6 +101,17 @@ export interface SucursalActivaResult {
  * `null` solo si `permitidas` está vacío (sin ninguna sucursal asignada).
  * Memoizado por request (React `cache`) — layout y página pueden llamarla
  * sin duplicar las consultas, mismo truco que `getSessionContext`.
+ *
+ * La cookie guarda `"${profileId}.${sucursalId}"`, no solo el id de la
+ * sucursal — en un dispositivo compartido (terminal de POS con varios
+ * cajeros), sin esto la sucursal elegida por la persona ANTERIOR podía
+ * quedar como activa para la siguiente si por coincidencia esa sucursal
+ * también estaba entre sus permitidas (ninguna fuga de datos, RLS seguía
+ * protegiendo los números, pero sí confundía en qué sucursal se opera). Si
+ * el dueño guardado no es el usuario actual, se ignora por completo — cae
+ * al mismo fallback de siempre, sin importar si hubo `signOutAction` de por
+ * medio o no. Un valor viejo (pre-este-cambio, sin el punto) nunca coincide
+ * con ningún `profileId` real, así que se autocorrige solo.
  */
 export const getSucursalActiva = cache(
   async (supabase: Client, tenantId: string, profileId: string): Promise<SucursalActivaResult> => {
@@ -108,8 +119,13 @@ export const getSucursalActiva = cache(
     if (permitidas.length === 0) return { activa: null, permitidas };
 
     const cookieStore = await cookies();
-    const preferredId = cookieStore.get(ACTIVE_SUCURSAL_COOKIE)?.value;
-    const activa = permitidas.find((s) => s.id === preferredId) ?? permitidas[0] ?? null;
+    const [ownerId, preferredId] = (cookieStore.get(ACTIVE_SUCURSAL_COOKIE)?.value ?? "").split(
+      ".",
+    );
+    const activa =
+      (ownerId === profileId ? permitidas.find((s) => s.id === preferredId) : undefined) ??
+      permitidas[0] ??
+      null;
     return { activa, permitidas };
   },
 );

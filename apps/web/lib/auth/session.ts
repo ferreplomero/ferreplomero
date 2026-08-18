@@ -68,8 +68,15 @@ export const getSessionContext = cache(async (): Promise<SessionContext | null> 
     }));
 
   const cookieStore = await cookies();
-  const preferredId = cookieStore.get(ACTIVE_TENANT_COOKIE)?.value;
-  const activeTenant = tenants.find((tenant) => tenant.id === preferredId) ?? tenants[0] ?? null;
+  // Mismo criterio que ACTIVE_SUCURSAL_COOKIE (sucursal-acceso.ts): la
+  // cookie guarda "${userId}.${tenantId}", no solo el tenant, para que la
+  // elección de un usuario ANTERIOR en un dispositivo compartido nunca
+  // quede como tenant activo del siguiente.
+  const [ownerId, preferredId] = (cookieStore.get(ACTIVE_TENANT_COOKIE)?.value ?? "").split(".");
+  const activeTenant =
+    (ownerId === user.id ? tenants.find((tenant) => tenant.id === preferredId) : undefined) ??
+    tenants[0] ??
+    null;
 
   const entitlementDetails = activeTenant ? await getEntitlements(supabase, activeTenant.id) : [];
   const ahoraIso = new Date().toISOString();

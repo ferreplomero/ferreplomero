@@ -1,9 +1,9 @@
 "use server";
 
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { loginSchema, signUpSchema } from "@arkiteq/core";
-import { APP_HOME, SITE } from "@/lib/site";
+import { ACTIVE_SUCURSAL_COOKIE, ACTIVE_TENANT_COOKIE, APP_HOME, SITE } from "@/lib/site";
 import { safeInternalPath } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
 import { asegurarNegocioInicial } from "@/lib/onboarding";
@@ -135,9 +135,21 @@ export async function signInWithGoogle(): Promise<void> {
   redirect(data.url);
 }
 
-/** Cierra la sesión y vuelve al inicio. */
+/**
+ * Cierra la sesión y vuelve al inicio. Además de cerrar la sesión de
+ * Supabase Auth, borra las cookies de tenant/sucursal activa — higiene
+ * inmediata para dispositivos compartidos (terminal de POS con varios
+ * cajeros); la protección real contra que sobrevivan a un cambio de usuario
+ * vive en cómo se LEEN esas cookies (`getSessionContext`,
+ * `getSucursalActiva` — ver sus comentarios), que ya ignoran cualquier
+ * valor que no sea del usuario actual aunque este borrado no llegara a
+ * ejecutarse (sesión expirada, ban a mitad de turno, cerrar la pestaña).
+ */
 export async function signOutAction(): Promise<void> {
   const supabase = await createClient();
   await supabase.auth.signOut();
+  const cookieStore = await cookies();
+  cookieStore.delete(ACTIVE_TENANT_COOKIE);
+  cookieStore.delete(ACTIVE_SUCURSAL_COOKIE);
   redirect("/");
 }
