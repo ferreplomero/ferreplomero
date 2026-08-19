@@ -7,7 +7,6 @@ import { getSessionContext } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import {
   defaultsFiscalesProducto,
-  margenSobreCosto,
   opcionesImpuesto,
   precioDesdeMargen,
 } from "@/lib/minimarket/producto-opciones";
@@ -20,6 +19,12 @@ import {
   TIPO_TASA_LABEL,
   type TipoTasa,
 } from "@/lib/minimarket/exchange-rate";
+import {
+  normalizarNombre,
+  parseFilasCsv,
+  parseFilasDesdeLineas,
+  type FilaCarga,
+} from "@/lib/minimarket/carga-masiva-parse";
 
 const INVENTARIO_PATH = "/minimarket/inventario";
 const MOVIMIENTOS_PATH = "/minimarket/inventario/movimientos";
@@ -880,7 +885,8 @@ export async function registrarMovimiento(
 
 // ================================ Carga masiva ===============================
 
-export interface CargaResult {
+/** Resultado de procesar UN lote de `cargaMasivaLote` (no el archivo completo). */
+export interface LoteCargaResult {
   ok?: boolean;
   error?: string;
   creados?: number;
@@ -892,208 +898,6 @@ export interface CargaResult {
 /** Qué hacer con una fila cuyo producto ya existe en el inventario. */
 export type AccionDuplicado = "omitir" | "actualizar";
 export type ResolucionesCarga = Record<string, { accion: AccionDuplicado; productoId?: string }>;
-
-/** Parser CSV mínimo, consciente de comillas dobles (campos con comas). */
-function parseCsvLine(line: string): string[] {
-  const out: string[] = [];
-  let cur = "";
-  let enComillas = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (enComillas) {
-      if (ch === '"') {
-        if (line[i + 1] === '"') {
-          cur += '"';
-          i++;
-        } else {
-          enComillas = false;
-        }
-      } else {
-        cur += ch;
-      }
-    } else if (ch === '"') {
-      enComillas = true;
-    } else if (ch === ",") {
-      out.push(cur);
-      cur = "";
-    } else {
-      cur += ch;
-    }
-  }
-  out.push(cur);
-  return out.map((s) => s.trim());
-}
-
-const num = (s: string | undefined): number => Number((s ?? "").replace(",", "."));
-
-const SI_VALORES = new Set(["si", "sí", "1", "true", "x", "verdadero"]);
-
-const partesCelda = (s: string, maxLen: number, max: number) =>
-  s
-    .split(/[;|]/)
-    .map((t) => t.trim().slice(0, maxLen))
-    .filter(Boolean)
-    .slice(0, max);
-
-/** Normaliza un nombre para comparar (categoría, proveedor, producto): sin
- * mayúsculas ni espacios de más, para que "Lácteos", " lacteos " y "LÁCTEOS "
- * — que el usuario puede escribir distinto en cada fila de su Excel — se
- * traten como el mismo valor y no generen duplicados. */
-function normalizarNombre(s: string): string {
-  return s.trim().toLowerCase().replace(/\s+/g, " ");
-}
-
-/** Interpreta la columna `tasa` (bcv/euro/personalizada) de forma flexible. */
-function parseTipoTasa(raw: string): TipoTasa | undefined {
-  const s = normalizarNombre(raw);
-  if (s === "bcv") return "bcv";
-  if (s === "euro" || s === "eur") return "euro";
-  if (["personalizada", "personalizado", "manual", "digital"].includes(s)) return "manual";
-  return undefined;
-}
-
-interface FilaCarga {
-  linea: number;
-  nombre: string;
-  sku: string;
-  codigos: string[];
-  categoriaNombre: string;
-  tipoVenta: "unidad" | "granel";
-  unidad: string;
-  costo: number;
-  precio: number;
-  /** true si `precio` se calculó desde `margenPct` (precio_usd venía vacío). */
-  precioCalculado: boolean;
-  margenPct?: number;
-  /** Vacío = sin valor en la columna; se resuelve con el default fiscal del
-   * negocio al importar (ver `cargaMasiva`), igual que `impuesto`. */
-  impuesto: string;
-  /** undefined = columna vacía → se resuelve con el default fiscal del
-   * negocio al importar (ver `cargaMasiva`). Un valor explícito ("si"/"no")
-   * siempre gana, sin importar la configuración. */
-  aplicaIgtf?: boolean;
-  proveedorNombre: string;
-  stockInicial: number;
-  stockMinimo: number;
-  etiquetas: string[];
-  /** Tipo de tasa pedido en la fila (columna `tasa`); undefined = usar la del negocio. */
-  tasaTipo?: TipoTasa;
-  /** Avisos no bloqueantes (margen que no coincide con el precio, tasa no reconocida...). */
-  notas: string[];
-  /** Fila con formato inválido (falta nombre o precio); no se importa. */
-  errorFormato?: string;
-}
-
-/**
- * Parsea el texto CSV (pegado o convertido desde un .xlsx/.csv subido) a
- * filas estructuradas, SIN tocar la base de datos. Columnas (en orden):
- *   nombre, sku, codigo_barras, categoria, tipo_venta, unidad, costo_usd,
- *   precio_usd, impuesto, aplica_igtf, proveedor, stock_inicial, stock_minimo,
- *   etiquetas, margen_pct, tasa
- * Solo nombre es siempre obligatorio; precio_usd es obligatorio SALVO que
- * vengan margen_pct y costo_usd (entonces el precio se calcula). Varios
- * códigos de barras o etiquetas dentro de una celda se separan con ";".
- * Compartido entre la previsualización y la importación real para que ambas
- * vean exactamente las mismas filas y los mismos números de línea.
- */
-function parseFilasCsv(texto: string): { filas: FilaCarga[]; errorGeneral?: string } {
-  const lineas = texto
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0);
-
-  if (lineas.length === 0)
-    return { filas: [], errorGeneral: "Sube o pega al menos una fila de datos." };
-  // Omite la cabecera si la primera línea parece encabezado.
-  const cabecera = lineas[0] ?? "";
-  if (/nombre/i.test(cabecera) && /precio/i.test(cabecera)) lineas.shift();
-  if (lineas.length === 0) {
-    return { filas: [], errorGeneral: "No hay filas de datos bajo el encabezado." };
-  }
-
-  const filas: FilaCarga[] = lineas.map((linea, i) => {
-    const cols = parseCsvLine(linea);
-    const nombre = cols[0] ?? "";
-    const sku = cols[1] ?? "";
-    const codigos = partesCelda(cols[2] ?? "", 64, 10);
-    const categoriaNombre = cols[3] ?? "";
-    const tipoVenta: "unidad" | "granel" =
-      (cols[4] ?? "").trim().toLowerCase() === "granel" ? "granel" : "unidad";
-    const unidad = (cols[5] ?? "").trim() || "unidad";
-    const costo = num(cols[6]) || 0;
-    const precioRaw = (cols[7] ?? "").trim();
-    const impuesto = (cols[8] ?? "").trim().toLowerCase();
-    const aplicaIgtfRaw = (cols[9] ?? "").trim();
-    const aplicaIgtf =
-      aplicaIgtfRaw === "" ? undefined : SI_VALORES.has(aplicaIgtfRaw.toLowerCase());
-    const proveedorNombre = (cols[10] ?? "").trim();
-    const stockInicial = num(cols[11]) || 0;
-    const stockMinimo = num(cols[12]) || 0;
-    const etiquetas = partesCelda(cols[13] ?? "", 40, 20);
-    const margenRaw = (cols[14] ?? "").trim();
-    const margenPct = margenRaw === "" ? undefined : num(margenRaw);
-    const margenValido = margenPct !== undefined && Number.isFinite(margenPct);
-    const tasaRaw = (cols[15] ?? "").trim();
-    const tasaTipo = tasaRaw === "" ? undefined : parseTipoTasa(tasaRaw);
-
-    const notas: string[] = [];
-    if (tasaRaw !== "" && tasaTipo === undefined) {
-      notas.push(
-        `Tasa "${tasaRaw}" no reconocida (usa bcv, euro o personalizada); se usó la tasa predeterminada del negocio.`,
-      );
-    }
-
-    let precio = precioRaw === "" ? NaN : num(precioRaw);
-    let precioCalculado = false;
-    if (precioRaw === "") {
-      if (margenValido && costo > 0) {
-        precio = Math.round(precioDesdeMargen(costo, margenPct as number) * 100) / 100;
-        precioCalculado = true;
-      }
-    } else if (margenValido && costo > 0) {
-      const margenReal = margenSobreCosto(costo, precio);
-      if (margenReal !== null && Math.abs(margenReal - (margenPct as number)) > 1) {
-        notas.push(
-          `El margen indicado (${margenPct}%) no coincide con el margen real de este precio (${margenReal.toFixed(1)}%); se usó el precio de venta de la columna precio_usd.`,
-        );
-      }
-    }
-
-    let errorFormato: string | undefined;
-    if (!nombre) errorFormato = "Falta el nombre.";
-    else if (!Number.isFinite(precio) || precio < 0) {
-      errorFormato =
-        margenRaw !== "" && !(costo > 0)
-          ? "Falta el precio de venta (para calcularlo desde el margen también hace falta el costo_usd)."
-          : "Falta el precio de venta (o el margen de ganancia junto al costo_usd).";
-    }
-
-    return {
-      linea: i + 1,
-      nombre,
-      sku,
-      codigos,
-      categoriaNombre,
-      tipoVenta,
-      unidad,
-      costo,
-      precio,
-      precioCalculado,
-      margenPct: margenValido ? margenPct : undefined,
-      impuesto,
-      aplicaIgtf,
-      proveedorNombre,
-      stockInicial,
-      stockMinimo,
-      etiquetas,
-      tasaTipo,
-      notas,
-      errorFormato,
-    };
-  });
-
-  return { filas };
-}
 
 export interface FilaPreview {
   linea: number;
@@ -1278,15 +1082,164 @@ export async function previsualizarCargaMasiva(csv: string): Promise<PreviewCarg
   };
 }
 
+/** Producto nuevo listo para insertar en batch, junto con la fila de origen (para
+ * volver a asociar el id devuelto por Supabase a sus filas dependientes: precio,
+ * códigos, stock). */
+interface FilaNuevaResuelta {
+  fila: FilaCarga;
+  row: {
+    tenant_id: string;
+    nombre: string;
+    codigo: string | null;
+    codigo_barras: string | null;
+    categoria_id: string | null;
+    tipo_venta: "unidad" | "granel";
+    unidad: string;
+    costo_usd: number;
+    precio_usd: number;
+    impuesto_id: string;
+    aplica_igtf: boolean;
+    proveedor_id: string | null;
+    etiquetas: string[];
+  };
+}
+
 /**
- * Carga masiva de productos desde CSV (pegado o convertido desde un archivo
- * subido). Acepta un mapa opcional de `resoluciones` (JSON, por número de
- * línea) para decidir qué hacer con filas que la vista previa marcó como
- * duplicadas: omitirlas o actualizar el producto existente. Las filas sin
- * resolución (o marcadas "nuevo" en la vista previa) se crean como producto
- * nuevo, igual que antes.
+ * Inserta los productos nuevos de `filas` en UNA sola llamada batch (en vez de
+ * un insert por fila) — es la clave para que un lote de 100-250 filas se
+ * resuelva en un puñado de round-trips a Supabase y no en cientos. Si el
+ * insert batch falla (p. ej. un choque de código/código de barras EN MEDIO del
+ * lote hace fallar el INSERT completo), reintenta fila por fila SOLO para ese
+ * lote, así se identifica cuál(es) filas fallaron sin perder el resto.
  */
-export async function cargaMasiva(_prev: CargaResult, formData: FormData): Promise<CargaResult> {
+async function insertarProductosNuevos(
+  ctx: NonNullable<Awaited<ReturnType<typeof contexto>>>,
+  nuevas: FilaNuevaResuelta[],
+  errores: { linea: number; motivo: string }[],
+): Promise<{ fila: FilaCarga; id: string }[]> {
+  if (nuevas.length === 0) return [];
+
+  const { data, error } = await ctx.supabase
+    .from("mm_productos")
+    .insert(nuevas.map((n) => n.row))
+    .select("id");
+
+  // El orden de las filas devueltas por un INSERT ... VALUES (...), (...) ...
+  // RETURNING de Postgres sigue el orden de los VALUES de entrada (no hay
+  // paralelismo dentro de un único INSERT) — es el mismo supuesto en el que
+  // se apoya el resto del ecosistema Supabase/PostgREST para mapear ids de
+  // vuelta a un insert masivo.
+  if (!error && data && data.length === nuevas.length) {
+    const creadas: { fila: FilaCarga; id: string }[] = [];
+    for (let i = 0; i < nuevas.length; i++) {
+      const n = nuevas[i];
+      const p = data[i];
+      if (!n || !p) continue;
+      creadas.push({ fila: n.fila, id: p.id as string });
+    }
+    return creadas;
+  }
+
+  // El batch completo falló (o devolvió un conteo inesperado): se reintenta
+  // fila por fila SOLO dentro de este lote para no perder las que sí sirven.
+  const creadas: { fila: FilaCarga; id: string }[] = [];
+  for (const n of nuevas) {
+    const { data: producto, error: errorFila } = await ctx.supabase
+      .from("mm_productos")
+      .insert(n.row)
+      .select("id")
+      .single();
+    if (errorFila || !producto) {
+      errores.push({
+        linea: n.fila.linea,
+        motivo:
+          errorFila?.code === "23505"
+            ? "Código o código de barras duplicado."
+            : "No se pudo crear.",
+      });
+      continue;
+    }
+    creadas.push({ fila: n.fila, id: producto.id });
+  }
+  return creadas;
+}
+
+/** Inserta en batch los registros dependientes (precio, códigos, stock) de los
+ * productos recién creados — igual que `insertarProductosNuevos`, cambia N
+ * round-trips secuenciales por un puñado de inserts de array completo. */
+async function insertarDependientesProductosNuevos(
+  ctx: NonNullable<Awaited<ReturnType<typeof contexto>>>,
+  creadas: { fila: FilaCarga; id: string }[],
+  sucursalId: string | null,
+): Promise<void> {
+  if (creadas.length === 0) return;
+
+  await ctx.supabase.from("mm_precios").insert(
+    creadas.map(({ fila, id }) => ({
+      tenant_id: ctx.tenantId,
+      producto_id: id,
+      precio_usd: fila.precio,
+      usuario_id: ctx.userId,
+    })),
+  );
+
+  const codigos = creadas.flatMap(({ fila, id }) =>
+    fila.codigos.map((codigo) => ({ tenant_id: ctx.tenantId, producto_id: id, codigo })),
+  );
+  if (codigos.length > 0) await ctx.supabase.from("mm_producto_codigos").insert(codigos);
+
+  if (sucursalId) {
+    const stockMin = creadas
+      .filter(({ fila }) => fila.stockMinimo > 0)
+      .map(({ fila, id }) => ({
+        tenant_id: ctx.tenantId,
+        producto_id: id,
+        sucursal_id: sucursalId,
+        stock_minimo: fila.stockMinimo,
+        deleted_at: null,
+      }));
+    if (stockMin.length > 0) {
+      await ctx.supabase
+        .from("mm_inventario")
+        .upsert(stockMin, { onConflict: "tenant_id,producto_id,sucursal_id" });
+    }
+
+    const movimientos = creadas
+      .filter(({ fila }) => Number.isFinite(fila.stockInicial) && fila.stockInicial > 0)
+      .map(({ fila, id }) => ({
+        tenant_id: ctx.tenantId,
+        producto_id: id,
+        sucursal_id: sucursalId,
+        tipo: "entrada" as const,
+        cantidad: fila.stockInicial,
+        motivo: "Carga masiva",
+        usuario_id: ctx.userId,
+      }));
+    if (movimientos.length > 0) {
+      await ctx.supabase.from("mm_movimientos_inventario").insert(movimientos);
+    }
+  }
+}
+
+/**
+ * Procesa UN LOTE (subconjunto de filas, ver `LOTE_TAMANO`) de la carga masiva
+ * de productos. El cliente trocea el CSV completo en lotes y llama esta acción
+ * una vez por lote — así cada llamada es corta (segundos, no minutos) y no
+ * choca con el timeout de la función serverless en Netlify, además de dar pie
+ * a una barra de progreso real. `lineaInicio` es el número de línea (sobre el
+ * archivo sin cabecera) de `lineas[0]`, para que los errores reporten el
+ * número de fila del archivo original y no el índice dentro del lote.
+ *
+ * Los productos NUEVOS se insertan en batch (ver `insertarProductosNuevos`);
+ * las filas marcadas "actualizar" (duplicado resuelto por el usuario en la
+ * vista previa) se procesan una por una, igual que antes — es un subconjunto
+ * normalmente pequeño del archivo, así que no es el cuello de botella.
+ */
+export async function cargaMasivaLote(
+  lineas: string[],
+  lineaInicio: number,
+  resolucionesJson: string,
+): Promise<LoteCargaResult> {
   const ctx = await contexto();
   if (!ctx) return { error: "Sesión no válida." };
   const permisoError = await requirePermisoAccion(
@@ -1298,22 +1251,18 @@ export async function cargaMasiva(_prev: CargaResult, formData: FormData): Promi
   );
   if (permisoError) return { error: permisoError };
 
-  const texto = typeof formData.get("csv") === "string" ? (formData.get("csv") as string) : "";
-  const { filas, errorGeneral } = parseFilasCsv(texto);
-  if (errorGeneral) return { error: errorGeneral };
+  const filas = parseFilasDesdeLineas(lineas, lineaInicio);
 
   let resoluciones: ResolucionesCarga = {};
-  const resolucionesRaw = formData.get("resoluciones");
-  if (typeof resolucionesRaw === "string" && resolucionesRaw.trim()) {
+  if (resolucionesJson.trim()) {
     try {
-      const parsed = JSON.parse(resolucionesRaw) as unknown;
+      const parsed = JSON.parse(resolucionesJson) as unknown;
       if (parsed && typeof parsed === "object") resoluciones = parsed as ResolucionesCarga;
     } catch {
       // JSON de resoluciones corrupto: se ignora y todas las filas se tratan como nuevas.
     }
   }
 
-  // Mapas de categorías y proveedores existentes (por nombre normalizado).
   const [{ data: catData }, { data: provData }, { data: configData }] = await Promise.all([
     ctx.supabase
       .from("mm_categorias")
@@ -1339,9 +1288,6 @@ export async function cargaMasiva(_prev: CargaResult, formData: FormData): Promi
   );
 
   const impuestosValidos = new Set(opcionesImpuesto(ctx.country).map((o) => o.id));
-  // Fila sin la columna `impuesto`/`aplica_igtf` llena (o con un valor
-  // inválido en `impuesto`) hereda el default fiscal del negocio — mismo
-  // criterio que el alta manual de producto (`defaultsFiscalesProducto`).
   const paramsNegocio = (configData?.parametros as Record<string, unknown>) ?? {};
   const defaultsFiscales = defaultsFiscalesProducto(ctx.country, {
     ivaActivo: Boolean(paramsNegocio.iva_activo ?? false),
@@ -1350,9 +1296,9 @@ export async function cargaMasiva(_prev: CargaResult, formData: FormData): Promi
   const sucursalId = await primeraSucursal(ctx.supabase, ctx.tenantId, ctx.userId);
 
   const errores: { linea: number; motivo: string }[] = [];
-  let creados = 0;
   let actualizados = 0;
   let omitidos = 0;
+  const nuevas: FilaNuevaResuelta[] = [];
 
   for (const f of filas) {
     const nLinea = f.linea;
@@ -1469,9 +1415,9 @@ export async function cargaMasiva(_prev: CargaResult, formData: FormData): Promi
       continue;
     }
 
-    const { data: producto, error } = await ctx.supabase
-      .from("mm_productos")
-      .insert({
+    nuevas.push({
+      fila: f,
+      row: {
         tenant_id: ctx.tenantId,
         nombre: f.nombre,
         codigo: f.sku || null,
@@ -1485,48 +1431,14 @@ export async function cargaMasiva(_prev: CargaResult, formData: FormData): Promi
         aplica_igtf: aplicaIgtf,
         proveedor_id: proveedorId,
         etiquetas: f.etiquetas,
-      })
-      .select("id")
-      .single();
-
-    if (error || !producto) {
-      errores.push({
-        linea: nLinea,
-        motivo:
-          error?.code === "23505" ? "Código o código de barras duplicado." : "No se pudo crear.",
-      });
-      continue;
-    }
-
-    if (f.codigos.length > 0) await sincronizarCodigos(ctx, producto.id, f.codigos);
-
-    await ctx.supabase.from("mm_precios").insert({
-      tenant_id: ctx.tenantId,
-      producto_id: producto.id,
-      precio_usd: f.precio,
-      usuario_id: ctx.userId,
+      },
     });
-
-    if (sucursalId && f.stockMinimo > 0) {
-      await aplicarStockMinimo(ctx.supabase, ctx.tenantId, producto.id, sucursalId, f.stockMinimo);
-    }
-
-    if (Number.isFinite(f.stockInicial) && f.stockInicial > 0 && sucursalId) {
-      await ctx.supabase.from("mm_movimientos_inventario").insert({
-        tenant_id: ctx.tenantId,
-        producto_id: producto.id,
-        sucursal_id: sucursalId,
-        tipo: "entrada",
-        cantidad: f.stockInicial,
-        motivo: "Carga masiva",
-        usuario_id: ctx.userId,
-      });
-    }
-
-    creados += 1;
   }
+
+  const creadas = await insertarProductosNuevos(ctx, nuevas, errores);
+  await insertarDependientesProductosNuevos(ctx, creadas, sucursalId);
 
   revalidatePath(INVENTARIO_PATH);
   revalidatePath(MOVIMIENTOS_PATH);
-  return { ok: true, creados, actualizados, omitidos, errores };
+  return { ok: true, creados: creadas.length, actualizados, omitidos, errores };
 }

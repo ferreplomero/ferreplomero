@@ -6,6 +6,11 @@ import { CargaCliente } from "@/components/minimarket/inventario/carga-cliente";
 
 export const metadata: Metadata = { title: "Carga masiva" };
 
+/** Margen extra sobre el default de la plataforma para `cargaMasivaLote`: cada
+ * lote ya está pensado para resolverse en segundos (inserts batch, ver
+ * actions.ts), esto es solo colchón de seguridad. */
+export const maxDuration = 30;
+
 export default function CargaMasivaPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">

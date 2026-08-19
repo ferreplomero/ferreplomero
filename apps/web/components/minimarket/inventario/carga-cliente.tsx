@@ -1,29 +1,19 @@
 "use client";
 
 import * as React from "react";
-import { useActionState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  AlertCircle,
-  CheckCircle2,
-  Download,
-  FileSpreadsheet,
-  Loader2,
-  Upload,
-} from "lucide-react";
+import { AlertCircle, Download, FileSpreadsheet, Loader2, Upload } from "lucide-react";
 import { Badge, Button, Card, Label } from "@arkiteq/ui";
-import { SubmitButton } from "@/components/auth/submit-button";
 import {
-  cargaMasiva,
   previsualizarCargaMasiva,
   type AccionDuplicado,
-  type CargaResult,
   type FilaPreview,
   type PreviewCargaResult,
   type ResolucionesCarga,
 } from "@/app/(vertical)/minimarket/inventario/actions";
 import { descargarPlantillaCarga, leerArchivoComoCsv } from "@/lib/minimarket/plantilla-carga";
+import { dividirLineasCsv } from "@/lib/minimarket/carga-masiva-parse";
+import { CargaProgresoModal } from "./carga-progreso-modal";
 
 const EJEMPLO = `nombre,sku,codigo_barras,categoria,tipo_venta,unidad,costo_usd,precio_usd,impuesto,aplica_igtf,proveedor,stock_inicial,stock_minimo,etiquetas,margen_pct,tasa
 "Café Fama de América 500g",CAF-500,7591234500017,Abarrotes,unidad,unidad,2.60,3.50,iva,si,Distribuidora Polar,12,4,perecedero,,bcv
@@ -55,7 +45,6 @@ const TASA_LABEL: Record<NonNullable<FilaPreview["tasa_tipo"]>, string> = {
 
 export function CargaCliente() {
   const router = useRouter();
-  const [state, formAction] = useActionState<CargaResult, FormData>(cargaMasiva, {});
 
   const [csv, setCsv] = React.useState("");
   const [nombreArchivo, setNombreArchivo] = React.useState<string | null>(null);
@@ -66,12 +55,9 @@ export function CargaCliente() {
   const [errorPreview, setErrorPreview] = React.useState<string | null>(null);
   const [validando, startValidar] = React.useTransition();
   const [resoluciones, setResoluciones] = React.useState<Record<number, AccionDuplicado>>({});
+  const [modalAbierto, setModalAbierto] = React.useState(false);
 
   const fileInputRef = React.useRef<HTMLInputElement>(null);
-
-  React.useEffect(() => {
-    if (state.ok) router.refresh();
-  }, [state.ok, router]);
 
   function reiniciarPreview() {
     setPreview(null);
@@ -118,7 +104,7 @@ export function CargaCliente() {
     });
   }
 
-  const resolucionesJson = React.useMemo(() => {
+  const resolucionesCarga = React.useMemo(() => {
     const mapa: ResolucionesCarga = {};
     for (const f of preview?.filas ?? []) {
       if (f.estado === "duplicado") {
@@ -128,8 +114,10 @@ export function CargaCliente() {
         };
       }
     }
-    return JSON.stringify(mapa);
+    return mapa;
   }, [preview, resoluciones]);
+
+  const lineasCsv = React.useMemo(() => dividirLineasCsv(csv).lineas, [csv]);
 
   const importables =
     (preview?.resumen?.nuevos ?? 0) +
@@ -355,53 +343,25 @@ export function CargaCliente() {
             </table>
           </div>
 
-          <form action={formAction} className="space-y-3">
-            <input type="hidden" name="csv" value={csv} />
-            <input type="hidden" name="resoluciones" value={resolucionesJson} />
-
-            {state.error ? (
-              <p
-                role="alert"
-                className="bg-danger/10 text-danger flex items-center gap-2 rounded-md px-3 py-2.5 text-sm"
-              >
-                <AlertCircle className="size-4 shrink-0" aria-hidden />
-                {state.error}
-              </p>
-            ) : null}
-
-            {state.ok ? (
-              <div className="border-border space-y-2 rounded-md border p-4">
-                <p className="text-success flex items-center gap-2 text-sm font-medium">
-                  <CheckCircle2 className="size-4" aria-hidden />
-                  Se crearon {state.creados ?? 0}, se actualizaron {state.actualizados ?? 0} y se
-                  omitieron {state.omitidos ?? 0} producto(s).
-                </p>
-                {state.errores && state.errores.length > 0 ? (
-                  <div className="text-muted-foreground text-xs">
-                    <p className="text-warning font-medium">
-                      {state.errores.length} fila(s) con problemas:
-                    </p>
-                    <ul className="mt-1 list-inside list-disc space-y-0.5">
-                      {state.errores.slice(0, 10).map((e) => (
-                        <li key={e.linea}>
-                          Fila {e.linea}: {e.motivo}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-                <Button asChild variant="outline" size="sm">
-                  <Link href="/minimarket/inventario">Ver inventario</Link>
-                </Button>
-              </div>
-            ) : (
-              <div className="flex justify-end">
-                <SubmitButton disabled={importables === 0}>Confirmar importación</SubmitButton>
-              </div>
-            )}
-          </form>
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              onClick={() => setModalAbierto(true)}
+              disabled={importables === 0}
+            >
+              Confirmar importación
+            </Button>
+          </div>
         </Card>
       ) : null}
+
+      <CargaProgresoModal
+        open={modalAbierto}
+        onOpenChange={setModalAbierto}
+        lineas={lineasCsv}
+        resoluciones={resolucionesCarga}
+        onTerminado={() => router.refresh()}
+      />
     </div>
   );
 }
