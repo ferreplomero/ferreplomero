@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@arkiteq/db";
 import { fechaEnTz, hoyEnTz, rangoLocalAUtc } from "../date-format";
+import { fetchAllRows } from "./pagination";
 
 type Client = SupabaseClient<Database>;
 
@@ -414,15 +415,51 @@ export async function getInventarioReporte(
   client: Client,
   tenantId: string,
 ): Promise<ResumenInventarioReporte> {
-  const { data: productos } = await client
-    .from("mm_productos")
-    .select("id, nombre, codigo, categoria_id, costo_usd, precio_usd, activo")
-    .eq("tenant_id", tenantId)
-    .is("deleted_at", null)
-    .eq("activo", true)
-    .order("nombre");
+  // Estas tres tablas se paginan: el catálogo y el stock por sucursal pueden
+  // superar largamente las 1000 filas por defecto de PostgREST (carga
+  // masiva), que corta ahí en silencio sin `.range()`.
+  const [productos, stock, minimos, catRes] = await Promise.all([
+    fetchAllRows<{
+      id: string;
+      nombre: string;
+      codigo: string | null;
+      categoria_id: string | null;
+      costo_usd: number;
+      precio_usd: number;
+      activo: boolean;
+    }>((from, to) =>
+      client
+        .from("mm_productos")
+        .select("id, nombre, codigo, categoria_id, costo_usd, precio_usd, activo")
+        .eq("tenant_id", tenantId)
+        .is("deleted_at", null)
+        .eq("activo", true)
+        .order("nombre", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
+    fetchAllRows<{ producto_id: string | null; stock_actual: number | null }>((from, to) =>
+      client
+        .from("mm_v_stock")
+        .select("producto_id, stock_actual")
+        .eq("tenant_id", tenantId)
+        .order("producto_id", { ascending: true })
+        .order("sucursal_id", { ascending: true })
+        .range(from, to),
+    ),
+    fetchAllRows<{ producto_id: string; stock_minimo: number }>((from, to) =>
+      client
+        .from("mm_inventario")
+        .select("producto_id, stock_minimo")
+        .eq("tenant_id", tenantId)
+        .is("deleted_at", null)
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
+    client.from("mm_categorias").select("id, nombre").eq("tenant_id", tenantId),
+  ]);
 
-  if (!productos?.length) {
+  if (!productos.length) {
     return {
       totalProductos: 0,
       totalActivos: 0,
@@ -433,28 +470,12 @@ export async function getInventarioReporte(
     };
   }
 
-  const ids = productos.map((p) => p.id);
-  const [stockRes, minRes, catRes] = await Promise.all([
-    client
-      .from("mm_v_stock")
-      .select("producto_id, stock_actual")
-      .in("producto_id", ids)
-      .eq("tenant_id", tenantId),
-    client
-      .from("mm_inventario")
-      .select("producto_id, stock_minimo")
-      .in("producto_id", ids)
-      .eq("tenant_id", tenantId)
-      .is("deleted_at", null),
-    client.from("mm_categorias").select("id, nombre").eq("tenant_id", tenantId),
-  ]);
-
-  const stockMap = new Map(
-    (stockRes.data ?? []).map((s) => [s.producto_id, Number(s.stock_actual)]),
-  );
-  const minimoMap = new Map(
-    (minRes.data ?? []).map((s) => [s.producto_id, Number(s.stock_minimo)]),
-  );
+  const stockMap = new Map<string, number>();
+  for (const s of stock) {
+    if (!s.producto_id) continue;
+    stockMap.set(s.producto_id, (stockMap.get(s.producto_id) ?? 0) + Number(s.stock_actual));
+  }
+  const minimoMap = new Map(minimos.map((s) => [s.producto_id, Number(s.stock_minimo)]));
   const catMap = new Map((catRes.data ?? []).map((c) => [c.id, c.nombre]));
 
   const items: ItemInventarioReporte[] = productos.map((p) => {
@@ -505,24 +526,35 @@ export async function getProductosBajaRotacion(
   tz: string,
   limit = 15,
 ): Promise<ProductoBajaRotacion[]> {
-  const { data: productos } = await client
-    .from("mm_productos")
-    .select("id, nombre, codigo")
-    .eq("tenant_id", tenantId)
-    .eq("activo", true)
-    .is("deleted_at", null);
+  // Catálogo del tenant — puede superar las 1000 filas por defecto de
+  // PostgREST, así que se pagina en vez de un `.select()` plano.
+  const productos = await fetchAllRows<{ id: string; nombre: string; codigo: string | null }>(
+    (from, to) =>
+      client
+        .from("mm_productos")
+        .select("id, nombre, codigo")
+        .eq("tenant_id", tenantId)
+        .eq("activo", true)
+        .is("deleted_at", null)
+        .order("id", { ascending: true })
+        .range(from, to),
+  );
 
-  if (!productos?.length) return [];
+  if (!productos.length) return [];
 
   const ids = productos.map((p) => p.id);
   const { desdeIso, hastaIso } = rangoLocalAUtc(rango, tz);
 
-  const [stockRes, ventasRes] = await Promise.all([
-    client
-      .from("mm_v_stock")
-      .select("producto_id, stock_actual")
-      .in("producto_id", ids)
-      .eq("tenant_id", tenantId),
+  const [stock, ventasRes] = await Promise.all([
+    fetchAllRows<{ producto_id: string | null; stock_actual: number | null }>((from, to) =>
+      client
+        .from("mm_v_stock")
+        .select("producto_id, stock_actual")
+        .eq("tenant_id", tenantId)
+        .order("producto_id", { ascending: true })
+        .order("sucursal_id", { ascending: true })
+        .range(from, to),
+    ),
     client
       .from("mm_ventas_items")
       .select("producto_id, cantidad, created_at, venta:mm_ventas(estado, fecha)")
@@ -540,9 +572,11 @@ export async function getProductosBajaRotacion(
       >(),
   ]);
 
-  const stockMap = new Map(
-    (stockRes.data ?? []).map((s) => [s.producto_id, Number(s.stock_actual)]),
-  );
+  const stockMap = new Map<string, number>();
+  for (const s of stock) {
+    if (!s.producto_id) continue;
+    stockMap.set(s.producto_id, (stockMap.get(s.producto_id) ?? 0) + Number(s.stock_actual));
+  }
 
   const ventasPorProducto = new Map<string, { unidades: number; ultimaFecha: string }>();
   for (const item of ventasRes.data ?? []) {
@@ -597,23 +631,41 @@ export async function getAlertasNegocio(
   tenantId: string,
   tz: string,
 ): Promise<AlertasNegocio> {
-  const [morososRes, stockRes, minimosRes, activosRes] = await Promise.all([
+  // mm_v_stock/mm_productos pueden superar las 1000 filas por defecto de
+  // PostgREST (catálogos/stock grandes), así que se paginan.
+  const [morososRes, stock, minimos, activos] = await Promise.all([
     client
       .from("mm_v_saldo_cliente")
       .select("saldo_usd, primer_fiado_abierto_at")
       .eq("tenant_id", tenantId),
-    client.from("mm_v_stock").select("producto_id, stock_actual").eq("tenant_id", tenantId),
-    client
-      .from("mm_inventario")
-      .select("producto_id, stock_minimo")
-      .eq("tenant_id", tenantId)
-      .is("deleted_at", null),
-    client
-      .from("mm_productos")
-      .select("id")
-      .eq("tenant_id", tenantId)
-      .eq("activo", true)
-      .is("deleted_at", null),
+    fetchAllRows<{ producto_id: string | null; stock_actual: number | null }>((from, to) =>
+      client
+        .from("mm_v_stock")
+        .select("producto_id, stock_actual")
+        .eq("tenant_id", tenantId)
+        .order("producto_id", { ascending: true })
+        .order("sucursal_id", { ascending: true })
+        .range(from, to),
+    ),
+    fetchAllRows<{ producto_id: string; stock_minimo: number }>((from, to) =>
+      client
+        .from("mm_inventario")
+        .select("producto_id, stock_minimo")
+        .eq("tenant_id", tenantId)
+        .is("deleted_at", null)
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
+    fetchAllRows<{ id: string }>((from, to) =>
+      client
+        .from("mm_productos")
+        .select("id")
+        .eq("tenant_id", tenantId)
+        .eq("activo", true)
+        .is("deleted_at", null)
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
   ]);
 
   const hoy = hoyEnTz(tz);
@@ -628,7 +680,7 @@ export async function getAlertasNegocio(
 
   // Stock total por producto sumando todas las sucursales.
   const stockPorProducto = new Map<string, number>();
-  for (const s of stockRes.data ?? []) {
+  for (const s of stock) {
     if (!s.producto_id) continue;
     stockPorProducto.set(
       s.producto_id,
@@ -638,7 +690,7 @@ export async function getAlertasNegocio(
 
   // Mínimo por producto (el mayor entre sucursales para ser conservador).
   const minimoMap = new Map<string, number>();
-  for (const m of minimosRes.data ?? []) {
+  for (const m of minimos) {
     minimoMap.set(
       m.producto_id,
       Math.max(minimoMap.get(m.producto_id) ?? 0, Number(m.stock_minimo)),
@@ -646,7 +698,7 @@ export async function getAlertasNegocio(
   }
 
   // Solo productos activos; "bajo mínimo" = estrictamente menor que el mínimo.
-  const activosSet = new Set((activosRes.data ?? []).map((p) => p.id));
+  const activosSet = new Set(activos.map((p) => p.id));
   const productosBajoMinimo = [...minimoMap.entries()].filter(([productoId, min]) => {
     if (min <= 0 || !activosSet.has(productoId)) return false;
     const stock = stockPorProducto.get(productoId) ?? 0;

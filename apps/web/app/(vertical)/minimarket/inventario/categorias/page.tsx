@@ -6,6 +6,7 @@ import { Card } from "@arkiteq/ui";
 import { getSessionContext } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { listCategorias } from "@/lib/minimarket/data/inventario";
+import { fetchAllRows } from "@/lib/minimarket/data/pagination";
 import { CategoriasCrud } from "./categorias-crud";
 
 export const metadata: Metadata = { title: "Categorías" };
@@ -18,15 +19,21 @@ export default async function CategoriasPage() {
   const supabase = await createClient();
   const categorias = await listCategorias(supabase, tenantId);
 
-  const { data: cuentas } = await supabase
-    .from("mm_productos")
-    .select("categoria_id")
-    .eq("tenant_id", tenantId)
-    .is("deleted_at", null)
-    .not("categoria_id", "is", null);
+  // Paginado: sin esto, con más de 1000 productos (PostgREST corta ahí en
+  // silencio) el conteo por categoría salía subestimado.
+  const cuentas = await fetchAllRows<{ categoria_id: string | null }>((from, to) =>
+    supabase
+      .from("mm_productos")
+      .select("categoria_id")
+      .eq("tenant_id", tenantId)
+      .is("deleted_at", null)
+      .not("categoria_id", "is", null)
+      .order("id", { ascending: true })
+      .range(from, to),
+  );
 
   const countPorCategoria = new Map<string, number>();
-  for (const row of cuentas ?? []) {
+  for (const row of cuentas) {
     if (!row.categoria_id) continue;
     countPorCategoria.set(row.categoria_id, (countPorCategoria.get(row.categoria_id) ?? 0) + 1);
   }

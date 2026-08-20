@@ -17,6 +17,7 @@ import type {
   MmProveedor,
   MmSucursal,
 } from "@arkiteq/db";
+import { fetchAllRows } from "./pagination";
 
 type Client = SupabaseClient<Database>;
 
@@ -104,28 +105,57 @@ export async function listProductos(
   sucursales: { id: string }[] = [],
   irrestricto = false,
 ): Promise<ProductoConStock[]> {
-  const [prodRes, catRes, provRes, codRes, stockRes, invRes] = await Promise.all([
-    client
-      .from("mm_productos")
-      .select("*")
-      .eq("tenant_id", tenantId)
-      .is("deleted_at", null)
-      .order("nombre", { ascending: true }),
+  // `mm_productos`/`mm_v_stock` pueden superar largamente las 1000 filas por
+  // tenant (catálogos grandes, stock por sucursal) — PostgREST corta ahí en
+  // silencio sin `.range()`, así que estas cuatro se paginan con
+  // `fetchAllRows`. `mm_categorias`/`mm_proveedores` se dejan como `select()`
+  // simple: en la práctica nunca se acercan a ese volumen.
+  const [productos, catRes, provRes, codigos, stock, inventario] = await Promise.all([
+    fetchAllRows<MmProducto>((from, to) =>
+      client
+        .from("mm_productos")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .is("deleted_at", null)
+        .order("nombre", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
     client.from("mm_categorias").select("id, nombre").eq("tenant_id", tenantId),
     client.from("mm_proveedores").select("id, nombre").eq("tenant_id", tenantId),
-    client.from("mm_producto_codigos").select("producto_id, codigo").eq("tenant_id", tenantId),
-    client
-      .from("mm_v_stock")
-      .select("producto_id, sucursal_id, stock_actual")
-      .eq("tenant_id", tenantId),
-    client
-      .from("mm_inventario")
-      .select("producto_id, sucursal_id, stock_minimo")
-      .eq("tenant_id", tenantId)
-      .is("deleted_at", null),
+    fetchAllRows<{ producto_id: string; codigo: string }>((from, to) =>
+      client
+        .from("mm_producto_codigos")
+        .select("producto_id, codigo")
+        .eq("tenant_id", tenantId)
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
+    fetchAllRows<{
+      producto_id: string | null;
+      sucursal_id: string | null;
+      stock_actual: number | null;
+    }>((from, to) =>
+      client
+        .from("mm_v_stock")
+        .select("producto_id, sucursal_id, stock_actual")
+        .eq("tenant_id", tenantId)
+        .order("producto_id", { ascending: true })
+        .order("sucursal_id", { ascending: true })
+        .range(from, to),
+    ),
+    fetchAllRows<{ producto_id: string; sucursal_id: string; stock_minimo: number }>((from, to) =>
+      client
+        .from("mm_inventario")
+        .select("producto_id, sucursal_id, stock_minimo")
+        .eq("tenant_id", tenantId)
+        .is("deleted_at", null)
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
   ]);
 
-  for (const res of [prodRes, catRes, provRes, codRes, stockRes, invRes]) {
+  for (const res of [catRes, provRes]) {
     if (res.error) throw new Error(`No se pudo cargar el inventario: ${res.error.message}`);
   }
 
@@ -134,7 +164,7 @@ export async function listProductos(
   const sucursalIds = sucursales.map((s) => s.id);
 
   const codigosPorProducto = new Map<string, string[]>();
-  for (const row of codRes.data ?? []) {
+  for (const row of codigos) {
     const arr = codigosPorProducto.get(row.producto_id) ?? [];
     arr.push(row.codigo);
     codigosPorProducto.set(row.producto_id, arr);
@@ -145,7 +175,7 @@ export async function listProductos(
   // sucursal (nuevo) a partir de las MISMAS filas ya traídas, sin queries extra.
   const stockPorProducto = new Map<string, number>();
   const stockPorProductoSucursal = new Map<string, number>();
-  for (const row of stockRes.data ?? []) {
+  for (const row of stock) {
     if (!row.producto_id || !row.sucursal_id) continue;
     const monto = Number(row.stock_actual ?? 0);
     stockPorProducto.set(row.producto_id, (stockPorProducto.get(row.producto_id) ?? 0) + monto);
@@ -156,7 +186,7 @@ export async function listProductos(
   const minimoPorProducto = new Map<string, number>();
   const minimoPorProductoSucursal = new Map<string, number>();
   const inventarioPresente = new Set<string>();
-  for (const row of invRes.data ?? []) {
+  for (const row of inventario) {
     const monto = Number(row.stock_minimo ?? 0);
     minimoPorProducto.set(row.producto_id, (minimoPorProducto.get(row.producto_id) ?? 0) + monto);
     const key = `${row.producto_id}:${row.sucursal_id}`;
@@ -175,8 +205,8 @@ export async function listProductos(
   ]);
 
   const productosBase = irrestricto
-    ? (prodRes.data ?? [])
-    : (prodRes.data ?? []).filter((p) => presenteEnMisSucursales.has(p.id));
+    ? productos
+    : productos.filter((p) => presenteEnMisSucursales.has(p.id));
 
   return productosBase.map((producto) => {
     const stock = stockPorProducto.get(producto.id) ?? 0;

@@ -25,6 +25,7 @@ import {
   parseFilasDesdeLineas,
   type FilaCarga,
 } from "@/lib/minimarket/carga-masiva-parse";
+import { fetchAllRows } from "@/lib/minimarket/data/pagination";
 
 const INVENTARIO_PATH = "/minimarket/inventario";
 const MOVIMIENTOS_PATH = "/minimarket/inventario/movimientos";
@@ -642,14 +643,21 @@ export async function recalcularProductosMargenGlobal(): Promise<RecalcularMarge
     return { error: "El margen de ganancia global no está activo." };
   }
 
-  const { data: productos, error: errorLista } = await ctx.supabase
-    .from("mm_productos")
-    .select("id, costo_usd, precio_usd")
-    .eq("tenant_id", ctx.tenantId)
-    .eq("usa_margen_global", true)
-    .is("deleted_at", null);
-  if (errorLista) return { error: "No se pudieron leer los productos." };
-  if (!productos || productos.length === 0) return { ok: true, actualizados: 0 };
+  // Paginado: sin esto, con más de 1000 productos con margen global activo
+  // (PostgREST corta ahí en silencio) el recalculo se aplicaba solo a los
+  // primeros 1000.
+  const productos = await fetchAllRows<{ id: string; costo_usd: number; precio_usd: number }>(
+    (from, to) =>
+      ctx.supabase
+        .from("mm_productos")
+        .select("id, costo_usd, precio_usd")
+        .eq("tenant_id", ctx.tenantId)
+        .eq("usa_margen_global", true)
+        .is("deleted_at", null)
+        .order("id", { ascending: true })
+        .range(from, to),
+  );
+  if (productos.length === 0) return { ok: true, actualizados: 0 };
 
   let actualizados = 0;
   for (const p of productos) {
@@ -955,36 +963,52 @@ export async function previsualizarCargaMasiva(csv: string): Promise<PreviewCarg
   const { filas, errorGeneral } = parseFilasCsv(csv);
   if (errorGeneral) return { error: errorGeneral };
 
-  const [{ data: catData }, { data: prodData }, { data: codData }, tipoPreferido, todasLasTasas] =
-    await Promise.all([
-      ctx.supabase
-        .from("mm_categorias")
-        .select("nombre")
-        .eq("tenant_id", ctx.tenantId)
-        .is("deleted_at", null),
+  // El catálogo existente se pagina: sin esto, con más de 1000 productos
+  // (PostgREST corta ahí en silencio) la detección de duplicados solo
+  // revisaba los primeros 1000 y podía crear productos repetidos al subir
+  // un CSV nuevo.
+  const [{ data: catData }, prodData, codData, tipoPreferido, todasLasTasas] = await Promise.all([
+    ctx.supabase
+      .from("mm_categorias")
+      .select("nombre")
+      .eq("tenant_id", ctx.tenantId)
+      .is("deleted_at", null),
+    fetchAllRows<{
+      id: string;
+      nombre: string;
+      codigo: string | null;
+      codigo_barras: string | null;
+    }>((from, to) =>
       ctx.supabase
         .from("mm_productos")
         .select("id, nombre, codigo, codigo_barras")
         .eq("tenant_id", ctx.tenantId)
-        .is("deleted_at", null),
+        .is("deleted_at", null)
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
+    fetchAllRows<{ producto_id: string; codigo: string }>((from, to) =>
       ctx.supabase
         .from("mm_producto_codigos")
         .select("producto_id, codigo")
-        .eq("tenant_id", ctx.tenantId),
-      getTipoPreferido(ctx.supabase, ctx.tenantId),
-      getTodasLasTasas(ctx.supabase, ctx.tenantId),
-    ]);
+        .eq("tenant_id", ctx.tenantId)
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
+    getTipoPreferido(ctx.supabase, ctx.tenantId),
+    getTodasLasTasas(ctx.supabase, ctx.tenantId),
+  ]);
 
   const categoriasExistentes = new Set((catData ?? []).map((c) => normalizarNombre(c.nombre)));
   const porNombre = new Map<string, string>();
   const porCodigo = new Map<string, string>();
   const porBarras = new Map<string, string>();
-  for (const p of prodData ?? []) {
+  for (const p of prodData) {
     porNombre.set(normalizarNombre(p.nombre), p.id);
     if (p.codigo) porCodigo.set(normalizarNombre(p.codigo), p.id);
     if (p.codigo_barras) porBarras.set(p.codigo_barras, p.id);
   }
-  for (const c of codData ?? []) {
+  for (const c of codData) {
     porBarras.set(c.codigo, c.producto_id);
   }
 

@@ -13,6 +13,7 @@ import { parseMetodosPago } from "@/lib/minimarket/metodos-pago";
 import { getSesionAbierta } from "@/lib/minimarket/data/caja";
 import { getSucursalActiva } from "@/lib/minimarket/sucursal-acceso";
 import { listCuentasBancarias } from "@/lib/minimarket/data/bancos";
+import { fetchAllRows } from "@/lib/minimarket/data/pagination";
 import { CompraForm } from "../compra-form";
 
 export const metadata: Metadata = { title: "Nueva compra" };
@@ -27,7 +28,7 @@ export default async function NuevaCompraPage() {
   const { activa: sucursalActiva } = await getSucursalActiva(supabase, tenantId, session.user.id);
 
   const [
-    { data: productos },
+    productos,
     { data: proveedores },
     { data: sucursales },
     tasa,
@@ -38,13 +39,26 @@ export default async function NuevaCompraPage() {
     sesion,
     cuentasBancarias,
   ] = await Promise.all([
-    supabase
-      .from("mm_productos")
-      .select("id, nombre, codigo, costo_usd, imagen_url")
-      .eq("tenant_id", tenantId)
-      .eq("activo", true)
-      .is("deleted_at", null)
-      .order("nombre", { ascending: true }),
+    // Catálogo activo del tenant — puede superar las 1000 filas por defecto
+    // de PostgREST (carga masiva), así que se pagina en vez de un
+    // `.select()` plano que se cortaría en silencio.
+    fetchAllRows<{
+      id: string;
+      nombre: string;
+      codigo: string | null;
+      costo_usd: number;
+      imagen_url: string | null;
+    }>((from, to) =>
+      supabase
+        .from("mm_productos")
+        .select("id, nombre, codigo, costo_usd, imagen_url")
+        .eq("tenant_id", tenantId)
+        .eq("activo", true)
+        .is("deleted_at", null)
+        .order("nombre", { ascending: true })
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
     supabase
       .from("mm_proveedores")
       .select("id, nombre")
@@ -122,7 +136,7 @@ export default async function NuevaCompraPage() {
       </header>
 
       <CompraForm
-        productos={(productos ?? []).map((p) => ({
+        productos={productos.map((p) => ({
           id: p.id,
           nombre: p.nombre,
           codigo: p.codigo,

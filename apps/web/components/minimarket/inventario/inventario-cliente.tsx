@@ -7,6 +7,8 @@ import { useRouter } from "next/navigation";
 import {
   AlertTriangle,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Download,
   Eye,
   FolderPlus,
@@ -70,6 +72,11 @@ const SELECT_CLASS =
 type Orden = "nombre" | "precio_desc" | "precio_asc" | "stock_asc" | "margen_desc";
 type Estado = "todos" | "activos" | "inactivos";
 
+/** Productos por página — la búsqueda/filtros siguen operando sobre TODO el
+ * inventario cargado (ver `filtrados`); esto solo pagina el resultado ya
+ * filtrado para no renderizar miles de filas de una vez. */
+const PAGE_SIZE = 20;
+
 export function InventarioCliente({
   productos,
   categorias,
@@ -106,6 +113,7 @@ export function InventarioCliente({
   // (borrado individual), que sigue intacto.
   const [seleccionados, setSeleccionados] = React.useState<Set<string>>(new Set());
   const [loteModalOpen, setLoteModalOpen] = React.useState(false);
+  const [pagina, setPagina] = React.useState(1);
   const headerCheckboxRef = React.useRef<HTMLInputElement>(null);
   const mobileCheckboxRef = React.useRef<HTMLInputElement>(null);
 
@@ -191,6 +199,25 @@ export function InventarioCliente({
     return ordenada;
   }, [productos, query, catFiltro, tagFiltro, estado, orden, resolverStock]);
 
+  // Cambiar la búsqueda o cualquier filtro vuelve a la página 1 — evita
+  // quedar en una página vacía tras acotar el resultado.
+  React.useEffect(() => {
+    setPagina(1);
+  }, [query, catFiltro, tagFiltro, estado, sucursalFiltro, orden]);
+
+  const totalPaginas = Math.max(1, Math.ceil(filtrados.length / PAGE_SIZE));
+
+  // Si el resultado filtrado encoge (p. ej. tras eliminar productos) y la
+  // página actual queda fuera de rango, se recorta a la última válida.
+  React.useEffect(() => {
+    setPagina((p) => Math.min(p, totalPaginas));
+  }, [totalPaginas]);
+
+  const paginaProductos = React.useMemo(
+    () => filtrados.slice((pagina - 1) * PAGE_SIZE, pagina * PAGE_SIZE),
+    [filtrados, pagina],
+  );
+
   // Si un producto seleccionado deja de existir en la lista (p. ej. tras
   // refrescar después de otra eliminación), se quita de la selección.
   React.useEffect(() => {
@@ -207,9 +234,12 @@ export function InventarioCliente({
     });
   }, [productos]);
 
+  // "Visibles" = productos de la página actual (lo que realmente se ve en
+  // pantalla), no todo el resultado filtrado — con paginación, seleccionar
+  // "todo" no debe marcar en silencio productos de otras páginas.
   const todosVisiblesSeleccionados =
-    filtrados.length > 0 && filtrados.every((p) => seleccionados.has(p.id));
-  const algunosVisiblesSeleccionados = filtrados.some((p) => seleccionados.has(p.id));
+    paginaProductos.length > 0 && paginaProductos.every((p) => seleccionados.has(p.id));
+  const algunosVisiblesSeleccionados = paginaProductos.some((p) => seleccionados.has(p.id));
 
   React.useEffect(() => {
     const indeterminado = algunosVisiblesSeleccionados && !todosVisiblesSeleccionados;
@@ -230,9 +260,9 @@ export function InventarioCliente({
     setSeleccionados((prev) => {
       const next = new Set(prev);
       if (todosVisiblesSeleccionados) {
-        for (const p of filtrados) next.delete(p.id);
+        for (const p of paginaProductos) next.delete(p.id);
       } else {
-        for (const p of filtrados) next.add(p.id);
+        for (const p of paginaProductos) next.add(p.id);
       }
       return next;
     });
@@ -475,7 +505,7 @@ export function InventarioCliente({
               />
               Seleccionar todo
             </label>
-            {filtrados.map((p) => {
+            {paginaProductos.map((p) => {
               const margen = margenSobreCosto(Number(p.costo_usd), Number(p.precio_usd));
               const gananciaUsd = Number(p.precio_usd) - Number(p.costo_usd);
               const info = resolverStock(p);
@@ -654,7 +684,7 @@ export function InventarioCliente({
                   </tr>
                 </thead>
                 <tbody>
-                  {filtrados.map((p) => {
+                  {paginaProductos.map((p) => {
                     const margen = margenSobreCosto(Number(p.costo_usd), Number(p.precio_usd));
                     const gananciaUsd = Number(p.precio_usd) - Number(p.costo_usd);
                     const info = resolverStock(p);
@@ -814,6 +844,40 @@ export function InventarioCliente({
               </table>
             </div>
           </Card>
+
+          {/* Paginación — la búsqueda/filtros de arriba ya operan sobre todo
+              el inventario cargado; esto solo pagina el resultado. */}
+          {totalPaginas > 1 ? (
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-muted-foreground text-sm">
+                Mostrando {(pagina - 1) * PAGE_SIZE + 1}–
+                {Math.min(pagina * PAGE_SIZE, filtrados.length)} de {filtrados.length} productos
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPagina((p) => Math.max(1, p - 1))}
+                  disabled={pagina <= 1}
+                >
+                  <ChevronLeft className="size-4" />
+                  Anterior
+                </Button>
+                <span className="text-muted-foreground text-sm tabular-nums">
+                  Página {pagina} de {totalPaginas}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPagina((p) => Math.min(totalPaginas, p + 1))}
+                  disabled={pagina >= totalPaginas}
+                >
+                  Siguiente
+                  <ChevronRight className="size-4" />
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </>
       )}
 

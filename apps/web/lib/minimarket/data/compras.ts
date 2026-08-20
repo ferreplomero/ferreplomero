@@ -7,6 +7,7 @@
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, MmCompra, MmCompraEstado, MmCompraItem, MmProveedor } from "@arkiteq/db";
+import { fetchAllRows } from "./pagination";
 
 type Client = SupabaseClient<Database>;
 
@@ -44,7 +45,7 @@ export async function listProveedores(
   client: Client,
   tenantId: string,
 ): Promise<ProveedorConStats[]> {
-  const [{ data: provs, error }, { data: stats }, { data: prods }] = await Promise.all([
+  const [{ data: provs, error }, { data: stats }, prods] = await Promise.all([
     client
       .from("mm_proveedores")
       .select("*")
@@ -55,18 +56,24 @@ export async function listProveedores(
       .from("mm_v_resumen_proveedor")
       .select("proveedor_id, num_compras, total_comprado_usd, ultima_compra")
       .eq("tenant_id", tenantId),
-    client
-      .from("mm_productos")
-      .select("id, proveedor_id")
-      .eq("tenant_id", tenantId)
-      .is("deleted_at", null),
+    // Catálogo completo del tenant — puede superar las 1000 filas por
+    // defecto de PostgREST, así que se pagina en vez de un `.select()` plano.
+    fetchAllRows<{ id: string; proveedor_id: string | null }>((from, to) =>
+      client
+        .from("mm_productos")
+        .select("id, proveedor_id")
+        .eq("tenant_id", tenantId)
+        .is("deleted_at", null)
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
   ]);
 
   if (error) throw new Error(`No se pudieron cargar los proveedores: ${error.message}`);
 
   const statsMap = new Map((stats ?? []).map((s) => [s.proveedor_id, s]));
   const prodCount = new Map<string, number>();
-  for (const p of prods ?? []) {
+  for (const p of prods) {
     if (p.proveedor_id) prodCount.set(p.proveedor_id, (prodCount.get(p.proveedor_id) ?? 0) + 1);
   }
 
