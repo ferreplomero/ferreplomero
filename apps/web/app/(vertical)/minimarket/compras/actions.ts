@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getCompraConItems } from "@/lib/minimarket/data/compras";
 import type { Database, MmMetodoPago } from "@arkiteq/db";
 import { requirePermisoAccion } from "@/lib/minimarket/permisos";
+import { sucursalesPermitidas } from "@/lib/minimarket/sucursal-acceso";
 import {
   IGTF_RATE,
   causaIgtf,
@@ -62,15 +63,35 @@ const proveedorSchema = z.object({
   activo: z.boolean(),
 });
 
-const itemSchema = z.object({
-  producto_id: z.string().uuid(),
-  cantidad: z.number().positive("La cantidad debe ser mayor a cero."),
-  costo_unitario_usd: z.number().min(0, "El costo no puede ser negativo."),
-  /** Decisión del usuario cuando el costo cambió respecto al inventario:
-   * actualizar costo/precio de venta del producto (true) o mantenerlos y que
-   * esta compra solo registre su costo real pagado (false, default). */
-  actualizar_costo: z.boolean().default(true),
+const distribucionItemSchema = z.object({
+  sucursal_id: z.string().uuid(),
+  cantidad: z.number().positive(),
 });
+
+const itemSchema = z
+  .object({
+    producto_id: z.string().uuid(),
+    cantidad: z.number().positive("La cantidad debe ser mayor a cero."),
+    costo_unitario_usd: z.number().min(0, "El costo no puede ser negativo."),
+    /** Decisión del usuario cuando el costo cambió respecto al inventario:
+     * actualizar costo/precio de venta del producto (true) o mantenerlos y que
+     * esta compra solo registre su costo real pagado (false, default). */
+    actualizar_costo: z.boolean().default(true),
+    /** Reparto OPCIONAL de esta línea entre sucursales — ausente o vacío:
+     * comportamiento de siempre, 100% a la sucursal de la compra. Presente:
+     * debe sumar EXACTO la cantidad de la línea, ni falta ni sobra. */
+    distribucion: z.array(distribucionItemSchema).optional(),
+  })
+  .refine(
+    (item) =>
+      !item.distribucion ||
+      item.distribucion.length === 0 ||
+      Math.abs(item.distribucion.reduce((s, d) => s + d.cantidad, 0) - item.cantidad) < 0.001,
+    {
+      message: "La distribución entre sucursales debe sumar exactamente la cantidad comprada.",
+      path: ["distribucion"],
+    },
+  );
 
 const compraSchema = z.object({
   proveedor_id: z.string().uuid().nullable().optional(),
@@ -198,20 +219,32 @@ async function aplicarRecepcion(
     cantidad: number;
     costo_unitario_usd: number;
     actualizar_costo: boolean;
+    /** Reparto opcional de ESTA línea entre sucursales — ausente/vacío: la
+     * cantidad completa va a `sucursalId` (comportamiento de siempre). */
+    distribucion?: { sucursal_id: string; cantidad: number }[];
   }[],
 ) {
-  const { error: movErr } = await supabase.from("mm_movimientos_inventario").insert(
-    items.map((i) => ({
+  // Sin distribución, cada línea genera exactamente la misma fila que antes
+  // (mismo shape, mismo único insert) — con distribución, una línea se parte
+  // en varias filas, una por sucursal asignada. El costo ponderado más abajo
+  // no cambia: sigue sumando `mm_v_stock` a nivel de tenant, sin importar
+  // cuántas filas de sucursal haya por producto.
+  const filasStock = items.flatMap((i) =>
+    (i.distribucion?.length
+      ? i.distribucion
+      : [{ sucursal_id: sucursalId, cantidad: i.cantidad }]
+    ).map((a) => ({
       tenant_id: tenantId,
       producto_id: i.producto_id,
-      sucursal_id: sucursalId,
+      sucursal_id: a.sucursal_id,
       tipo: "entrada" as const,
-      cantidad: i.cantidad,
+      cantidad: a.cantidad,
       motivo: "Compra",
       referencia: compraId,
       usuario_id: userId,
     })),
   );
+  const { error: movErr } = await supabase.from("mm_movimientos_inventario").insert(filasStock);
   if (movErr) throw new Error(`No se pudo registrar la entrada de stock: ${movErr.message}`);
 
   // Costo/precio ACTUALES de verdad del producto, releídos justo antes de
@@ -478,11 +511,16 @@ export async function crearCompra(_prev: CompraResult, formData: FormData): Prom
     .safeParse(
       itemsParsed.map((i) => {
         const obj = i as Record<string, unknown>;
+        const distribucionRaw = Array.isArray(obj.distribucion) ? obj.distribucion : undefined;
         return {
           producto_id: obj.producto_id,
           cantidad: Number(obj.cantidad),
           costo_unitario_usd: Number(obj.costo_unitario_usd),
           actualizar_costo: Boolean(obj.actualizar_costo),
+          distribucion: distribucionRaw?.map((d) => {
+            const row = d as Record<string, unknown>;
+            return { sucursal_id: row.sucursal_id, cantidad: Number(row.cantidad) };
+          }),
         };
       }),
     );
@@ -507,6 +545,24 @@ export async function crearCompra(_prev: CompraResult, formData: FormData): Prom
   }
 
   const d = parsed.data;
+
+  // Cualquier sucursal usada en un reparto debe estar entre las PERMITIDAS
+  // del usuario — mismo criterio que decide qué sucursales ve en toda la
+  // app. Es defensa en profundidad: el bloqueo real, si alguien lo saltara,
+  // sigue siendo la RLS de `mm_movimientos_inventario` (migración 0111).
+  const sucursalesDistribucion = new Set(
+    d.items.flatMap((i) => (i.distribucion ?? []).map((a) => a.sucursal_id)),
+  );
+  if (sucursalesDistribucion.size > 0) {
+    const permitidas = await sucursalesPermitidas(supabase, tenantId, session.user.id);
+    const permitidasIds = new Set(permitidas.map((s) => s.id));
+    for (const sucId of sucursalesDistribucion) {
+      if (!permitidasIds.has(sucId)) {
+        return { error: "No tienes acceso a una de las sucursales del reparto." };
+      }
+    }
+  }
+
   const totalUsd = redondear(d.items.reduce((s, i) => s + i.cantidad * i.costo_unitario_usd, 0));
 
   let proveedorNombre: string | null = null;
@@ -616,8 +672,15 @@ export async function crearCompra(_prev: CompraResult, formData: FormData): Prom
     return { error: "No se pudo registrar la compra. Inténtalo de nuevo." };
   }
 
+  // Se genera el id de cada línea EN el propio server action (en vez de dejar
+  // que la base lo asigne) para poder enlazar su distribución por sucursal
+  // (mm_compras_items_sucursales) sin depender del orden en que Postgres
+  // devuelva las filas insertadas, que no está garantizado.
+  const itemsConId = d.items.map((i) => ({ ...i, id: crypto.randomUUID() }));
+
   const { error: itemsError } = await supabase.from("mm_compras_items").insert(
-    d.items.map((i) => ({
+    itemsConId.map((i) => ({
+      id: i.id,
       tenant_id: tenantId,
       compra_id: compra.id,
       producto_id: i.producto_id,
@@ -630,6 +693,25 @@ export async function crearCompra(_prev: CompraResult, formData: FormData): Prom
   if (itemsError) {
     await supabase.from("mm_compras").delete().eq("id", compra.id);
     return { error: "No se pudieron guardar los productos de la compra." };
+  }
+
+  const filasDistribucion = itemsConId.flatMap((i) =>
+    (i.distribucion ?? []).map((a) => ({
+      tenant_id: tenantId,
+      compra_item_id: i.id,
+      sucursal_id: a.sucursal_id,
+      cantidad: a.cantidad,
+    })),
+  );
+  if (filasDistribucion.length > 0) {
+    const { error: distribucionError } = await supabase
+      .from("mm_compras_items_sucursales")
+      .insert(filasDistribucion);
+    if (distribucionError) {
+      await supabase.from("mm_compras_items").delete().eq("compra_id", compra.id);
+      await supabase.from("mm_compras").delete().eq("id", compra.id);
+      return { error: "No se pudo guardar el reparto entre sucursales de la compra." };
+    }
   }
 
   // Egreso real en Caja/Bancos — referencia = compra.id, mismo mecanismo que
@@ -689,6 +771,7 @@ export async function crearCompra(_prev: CompraResult, formData: FormData): Prom
           cantidad: i.cantidad,
           costo_unitario_usd: i.costo_unitario_usd,
           actualizar_costo: i.actualizar_costo,
+          distribucion: i.distribucion,
         })),
       );
     } catch (e) {
@@ -761,6 +844,7 @@ export async function confirmarRecepcion(compraId: string): Promise<CompraResult
           cantidad: i.cantidad,
           costo_unitario_usd: i.costo_unitario_usd,
           actualizar_costo: i.actualizar_costo,
+          distribucion: i.distribucion,
         })),
     );
   } catch (e) {

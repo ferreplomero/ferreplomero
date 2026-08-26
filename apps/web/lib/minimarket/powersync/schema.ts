@@ -155,6 +155,31 @@ const mm_compras_items = new Table({
   deleted_at: column.text,
 });
 
+const mm_compras_items_sucursales = new Table({
+  tenant_id: column.text,
+  compra_item_id: column.text,
+  sucursal_id: column.text,
+  cantidad: column.real,
+  created_at: column.text,
+});
+
+const mm_transferencias = new Table({
+  tenant_id: column.text,
+  sucursal_origen_id: column.text,
+  sucursal_destino_id: column.text,
+  usuario_id: column.text,
+  notas: column.text,
+  created_at: column.text,
+});
+
+const mm_transferencias_items = new Table({
+  tenant_id: column.text,
+  transferencia_id: column.text,
+  producto_id: column.text,
+  cantidad: column.real,
+  created_at: column.text,
+});
+
 const mm_clientes = new Table({
   tenant_id: column.text,
   nombre: column.text,
@@ -317,6 +342,9 @@ export const AppSchema = new Schema({
   mm_proveedores,
   mm_compras,
   mm_compras_items,
+  mm_compras_items_sucursales,
+  mm_transferencias,
+  mm_transferencias_items,
   mm_clientes,
   mm_fiados,
   mm_abonos_fiado,

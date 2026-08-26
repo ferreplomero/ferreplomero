@@ -72,6 +72,7 @@ export const MINIMARKET_NAV: VerticalNavItem[] = [
       { label: "Productos", href: `${MINIMARKET_BASE}/inventario` },
       { label: "Categorías", href: `${MINIMARKET_BASE}/inventario/categorias` },
       { label: "Movimientos", href: `${MINIMARKET_BASE}/inventario/movimientos` },
+      { label: "Transferencias", href: `${MINIMARKET_BASE}/inventario/transferencias` },
       { label: "Ajustes / mermas", href: `${MINIMARKET_BASE}/inventario/ajustes` },
       { label: "Carga masiva", href: `${MINIMARKET_BASE}/inventario/carga` },
     ],

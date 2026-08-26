@@ -27,9 +27,18 @@ export interface CompraConItems extends CompraConProveedor {
   items: ItemDetalle[];
 }
 
+export interface DistribucionSucursal {
+  sucursal_id: string;
+  cantidad: number;
+}
+
 export interface ItemDetalle extends MmCompraItem {
   producto_nombre: string | null;
   producto_codigo: string | null;
+  /** Reparto opcional de esta línea entre sucursales (ver `mm_compras_items_sucursales`)
+   * — ausente o vacío cuando la línea completa fue a la sucursal principal
+   * de la compra (`mm_compras.sucursal_id`), que sigue siendo el caso normal. */
+  distribucion?: DistribucionSucursal[];
 }
 
 export interface ResumenCompras {
@@ -200,12 +209,30 @@ export async function getCompraConItems(
     client.from("mm_sucursales").select("nombre").eq("id", c.sucursal_id).maybeSingle(),
   ]);
 
+  const itemIds = (items ?? []).map((i) => i.id);
   const prodIds = (items ?? []).map((i) => i.producto_id).filter(Boolean) as string[];
-  const { data: prods } = prodIds.length
-    ? await client.from("mm_productos").select("id, nombre, codigo").in("id", prodIds)
-    : { data: [] };
+  const [{ data: prods }, { data: distribuciones }] = await Promise.all([
+    prodIds.length
+      ? client.from("mm_productos").select("id, nombre, codigo").in("id", prodIds)
+      : Promise.resolve({ data: [] }),
+    itemIds.length
+      ? client
+          .from("mm_compras_items_sucursales")
+          .select("compra_item_id, sucursal_id, cantidad")
+          .eq("tenant_id", tenantId)
+          .in("compra_item_id", itemIds)
+      : Promise.resolve({
+          data: [] as { compra_item_id: string; sucursal_id: string; cantidad: number }[],
+        }),
+  ]);
 
   const prodMap = new Map((prods ?? []).map((p) => [p.id, p]));
+  const distribucionPorItem = new Map<string, DistribucionSucursal[]>();
+  for (const row of distribuciones ?? []) {
+    const actual = distribucionPorItem.get(row.compra_item_id) ?? [];
+    actual.push({ sucursal_id: row.sucursal_id, cantidad: Number(row.cantidad) });
+    distribucionPorItem.set(row.compra_item_id, actual);
+  }
 
   const itemsDetalle: ItemDetalle[] = (items ?? []).map((i) => {
     const prod = i.producto_id ? prodMap.get(i.producto_id) : undefined;
@@ -213,6 +240,7 @@ export async function getCompraConItems(
       ...i,
       producto_nombre: prod?.nombre ?? null,
       producto_codigo: prod?.codigo ?? null,
+      distribucion: distribucionPorItem.get(i.id),
     };
   });
 

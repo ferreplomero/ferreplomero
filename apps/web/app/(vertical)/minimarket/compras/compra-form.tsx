@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import {
   AlertCircle,
+  Building2,
   ImageIcon,
   Info,
   Plus,
@@ -81,6 +82,16 @@ interface CompraFormProps {
   /** Cuentas bancarias activas del tenant, para elegir de cuál sale el dinero
    * cuando el método es digital (pago móvil/transferencia/Zelle/tarjeta). */
   cuentasBancarias: MmCuentaBancaria[];
+  /** Sucursales PERMITIDAS del usuario, para el reparto opcional de una línea
+   * entre varias sucursales — prop separada de `sucursales` (que sigue
+   * alimentando el selector de cabecera sin cambios). Con ≤1 sucursal, la
+   * opción de repartir ni se muestra: la compra funciona igual que siempre. */
+  sucursalesParaReparto: Sucursal[];
+}
+
+interface DistribucionItem {
+  sucursal_id: string;
+  cantidad: number;
 }
 
 interface ItemCompra {
@@ -99,11 +110,25 @@ interface ItemCompra {
    * costo real pagado. Por defecto `false` (Mantener) — nunca se cambia el
    * inventario sin que el usuario lo elija explícitamente. */
   actualizar_costo: boolean;
+  /** Reparto OPCIONAL de esta línea entre sucursales — `undefined`:
+   * comportamiento de siempre (100% a la sucursal de cabecera). Presente
+   * (incluso vacío mientras se edita): el usuario activó el reparto para
+   * esta línea y debe sumar EXACTO `cantidad` antes de poder enviar. */
+  distribucion?: DistribucionItem[];
 }
 
 /** ¿El costo tecleado en esta compra difiere del que el producto tenía en inventario? */
 function tieneCambioCosto(item: ItemCompra): boolean {
   return Math.abs(item.costo_unitario_usd - item.costo_inventario_actual) > 0.001;
+}
+
+function sumaDistribucion(item: ItemCompra): number {
+  return (item.distribucion ?? []).reduce((s, d) => s + d.cantidad, 0);
+}
+
+/** true si la línea NO reparte (caso normal) o si el reparto ya cuadra exacto. */
+function distribucionValida(item: ItemCompra): boolean {
+  return !item.distribucion || Math.abs(sumaDistribucion(item) - item.cantidad) < 0.001;
 }
 
 const SELECT_CLASS =
@@ -135,6 +160,7 @@ export function CompraForm({
   metodosPago,
   cajaAbierta,
   cuentasBancarias,
+  sucursalesParaReparto,
 }: CompraFormProps) {
   const router = useRouter();
   const powerSyncDb = React.useContext(PowerSyncContext);
@@ -231,6 +257,7 @@ export function CompraForm({
           cantidad: i.cantidad,
           costoUnitarioUsd: i.costo_unitario_usd,
           actualizarCosto: i.actualizar_costo,
+          distribucion: i.distribucion,
         })),
       });
       toast.success("Compra guardada en este dispositivo. Se sincronizará al conectarte.");
@@ -349,6 +376,43 @@ export function CompraForm({
   function quitarItem(key: string) {
     setItems((prev) => prev.filter((i) => i.key !== key));
   }
+
+  /** Activa el reparto de una línea: arranca en 0 para cada sucursal
+   * permitida, el usuario reparte manualmente desde ahí. */
+  function iniciarReparto(key: string) {
+    setItems((prev) =>
+      prev.map((i) =>
+        i.key === key
+          ? {
+              ...i,
+              distribucion: sucursalesParaReparto.map((s) => ({ sucursal_id: s.id, cantidad: 0 })),
+            }
+          : i,
+      ),
+    );
+  }
+
+  /** Cancela el reparto: la línea vuelve a ir 100% a la sucursal de cabecera. */
+  function cancelarReparto(key: string) {
+    setItems((prev) => prev.map((i) => (i.key === key ? { ...i, distribucion: undefined } : i)));
+  }
+
+  function actualizarDistribucion(key: string, sucursalId: string, cantidad: number) {
+    setItems((prev) =>
+      prev.map((i) =>
+        i.key === key
+          ? {
+              ...i,
+              distribucion: (i.distribucion ?? []).map((d) =>
+                d.sucursal_id === sucursalId ? { ...d, cantidad } : d,
+              ),
+            }
+          : i,
+      ),
+    );
+  }
+
+  const hayRepartosInvalidos = items.some((i) => !distribucionValida(i));
 
   return (
     <div className="space-y-6">
@@ -749,6 +813,66 @@ export function CompraForm({
                         </div>
                       </div>
                     ) : null}
+
+                    {sucursalesParaReparto.length > 1 ? (
+                      item.distribucion ? (
+                        <div className="border-border space-y-2 rounded-lg border px-3 py-2.5 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-heading flex items-center gap-1.5 font-medium">
+                              <Building2 className="size-3.5 shrink-0" aria-hidden />
+                              Repartir entre sucursales
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => cancelarReparto(item.key)}
+                              className="text-muted-foreground hover:text-danger"
+                            >
+                              Cancelar reparto
+                            </button>
+                          </div>
+                          {sucursalesParaReparto.map((s) => {
+                            const fila = item.distribucion?.find((d) => d.sucursal_id === s.id);
+                            return (
+                              <div key={s.id} className="flex items-center justify-between gap-2">
+                                <span className="text-muted-foreground truncate">{s.nombre}</span>
+                                <Input
+                                  type="number"
+                                  step="0.001"
+                                  min="0"
+                                  value={fila?.cantidad ?? 0}
+                                  onChange={(e) =>
+                                    actualizarDistribucion(
+                                      item.key,
+                                      s.id,
+                                      parseFloat(e.target.value) || 0,
+                                    )
+                                  }
+                                  className="h-7 w-24 text-right text-xs"
+                                />
+                              </div>
+                            );
+                          })}
+                          <p
+                            className={
+                              distribucionValida(item)
+                                ? "text-muted-foreground text-right"
+                                : "text-danger text-right"
+                            }
+                          >
+                            Asignado: {sumaDistribucion(item)} / {item.cantidad}
+                          </p>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => iniciarReparto(item.key)}
+                          className="text-accent-600 flex items-center gap-1.5 text-xs hover:underline"
+                        >
+                          <Building2 className="size-3.5 shrink-0" aria-hidden />
+                          Repartir entre sucursales
+                        </button>
+                      )
+                    ) : null}
                   </div>
                 );
               })}
@@ -812,7 +936,12 @@ export function CompraForm({
             Cancelar
           </Button>
           <SubmitButton
-            disabled={items.length === 0 || guardandoLocal || (!offline && faltaCuentaDigital)}
+            disabled={
+              items.length === 0 ||
+              guardandoLocal ||
+              hayRepartosInvalidos ||
+              (!offline && faltaCuentaDigital)
+            }
             className="w-full sm:w-auto"
           >
             {guardandoLocal ? "Guardando…" : "Registrar compra"}

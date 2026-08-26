@@ -84,6 +84,9 @@ export interface CompraItemLocalInput {
    * actualizar costo/precio de venta del producto (true) o mantenerlos y que
    * esta compra solo registre su costo real pagado (false, default). */
   actualizarCosto: boolean;
+  /** Reparto opcional de esta línea entre sucursales — ausente/vacío: la
+   * cantidad completa va a `CompraLocalInput.sucursalId`, igual que siempre. */
+  distribucion?: { sucursal_id: string; cantidad: number }[];
 }
 
 export interface CompraLocalInput {
@@ -128,13 +131,18 @@ export async function registrarCompraLocal(
       ],
     );
 
-    for (const item of input.items) {
+    // Id de cada línea generado aquí (no dejado a la base) para poder
+    // enlazar su reparto por sucursal (mm_compras_items_sucursales) — mismo
+    // criterio que el camino online (compras/actions.ts::crearCompra).
+    const itemsConId = input.items.map((item) => ({ ...item, id: crypto.randomUUID() }));
+
+    for (const item of itemsConId) {
       await tx.execute(
         `insert into mm_compras_items
            (id, tenant_id, compra_id, producto_id, cantidad, costo_unitario_usd, actualizar_costo, created_at, updated_at)
          values (?,?,?,?,?,?,?,?,?)`,
         [
-          crypto.randomUUID(),
+          item.id,
           input.tenantId,
           compraId,
           item.productoId,
@@ -145,30 +153,53 @@ export async function registrarCompraLocal(
           nowIso,
         ],
       );
-    }
 
-    if (input.estado === "recibida") {
-      for (const item of input.items) {
-        // El stock SIEMPRE sube por la cantidad comprada, sin excepción,
-        // pase lo que pase con la decisión de costo (mismo criterio que el
-        // camino online en compras/actions.ts::aplicarRecepcion).
+      for (const asignacion of item.distribucion ?? []) {
         await tx.execute(
-          `insert into mm_movimientos_inventario
-             (id, tenant_id, producto_id, sucursal_id, tipo, cantidad, motivo, referencia, usuario_id, created_at)
-           values (?,?,?,?,?,?,?,?,?,?)`,
+          `insert into mm_compras_items_sucursales
+             (id, tenant_id, compra_item_id, sucursal_id, cantidad, created_at)
+           values (?,?,?,?,?,?)`,
           [
             crypto.randomUUID(),
             input.tenantId,
-            item.productoId,
-            input.sucursalId,
-            "entrada",
-            item.cantidad,
-            "Compra",
-            compraId,
-            input.usuarioId,
+            item.id,
+            asignacion.sucursal_id,
+            asignacion.cantidad,
             nowIso,
           ],
         );
+      }
+    }
+
+    if (input.estado === "recibida") {
+      for (const item of itemsConId) {
+        // El stock SIEMPRE sube por la cantidad comprada, sin excepción,
+        // pase lo que pase con la decisión de costo (mismo criterio que el
+        // camino online en compras/actions.ts::aplicarRecepcion). Sin
+        // reparto, una sola fila a `input.sucursalId` — con reparto, una fila
+        // por sucursal asignada.
+        const asignaciones = item.distribucion?.length
+          ? item.distribucion
+          : [{ sucursal_id: input.sucursalId, cantidad: item.cantidad }];
+        for (const asignacion of asignaciones) {
+          await tx.execute(
+            `insert into mm_movimientos_inventario
+               (id, tenant_id, producto_id, sucursal_id, tipo, cantidad, motivo, referencia, usuario_id, created_at)
+             values (?,?,?,?,?,?,?,?,?,?)`,
+            [
+              crypto.randomUUID(),
+              input.tenantId,
+              item.productoId,
+              asignacion.sucursal_id,
+              "entrada",
+              asignacion.cantidad,
+              "Compra",
+              compraId,
+              input.usuarioId,
+              nowIso,
+            ],
+          );
+        }
 
         if (!item.actualizarCosto) continue;
 

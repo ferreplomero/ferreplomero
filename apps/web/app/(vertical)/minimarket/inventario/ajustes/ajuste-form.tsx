@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { useActionState } from "react";
-import { CheckCircle, WifiOff } from "lucide-react";
+import Image from "next/image";
+import { CheckCircle, ImageIcon, Search, WifiOff, X } from "lucide-react";
 import { Button, Card, toast } from "@arkiteq/ui";
 import { PowerSyncContext } from "@powersync/react";
 import type { ProductoConStock } from "@/lib/minimarket/data/inventario";
@@ -44,6 +45,40 @@ export function AjusteForm({ productos, sucursales, tenantId, usuarioId }: Props
   const [guardandoLocal, setGuardandoLocal] = React.useState(false);
   const [okLocal, setOkLocal] = React.useState(false);
 
+  const [sucursalId, setSucursalId] = React.useState(sucursales[0]?.id ?? "");
+  const [productoId, setProductoId] = React.useState("");
+  const [busqueda, setBusqueda] = React.useState("");
+
+  const productoSeleccionado = productos.find((p) => p.id === productoId) ?? null;
+
+  const stockEnSucursal = React.useCallback(
+    (p: ProductoConStock) =>
+      p.stockPorSucursal.find((s) => s.sucursal_id === sucursalId)?.stock_actual ?? p.stock_actual,
+    [sucursalId],
+  );
+
+  const productosFiltrados = busqueda.trim()
+    ? productos
+        .filter(
+          (p) =>
+            p.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
+            (p.codigo ?? "").toLowerCase().includes(busqueda.toLowerCase()),
+        )
+        .slice(0, 20)
+    : [];
+
+  function seleccionarProducto(p: ProductoConStock) {
+    setProductoId(p.id);
+    setBusqueda("");
+  }
+
+  // Tras un envío exitoso (online u offline) se limpia la selección para que
+  // el siguiente movimiento arranque sin producto elegido — el resto del
+  // formulario (cantidad, motivo) sigue sin controlar, como antes.
+  React.useEffect(() => {
+    if (state.ok || okLocal) setProductoId("");
+  }, [state.ok, okLocal]);
+
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     if (!offline) return;
     e.preventDefault();
@@ -52,19 +87,18 @@ export function AjusteForm({ productos, sucursales, tenantId, usuarioId }: Props
       toast.error("Sin conexión y sin base local disponible. Inténtalo de nuevo en unos segundos.");
       return;
     }
-    const fd = new FormData(e.currentTarget);
-    const productoId = String(fd.get("producto_id") ?? "");
     if (!productoId) {
       toast.error("Selecciona un producto.");
       return;
     }
+    const fd = new FormData(e.currentTarget);
     const cantidad = Number(String(fd.get("cantidad") ?? "").replace(",", "."));
     if (!Number.isFinite(cantidad) || cantidad === 0) {
       toast.error("La cantidad no puede ser cero.");
       return;
     }
-    const sucursalId = (fd.get("sucursal_id") as string) || sucursales[0]?.id;
-    if (!sucursalId) {
+    const sucursalDestino = (fd.get("sucursal_id") as string) || sucursales[0]?.id;
+    if (!sucursalDestino) {
       toast.error("No hay una sucursal configurada.");
       return;
     }
@@ -75,7 +109,7 @@ export function AjusteForm({ productos, sucursales, tenantId, usuarioId }: Props
       await registrarMovimientoInventarioLocal(powerSyncDb, {
         tenantId,
         usuarioId,
-        sucursalId,
+        sucursalId: sucursalDestino,
         productoId,
         tipo,
         cantidad,
@@ -124,18 +158,107 @@ export function AjusteForm({ productos, sucursales, tenantId, usuarioId }: Props
       <form action={action} onSubmit={onSubmit} className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
-            <label htmlFor="ajuste-producto" className={LABEL}>
+            <label htmlFor="ajuste-producto-buscar" className={LABEL}>
               Producto <span className="text-danger">*</span>
             </label>
-            <select id="ajuste-producto" name="producto_id" required className={INPUT}>
-              <option value="">Selecciona un producto…</option>
-              {productos.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.nombre}
-                  {p.codigo ? ` [${p.codigo}]` : ""} — stock: {p.stock_actual}
-                </option>
-              ))}
-            </select>
+            <input type="hidden" name="producto_id" value={productoId} />
+
+            {productoSeleccionado ? (
+              <div className="border-border bg-surface-2 flex items-center justify-between gap-2 rounded-md border px-3 py-2">
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="bg-background relative size-9 shrink-0 overflow-hidden rounded-md">
+                    {productoSeleccionado.imagen_url ? (
+                      <Image
+                        src={productoSeleccionado.imagen_url}
+                        alt=""
+                        fill
+                        sizes="36px"
+                        loading="lazy"
+                        className="object-cover"
+                      />
+                    ) : (
+                      <span className="text-muted-foreground/50 flex size-full items-center justify-center">
+                        <ImageIcon className="size-4" aria-hidden />
+                      </span>
+                    )}
+                  </span>
+                  <span className="min-w-0 truncate text-sm">
+                    <span className="text-heading font-medium">{productoSeleccionado.nombre}</span>
+                    {productoSeleccionado.codigo ? (
+                      <span className="text-muted-foreground ml-2 text-xs">
+                        {productoSeleccionado.codigo}
+                      </span>
+                    ) : null}
+                    <span className="text-muted-foreground ml-2 text-xs tabular-nums">
+                      stock: {stockEnSucursal(productoSeleccionado)}
+                    </span>
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setProductoId("")}
+                  className="text-muted-foreground hover:text-danger flex size-7 shrink-0 items-center justify-center rounded transition-colors"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="relative">
+                  <Search className="text-muted-foreground absolute left-3 top-1/2 size-4 -translate-y-1/2" />
+                  <input
+                    id="ajuste-producto-buscar"
+                    type="text"
+                    placeholder="Buscar producto por nombre o código..."
+                    value={busqueda}
+                    onChange={(e) => setBusqueda(e.target.value)}
+                    className={`${INPUT} pl-9`}
+                  />
+                </div>
+                {productosFiltrados.length > 0 ? (
+                  <div className="border-border max-h-56 overflow-auto rounded-md border">
+                    {productosFiltrados.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => seleccionarProducto(p)}
+                        className="hover:bg-surface-2 flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left text-sm transition-colors"
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="bg-surface-2 relative size-9 shrink-0 overflow-hidden rounded-md">
+                            {p.imagen_url ? (
+                              <Image
+                                src={p.imagen_url}
+                                alt=""
+                                fill
+                                sizes="36px"
+                                loading="lazy"
+                                className="object-cover"
+                              />
+                            ) : (
+                              <span className="text-muted-foreground/50 flex size-full items-center justify-center">
+                                <ImageIcon className="size-4" aria-hidden />
+                              </span>
+                            )}
+                          </span>
+                          <span className="min-w-0 truncate">
+                            <span className="text-heading font-medium">{p.nombre}</span>
+                            {p.codigo ? (
+                              <span className="text-muted-foreground ml-2 text-xs">{p.codigo}</span>
+                            ) : null}
+                          </span>
+                        </span>
+                        <span className="text-muted-foreground shrink-0 tabular-nums">
+                          stock: {stockEnSucursal(p)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : busqueda.trim() ? (
+                  <p className="text-muted-foreground text-sm">No se encontraron productos.</p>
+                ) : null}
+              </>
+            )}
             {state.fieldErrors?.producto_id ? (
               <p className="text-danger text-xs">{state.fieldErrors.producto_id}</p>
             ) : null}
@@ -146,7 +269,13 @@ export function AjusteForm({ productos, sucursales, tenantId, usuarioId }: Props
               <label htmlFor="ajuste-sucursal" className={LABEL}>
                 Sucursal
               </label>
-              <select id="ajuste-sucursal" name="sucursal_id" className={INPUT}>
+              <select
+                id="ajuste-sucursal"
+                name="sucursal_id"
+                className={INPUT}
+                value={sucursalId}
+                onChange={(e) => setSucursalId(e.target.value)}
+              >
                 {sucursales.map((s) => (
                   <option key={s.id} value={s.id}>
                     {s.nombre}
@@ -229,7 +358,7 @@ export function AjusteForm({ productos, sucursales, tenantId, usuarioId }: Props
         </div>
 
         <div className="flex justify-end">
-          <Button type="submit" disabled={pending || guardandoLocal}>
+          <Button type="submit" disabled={!productoId || pending || guardandoLocal}>
             {pending || guardandoLocal ? "Registrando…" : "Registrar movimiento"}
           </Button>
         </div>

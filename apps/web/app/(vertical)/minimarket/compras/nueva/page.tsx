@@ -11,7 +11,7 @@ import { listCategorias, siguienteCorrelativoSku } from "@/lib/minimarket/data/i
 import { defaultsFiscalesProducto, opcionesImpuesto } from "@/lib/minimarket/producto-opciones";
 import { parseMetodosPago } from "@/lib/minimarket/metodos-pago";
 import { getSesionAbierta } from "@/lib/minimarket/data/caja";
-import { getSucursalActiva } from "@/lib/minimarket/sucursal-acceso";
+import { getSucursalActiva, sucursalesPermitidas } from "@/lib/minimarket/sucursal-acceso";
 import { listCuentasBancarias } from "@/lib/minimarket/data/bancos";
 import { fetchAllRows } from "@/lib/minimarket/data/pagination";
 import { CompraForm } from "../compra-form";
@@ -38,6 +38,7 @@ export default async function NuevaCompraPage() {
     configMetodosRes,
     sesion,
     cuentasBancarias,
+    sucursalesParaReparto,
   ] = await Promise.all([
     // Catálogo activo del tenant — puede superar las 1000 filas por defecto
     // de PostgREST (carga masiva), así que se pagina en vez de un
@@ -86,6 +87,10 @@ export default async function NuevaCompraPage() {
       ? getSesionAbierta(supabase, tenantId, sucursalActiva.id)
       : Promise.resolve(null),
     listCuentasBancarias(supabase, tenantId),
+    // Prop SEPARADA del `sucursales` de arriba (que sigue alimentando el
+    // selector de cabecera de la compra, sin cambios) — solo para el reparto
+    // opcional por línea, acotado a las sucursales PERMITIDAS del usuario.
+    sucursalesPermitidas(supabase, tenantId, session.user.id),
   ]);
   const metodosPago = parseMetodosPago(configMetodosRes.data?.metodos_pago);
 
@@ -163,6 +168,7 @@ export default async function NuevaCompraPage() {
         metodosPago={metodosPago}
         cajaAbierta={Boolean(sesion)}
         cuentasBancarias={cuentasBancarias}
+        sucursalesParaReparto={sucursalesParaReparto}
       />
     </div>
   );

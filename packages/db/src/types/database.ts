@@ -1294,6 +1294,68 @@ export interface Database {
         };
         Relationships: [];
       };
+      mm_compras_items_sucursales: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          compra_item_id: string;
+          sucursal_id: string;
+          cantidad: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          compra_item_id: string;
+          sucursal_id: string;
+          cantidad: number;
+          created_at?: string;
+        };
+        Update: never;
+        Relationships: [];
+      };
+      mm_transferencias: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          sucursal_origen_id: string;
+          sucursal_destino_id: string;
+          usuario_id: string | null;
+          notas: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          sucursal_origen_id: string;
+          sucursal_destino_id: string;
+          usuario_id?: string | null;
+          notas?: string | null;
+          created_at?: string;
+        };
+        Update: never;
+        Relationships: [];
+      };
+      mm_transferencias_items: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          transferencia_id: string;
+          producto_id: string | null;
+          cantidad: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          transferencia_id: string;
+          producto_id?: string | null;
+          cantidad: number;
+          created_at?: string;
+        };
+        Update: never;
+        Relationships: [];
+      };
       mm_clientes: {
         Row: {
           id: string;
@@ -3438,6 +3500,9 @@ export type MmMovimientoInventario = Tables<"mm_movimientos_inventario">;
 export type MmProveedor = Tables<"mm_proveedores">;
 export type MmCompra = Tables<"mm_compras">;
 export type MmCompraItem = Tables<"mm_compras_items">;
+export type MmCompraItemSucursal = Tables<"mm_compras_items_sucursales">;
+export type MmTransferencia = Tables<"mm_transferencias">;
+export type MmTransferenciaItem = Tables<"mm_transferencias_items">;
 export type MmCliente = Tables<"mm_clientes">;
 export type MmFiado = Tables<"mm_fiados">;
 export type MmAbonoFiado = Tables<"mm_abonos_fiado">;
