@@ -77,6 +77,7 @@ export default async function InventarioPage() {
   // Config fiscal del negocio (mismo criterio que Ventas/Compras/Finanzas):
   // define el default fiscal con el que nace un producto NUEVO.
   const ivaActivoNegocio = Boolean(parametrosNegocio.iva_activo ?? false);
+  const ivaPctNegocio = Number(parametrosNegocio.iva_pct ?? 16);
   const igtfActivoNegocio = parametrosNegocio.igtf_activo !== false;
   const { impuestoId: impuestoIdDefault, aplicaIgtf: aplicaIgtfDefault } = defaultsFiscalesProducto(
     country,
@@ -142,6 +143,8 @@ export default async function InventarioPage() {
         impuestoIdDefault={impuestoIdDefault}
         aplicaIgtfDefault={aplicaIgtfDefault}
         tasa={tasa ? tasa.valor : null}
+        ivaActivo={ivaActivoNegocio}
+        ivaPct={ivaPctNegocio}
         margenGlobalActivo={margenGlobalActivo}
         margenGlobalPct={margenGlobalPct}
         skuSugerido={skuSugerido}

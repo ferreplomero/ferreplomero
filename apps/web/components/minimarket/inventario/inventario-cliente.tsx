@@ -19,6 +19,7 @@ import {
   Pencil,
   Plus,
   Search,
+  Tag,
   Trash2,
   Upload,
   X,
@@ -45,6 +46,7 @@ import { ProductoForm } from "./producto-form-cargador";
 import { CategoriaForm } from "./categoria-form-cargador";
 import { MovimientoForm } from "./movimiento-form-cargador";
 import { EliminarProductosLoteModal } from "./eliminar-productos-lote-modal";
+import { PrecioRapidoModal } from "@/components/minimarket/shared/precio-rapido-modal";
 
 interface InventarioClienteProps {
   productos: ProductoConStock[];
@@ -58,6 +60,10 @@ interface InventarioClienteProps {
   impuestoIdDefault: string;
   aplicaIgtfDefault: boolean;
   tasa: number | null;
+  /** Config fiscal del negocio — igual que en el POS, para que el modal de
+   * precio rápido calcule el IVA exactamente igual que una venta real. */
+  ivaActivo: boolean;
+  ivaPct: number;
   margenGlobalActivo: boolean;
   margenGlobalPct: number | null;
   skuSugerido: number;
@@ -87,6 +93,8 @@ export function InventarioCliente({
   impuestoIdDefault,
   aplicaIgtfDefault,
   tasa,
+  ivaActivo,
+  ivaPct,
   margenGlobalActivo,
   margenGlobalPct,
   skuSugerido,
@@ -107,6 +115,7 @@ export function InventarioCliente({
   const [catOpen, setCatOpen] = React.useState(false);
   const [eliminando, setEliminando] = React.useState<ProductoConStock | null>(null);
   const [moviendo, setMoviendo] = React.useState<ProductoConStock | null>(null);
+  const [precioRapido, setPrecioRapido] = React.useState<ProductoConStock | null>(null);
   const [pendingDelete, startDelete] = React.useTransition();
 
   // Selección múltiple para borrado en lote — no interfiere con `eliminando`
@@ -627,6 +636,14 @@ export function InventarioCliente({
                     <Button
                       variant="ghost"
                       size="icon"
+                      aria-label={`Precio rápido de ${p.nombre}`}
+                      onClick={() => setPrecioRapido(p)}
+                    >
+                      <Tag className="size-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       aria-label={`Registrar movimiento de ${p.nombre}`}
                       onClick={() => setMoviendo(p)}
                     >
@@ -814,6 +831,14 @@ export function InventarioCliente({
                             <Button
                               variant="ghost"
                               size="icon"
+                              aria-label={`Precio rápido de ${p.nombre}`}
+                              onClick={() => setPrecioRapido(p)}
+                            >
+                              <Tag className="size-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
                               aria-label={`Registrar movimiento de ${p.nombre}`}
                               onClick={() => setMoviendo(p)}
                             >
@@ -958,6 +983,15 @@ export function InventarioCliente({
         onOpenChange={setLoteModalOpen}
         productos={productosSeleccionados}
         onTerminado={loteTerminado}
+      />
+
+      <PrecioRapidoModal
+        producto={precioRapido}
+        onClose={() => setPrecioRapido(null)}
+        tasa={tasa}
+        ivaActivo={ivaActivo}
+        ivaPct={ivaPct}
+        locale={locale}
       />
     </div>
   );

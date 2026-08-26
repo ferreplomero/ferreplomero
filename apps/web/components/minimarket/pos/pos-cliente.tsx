@@ -17,6 +17,7 @@ import {
   Scan,
   Search,
   ShoppingCart,
+  Tag,
   Trash2,
   UserCheck,
   Wallet,
@@ -83,6 +84,7 @@ import {
   type OutboxEntrada,
 } from "@/lib/minimarket/pos-outbox";
 import { CrearClienteModal, type ClienteCreadoPos } from "./crear-cliente-modal-cargador";
+import { PrecioRapidoModal } from "@/components/minimarket/shared/precio-rapido-modal";
 import { BotonCalculadora, CalculadoraModal } from "./calculadora-modal";
 import {
   DialogoDejarEnEspera,
@@ -384,6 +386,7 @@ export function PosCliente({
   }, [clientesIniciales]);
   const [crearClienteOpen, setCrearClienteOpen] = React.useState(false);
   const [calculadoraOpen, setCalculadoraOpen] = React.useState(false);
+  const [precioRapido, setPrecioRapido] = React.useState<ProductoConStock | null>(null);
 
   // Carrito
   const [query, setQuery] = React.useState("");
@@ -2373,11 +2376,18 @@ export function PosCliente({
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
               {filtrados.map((p) => (
-                <button
+                <div
                   key={p.id}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => agregar(p)}
-                  className="border-border bg-surface hover:border-accent-500 focus-visible:ring-ring flex flex-col overflow-hidden rounded-xl border text-left transition-colors focus-visible:outline-none focus-visible:ring-2"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      agregar(p);
+                    }
+                  }}
+                  className="border-border bg-surface hover:border-accent-500 focus-visible:ring-ring flex cursor-pointer flex-col overflow-hidden rounded-xl border text-left transition-colors focus-visible:outline-none focus-visible:ring-2"
                 >
                   <div className="bg-surface-2 relative aspect-square w-full">
                     {p.imagen_url ? (
@@ -2393,6 +2403,17 @@ export function PosCliente({
                         <ImageIcon className="size-8" aria-hidden />
                       </div>
                     )}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPrecioRapido(p);
+                      }}
+                      aria-label={`Precio rápido de ${p.nombre}`}
+                      className="bg-surface/90 text-muted-foreground hover:text-accent-600 focus-visible:ring-ring absolute right-1.5 top-1.5 inline-flex size-7 items-center justify-center rounded-full shadow-sm backdrop-blur-sm focus-visible:outline-none focus-visible:ring-2"
+                    >
+                      <Tag className="size-4" aria-hidden />
+                    </button>
                   </div>
                   <div className="flex flex-1 flex-col gap-0.5 p-2.5">
                     <p className="text-heading line-clamp-2 text-sm font-medium leading-tight">
@@ -2415,7 +2436,7 @@ export function PosCliente({
                       Stock: {formatStock(p)}
                     </p>
                   </div>
-                </button>
+                </div>
               ))}
             </div>
           )}
@@ -4158,6 +4179,15 @@ export function PosCliente({
           onConfirmar={(nota) => void confirmarDejarEnEspera(nota)}
           cantidadArticulos={lineas.reduce((s, l) => s + l.cantidad, 0)}
           guardando={guardandoEnEspera}
+        />
+
+        <PrecioRapidoModal
+          producto={precioRapido}
+          onClose={() => setPrecioRapido(null)}
+          tasa={tasa}
+          ivaActivo={ivaActivo}
+          ivaPct={ivaPct}
+          locale={locale}
         />
       </div>
 
