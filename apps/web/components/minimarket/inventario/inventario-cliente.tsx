@@ -544,7 +544,9 @@ export function InventarioCliente({
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-heading truncate font-medium">{p.nombre}</p>
+                      <p className="text-heading truncate font-medium" title={p.nombre}>
+                        {p.nombre}
+                      </p>
                       <p className="text-muted-foreground truncate text-xs">
                         {p.categoria_nombre ?? "Sin categoría"}
                         {p.codigo ? ` · ${p.codigo}` : ""}
@@ -563,33 +565,33 @@ export function InventarioCliente({
                       ) : null}
                     </div>
                     {!info.disponible ? (
-                      <span className="bg-muted text-muted-foreground inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium">
+                      <span className="bg-muted text-muted-foreground inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium">
                         No disponible aquí
                       </span>
                     ) : !p.activo ? (
-                      <span className="bg-muted text-muted-foreground inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium">
+                      <span className="bg-muted text-muted-foreground inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium">
                         Inactivo
                       </span>
                     ) : info.bajoMinimo ? (
-                      <span className="bg-warning/15 text-warning inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium">
+                      <span className="bg-warning/15 text-warning inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium">
                         <AlertTriangle className="size-3" aria-hidden />
                         Bajo mínimo
                       </span>
                     ) : (
-                      <span className="bg-success/12 text-success inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium">
+                      <span className="bg-success/12 text-success inline-flex shrink-0 items-center whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium">
                         En stock
                       </span>
                     )}
                   </div>
 
                   <div className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-muted-foreground text-xs">Compra</p>
-                      <p className="tabular-nums">
+                      <p className="whitespace-nowrap tabular-nums">
                         {Number(p.costo_usd) > 0 ? money(Number(p.costo_usd), "USD") : "—"}
                       </p>
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-muted-foreground text-xs">Venta</p>
                       <PrecioEditable
                         producto={p}
@@ -598,22 +600,29 @@ export function InventarioCliente({
                         onSaved={() => router.refresh()}
                       />
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-muted-foreground text-xs">Ganancia / margen</p>
                       {margen === null ? (
                         <span className="text-muted-foreground">—</span>
                       ) : (
                         <p
-                          className={`tabular-nums ${margen >= 0 ? "text-success" : "text-danger"}`}
+                          className={`whitespace-nowrap tabular-nums ${margen >= 0 ? "text-success" : "text-danger"}`}
                         >
-                          {money(gananciaUsd, "USD")} · {margen.toFixed(0)}%
+                          {money(gananciaUsd, "USD")}
                         </p>
                       )}
+                      {margen !== null ? (
+                        <p
+                          className={`whitespace-nowrap text-xs tabular-nums opacity-80 ${margen >= 0 ? "text-success" : "text-danger"}`}
+                        >
+                          {margen.toFixed(0)}%
+                        </p>
+                      ) : null}
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <p className="text-muted-foreground text-xs">Stock</p>
                       {info.disponible ? (
-                        <p className="tabular-nums">
+                        <p className="whitespace-nowrap tabular-nums">
                           {info.stock} <span className="text-muted-foreground">{p.unidad}</span>
                         </p>
                       ) : (
@@ -675,7 +684,7 @@ export function InventarioCliente({
           <Card className="hidden overflow-hidden p-0 lg:block">
             <div className="overflow-x-auto">
               <table className="w-full min-w-[900px] text-sm">
-                <thead className="border-border text-muted-foreground border-b text-left text-xs uppercase tracking-wide">
+                <thead className="border-border text-muted-foreground whitespace-nowrap border-b text-left text-xs uppercase tracking-wide">
                   <tr>
                     <th className="w-10 px-4 py-3">
                       <input
@@ -733,10 +742,14 @@ export function InventarioCliente({
                                 </div>
                               )}
                             </div>
-                            <div className="min-w-0">
-                              <div className="text-heading font-medium">{p.nombre}</div>
+                            <div className="min-w-0 max-w-[240px] xl:max-w-xs">
+                              <div className="text-heading truncate font-medium" title={p.nombre}>
+                                {p.nombre}
+                              </div>
                               <div className="text-muted-foreground flex flex-wrap items-center gap-1 text-xs">
-                                {p.codigo ? <span>{p.codigo}</span> : null}
+                                {p.codigo ? (
+                                  <span className="whitespace-nowrap">{p.codigo}</span>
+                                ) : null}
                                 {(p.etiquetas ?? []).slice(0, 3).map((t) => (
                                   <span
                                     key={t}
@@ -750,12 +763,17 @@ export function InventarioCliente({
                           </div>
                         </td>
                         <td className="text-muted-foreground px-4 py-3">
-                          {p.categoria_nombre ?? "—"}
+                          <span
+                            className="block max-w-[140px] truncate"
+                            title={p.categoria_nombre ?? undefined}
+                          >
+                            {p.categoria_nombre ?? "—"}
+                          </span>
                         </td>
-                        <td className="text-muted-foreground px-4 py-3 text-right tabular-nums">
+                        <td className="text-muted-foreground whitespace-nowrap px-4 py-3 text-right tabular-nums">
                           {Number(p.costo_usd) > 0 ? money(Number(p.costo_usd), "USD") : "—"}
                         </td>
-                        <td className="px-4 py-3 text-right">
+                        <td className="whitespace-nowrap px-4 py-3 text-right">
                           <PrecioEditable
                             producto={p}
                             money={money}
@@ -763,7 +781,7 @@ export function InventarioCliente({
                             onSaved={() => router.refresh()}
                           />
                         </td>
-                        <td className="px-4 py-3 text-right tabular-nums">
+                        <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
                           {margen === null ? (
                             <span className="text-muted-foreground">—</span>
                           ) : (
@@ -777,7 +795,7 @@ export function InventarioCliente({
                             </div>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-right tabular-nums">
+                        <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
                           {margen === null ? (
                             <span className="text-muted-foreground">—</span>
                           ) : (
@@ -786,7 +804,7 @@ export function InventarioCliente({
                             </span>
                           )}
                         </td>
-                        <td className="px-4 py-3 text-right tabular-nums">
+                        <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
                           {info.disponible ? (
                             <>
                               {info.stock}
@@ -796,7 +814,7 @@ export function InventarioCliente({
                             <span className="text-muted-foreground">No disponible aquí</span>
                           )}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="whitespace-nowrap px-4 py-3">
                           {!info.disponible ? (
                             <span className="bg-muted text-muted-foreground inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium">
                               No disponible aquí
@@ -1086,12 +1104,12 @@ function PrecioEditable({
       className="hover:bg-surface-2 group ml-auto flex flex-col items-end rounded-md px-2 py-1"
       aria-label={`Editar precio de ${producto.nombre}`}
     >
-      <span className="text-heading inline-flex items-center gap-1 tabular-nums">
+      <span className="text-heading inline-flex items-center gap-1 whitespace-nowrap tabular-nums">
         {money(Number(producto.precio_usd), "USD")}
         <Pencil className="text-muted-foreground/0 group-hover:text-muted-foreground size-3 transition" />
       </span>
       {tasa ? (
-        <span className="text-muted-foreground text-xs tabular-nums">
+        <span className="text-muted-foreground whitespace-nowrap text-xs tabular-nums">
           {money(Number(producto.precio_usd) * tasa, "VES")}
         </span>
       ) : null}
