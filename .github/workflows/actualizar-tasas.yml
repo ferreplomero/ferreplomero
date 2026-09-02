@@ -1,0 +1,30 @@
+# Dispara POST /api/cron/tasas cada 12h para refrescar BCV/Euro (ver
+# apps/web/app/api/cron/tasas/route.ts). El endpoint exige el secreto
+# CRON_SECRET (mismo valor configurado como variable de entorno en el sitio
+# de Netlify) — sin él responde 401 y no hace nada.
+#
+# `workflow_dispatch` permite dispararlo a mano desde la pestaña Actions de
+# GitHub para verificar que funciona, sin esperar al horario programado.
+name: Actualizar tasas de cambio
+
+on:
+  schedule:
+    - cron: "0 */12 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  actualizar-tasas:
+    runs-on: ubuntu-latest
+    steps:
+      - name: POST /api/cron/tasas
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          if [ -z "$CRON_SECRET" ]; then
+            echo "::error::Falta el secreto CRON_SECRET en este repositorio (Settings > Secrets and variables > Actions)." >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error \
+            --max-time 30 \
+            -X POST "https://ferreplomero.netlify.app/api/cron/tasas" \
+            -H "Authorization: Bearer $CRON_SECRET"

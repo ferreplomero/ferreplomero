@@ -40,16 +40,17 @@ async function ejecutar(): Promise<{
 }> {
   const supabase = createServiceClient();
 
-  const { data: filas, error } = await supabase
-    .from("entitlements")
-    .select("tenant_id, product:products(slug)")
-    .eq("status", "activo");
+  // Ferreplomero no usa el flujo de facturación/entitlements heredado de
+  // Arkiteq (la tabla `entitlements` está vacía aquí — nada la puebla en este
+  // fork), así que ese filtro nunca encontraba tenants y el cron no
+  // refrescaba ninguna tasa real. `mm_config_negocio` sí es la fuente de
+  // verdad propia de Ferreplomero: existe exactamente una fila por negocio
+  // de minimarket ya configurado.
+  const { data: filas, error } = await supabase.from("mm_config_negocio").select("tenant_id");
 
-  if (error) throw new Error(`No se pudieron leer los entitlements: ${error.message}`);
+  if (error) throw new Error(`No se pudieron leer los negocios de minimarket: ${error.message}`);
 
-  const tenantIds = Array.from(
-    new Set((filas ?? []).filter((f) => f.product?.slug === "minimarket").map((f) => f.tenant_id)),
-  );
+  const tenantIds = Array.from(new Set((filas ?? []).map((f) => f.tenant_id)));
 
   const resultados: Resultado[] = [];
   for (const tenantId of tenantIds) {
