@@ -1018,6 +1018,12 @@ export interface Database {
           imagen_url: string | null;
           activo: boolean;
           usa_margen_global: boolean;
+          /** Diferencial de tasa de cambio (BCV / tasa del proveedor) aplicado al precio de venta. */
+          diferencial_activo: boolean;
+          tipo_tasa_diferencial: "bcv" | "euro" | "personalizada" | null;
+          tasa_proveedor_valor: number | null;
+          /** Margen sobre PRECIO DE VENTA (%) — solo con diferencial_activo=true; distinto del margen sobre costo normal. */
+          margen_venta_pct: number | null;
           created_at: string;
           updated_at: string;
           deleted_at: string | null;
@@ -1040,6 +1046,10 @@ export interface Database {
           imagen_url?: string | null;
           activo?: boolean;
           usa_margen_global?: boolean;
+          diferencial_activo?: boolean;
+          tipo_tasa_diferencial?: "bcv" | "euro" | "personalizada" | null;
+          tasa_proveedor_valor?: number | null;
+          margen_venta_pct?: number | null;
           created_at?: string;
           updated_at?: string;
           deleted_at?: string | null;
@@ -1060,6 +1070,10 @@ export interface Database {
           imagen_url?: string | null;
           activo?: boolean;
           usa_margen_global?: boolean;
+          diferencial_activo?: boolean;
+          tipo_tasa_diferencial?: "bcv" | "euro" | "personalizada" | null;
+          tasa_proveedor_valor?: number | null;
+          margen_venta_pct?: number | null;
           updated_at?: string;
           deleted_at?: string | null;
         };

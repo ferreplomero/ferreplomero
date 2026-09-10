@@ -60,6 +60,9 @@ interface InventarioClienteProps {
   impuestoIdDefault: string;
   aplicaIgtfDefault: boolean;
   tasa: number | null;
+  /** Tasas BCV y Euro vigentes — para el diferencial de tasa del proveedor
+   * en el formulario de producto. */
+  tasas: { bcv: number | null; euro: number | null };
   /** Config fiscal del negocio — igual que en el POS, para que el modal de
    * precio rápido calcule el IVA exactamente igual que una venta real. */
   ivaActivo: boolean;
@@ -93,6 +96,7 @@ export function InventarioCliente({
   impuestoIdDefault,
   aplicaIgtfDefault,
   tasa,
+  tasas,
   ivaActivo,
   ivaPct,
   margenGlobalActivo,
@@ -938,6 +942,7 @@ export function InventarioCliente({
             aplicaIgtfDefault={aplicaIgtfDefault}
             etiquetasSugeridas={etiquetasSugeridas}
             tasa={tasa}
+            tasas={tasas}
             margenGlobalActivo={margenGlobalActivo}
             margenGlobalPct={margenGlobalPct}
             skuSugerido={skuSugerido}

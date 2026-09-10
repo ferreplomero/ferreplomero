@@ -56,6 +56,9 @@ interface CompraFormProps {
   proveedores: Proveedor[];
   sucursales: Sucursal[];
   tasa: number;
+  /** Tasas BCV y Euro vigentes — para el diferencial de tasa del proveedor
+   * en el modal de alta rápida de producto. */
+  tasas: { bcv: number | null; euro: number | null };
   locale: string;
   tenantId: string;
   usuarioId: string;
@@ -143,6 +146,7 @@ export function CompraForm({
   proveedores: proveedoresIniciales,
   sucursales,
   tasa,
+  tasas,
   locale,
   tenantId,
   usuarioId,
@@ -963,6 +967,7 @@ export function CompraForm({
             aplicaIgtfDefault={aplicaIgtfDefault}
             etiquetasSugeridas={[]}
             tasa={tasa}
+            tasas={tasas}
             margenGlobalActivo={margenGlobalActivo}
             margenGlobalPct={margenGlobalPct}
             skuSugerido={skuSugerido}

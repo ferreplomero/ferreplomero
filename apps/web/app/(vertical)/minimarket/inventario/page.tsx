@@ -13,7 +13,7 @@ import {
   siguienteCorrelativoSku,
 } from "@/lib/minimarket/data/inventario";
 import { getSucursalActiva, esCatalogoIrrestricto } from "@/lib/minimarket/sucursal-acceso";
-import { getTasaVigente } from "@/lib/minimarket/exchange-rate";
+import { getTasaVigente, getTodasLasTasas } from "@/lib/minimarket/exchange-rate";
 import { defaultsFiscalesProducto, opcionesImpuesto } from "@/lib/minimarket/producto-opciones";
 import { InventarioCliente } from "@/components/minimarket/inventario/inventario-cliente";
 
@@ -54,14 +54,20 @@ export default async function InventarioPage() {
     );
   }
 
-  const [productos, categorias, proveedores, skuSugerido, tasa, configRes] = await Promise.all([
-    listProductos(supabase, tenantId, sucursales, irrestricto),
-    listCategorias(supabase, tenantId),
-    listProveedores(supabase, tenantId),
-    siguienteCorrelativoSku(supabase, tenantId),
-    getTasaVigente(supabase, tenantId),
-    supabase.from("mm_config_negocio").select("parametros").eq("tenant_id", tenantId).maybeSingle(),
-  ]);
+  const [productos, categorias, proveedores, skuSugerido, tasa, todasLasTasas, configRes] =
+    await Promise.all([
+      listProductos(supabase, tenantId, sucursales, irrestricto),
+      listCategorias(supabase, tenantId),
+      listProveedores(supabase, tenantId),
+      siguienteCorrelativoSku(supabase, tenantId),
+      getTasaVigente(supabase, tenantId),
+      getTodasLasTasas(supabase, tenantId),
+      supabase
+        .from("mm_config_negocio")
+        .select("parametros")
+        .eq("tenant_id", tenantId)
+        .maybeSingle(),
+    ]);
 
   const parametrosNegocio =
     configRes.data?.parametros &&
@@ -143,6 +149,10 @@ export default async function InventarioPage() {
         impuestoIdDefault={impuestoIdDefault}
         aplicaIgtfDefault={aplicaIgtfDefault}
         tasa={tasa ? tasa.valor : null}
+        tasas={{
+          bcv: todasLasTasas.bcv ? todasLasTasas.bcv.valor : null,
+          euro: todasLasTasas.euro ? todasLasTasas.euro.valor : null,
+        }}
         ivaActivo={ivaActivoNegocio}
         ivaPct={ivaPctNegocio}
         margenGlobalActivo={margenGlobalActivo}

@@ -33,6 +33,12 @@ export interface ProductoLocalInput {
   activo: boolean;
   /** Si el precio de venta sigue el margen de ganancia global del negocio. */
   usaMargenGlobal: boolean;
+  /** Diferencial de tasa de cambio del proveedor (BCV/euro/personalizada) aplicado al precio de venta. */
+  diferencialActivo: boolean;
+  tipoTasaDiferencial: "bcv" | "euro" | "personalizada" | null;
+  tasaProveedorValor: number | null;
+  /** Margen sobre PRECIO DE VENTA (%) — solo con diferencialActivo=true. */
+  margenVentaPct: number | null;
   stockMinimo?: number;
   /** Solo se usa al crear. */
   stockInicial?: number;
@@ -108,8 +114,9 @@ export async function crearProductoLocal(
       `insert into mm_productos
          (id, tenant_id, nombre, codigo, codigo_barras, categoria_id, tipo_venta, unidad,
           costo_usd, precio_usd, impuesto_id, aplica_igtf, proveedor_id, etiquetas, activo,
-          usa_margen_global, created_at, updated_at)
-       values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          usa_margen_global, diferencial_activo, tipo_tasa_diferencial, tasa_proveedor_valor,
+          margen_venta_pct, created_at, updated_at)
+       values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         productoId,
         input.tenantId,
@@ -127,6 +134,10 @@ export async function crearProductoLocal(
         JSON.stringify(input.etiquetas),
         input.activo ? 1 : 0,
         input.usaMargenGlobal ? 1 : 0,
+        input.diferencialActivo ? 1 : 0,
+        input.tipoTasaDiferencial,
+        input.tasaProveedorValor,
+        input.margenVentaPct,
         nowIso,
         nowIso,
       ],
@@ -202,7 +213,8 @@ export async function actualizarProductoLocal(
       `update mm_productos set
          nombre = ?, codigo = ?, codigo_barras = ?, categoria_id = ?, tipo_venta = ?, unidad = ?,
          costo_usd = ?, precio_usd = ?, impuesto_id = ?, aplica_igtf = ?, proveedor_id = ?,
-         etiquetas = ?, activo = ?, usa_margen_global = ?, updated_at = ?
+         etiquetas = ?, activo = ?, usa_margen_global = ?, diferencial_activo = ?,
+         tipo_tasa_diferencial = ?, tasa_proveedor_valor = ?, margen_venta_pct = ?, updated_at = ?
        where tenant_id = ? and id = ?`,
       [
         input.nombre,
@@ -219,6 +231,10 @@ export async function actualizarProductoLocal(
         JSON.stringify(input.etiquetas),
         input.activo ? 1 : 0,
         input.usaMargenGlobal ? 1 : 0,
+        input.diferencialActivo ? 1 : 0,
+        input.tipoTasaDiferencial,
+        input.tasaProveedorValor,
+        input.margenVentaPct,
         nowIso,
         input.tenantId,
         productoId,

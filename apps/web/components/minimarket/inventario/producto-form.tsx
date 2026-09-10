@@ -44,13 +44,18 @@ import { TomarFotoDialog } from "@/components/minimarket/shared/tomar-foto-dialo
 import { CategoriaForm } from "@/components/minimarket/inventario/categoria-form-cargador";
 import { comprimirImagen } from "@/lib/minimarket/comprimir-imagen";
 import {
+  TIPO_TASA_DIFERENCIAL_LABEL,
   TIPOS_VENTA,
   UNIDADES_PREDEFINIDAS,
+  calcularDiferencial,
   generarSku,
   margenSobreCosto,
+  margenSobreVenta,
   precioDesdeMargen,
+  precioDesdeMargenVenta,
   unidadesSugeridas,
   type OpcionImpuesto,
+  type TipoTasaDiferencial,
 } from "@/lib/minimarket/producto-opciones";
 
 export interface ProductoFormProps {
@@ -68,6 +73,9 @@ export interface ProductoFormProps {
   aplicaIgtfDefault: boolean;
   etiquetasSugeridas: string[];
   tasa: number | null;
+  /** Tasas BCV y Euro vigentes (Bs por unidad) — para el diferencial de tasa
+   * del proveedor. `null` = esa tasa aún no está registrada. */
+  tasas: { bcv: number | null; euro: number | null };
   /** Margen de ganancia global del negocio (Configuración) — valor por defecto sugerido. */
   margenGlobalActivo: boolean;
   margenGlobalPct: number | null;
@@ -105,6 +113,7 @@ export function ProductoForm({
   aplicaIgtfDefault,
   etiquetasSugeridas,
   tasa,
+  tasas,
   margenGlobalActivo,
   margenGlobalPct,
   skuSugerido,
@@ -247,6 +256,10 @@ export function ProductoForm({
 
   function onCosto(value: string) {
     setCosto(value);
+    if (diferencialActivo) {
+      recalcularPrecioConDiferencial(value, margenVentaTexto);
+      return;
+    }
     if (siguiendoGlobal && hayMargenGlobal) {
       const pct = margenGlobalPct as number;
       setMargen(dosDecimales(pct));
@@ -259,6 +272,15 @@ export function ProductoForm({
   }
   function onPrecio(value: string) {
     setPrecio(value);
+    if (diferencialActivo) {
+      const p = numero(value);
+      if (diferencial && p > 0) {
+        const sinDiferencial = p / diferencial;
+        const m = margenSobreVenta(numero(costo), sinDiferencial);
+        if (m !== null) setMargenVentaTexto(dosDecimales(m));
+      }
+      return;
+    }
     setSiguiendoGlobal(false);
     const m = margenSobreCosto(numero(costo), numero(value));
     if (m !== null) setMargen(dosDecimales(m));
@@ -279,6 +301,78 @@ export function ProductoForm({
     const c = numero(costo);
     if (c > 0) setPrecio(dosDecimales(precioDesdeMargen(c, pct)));
   }
+
+  // ---- Diferencial de tasa del proveedor (opcional) ----
+  // Cuando el proveedor factura a una tasa distinta de la BCV del negocio
+  // (BCV/euro/personalizada), el precio de venta se ajusta multiplicando por
+  // el diferencial: precio = (costo / (1 - margenVenta%)) * diferencial.
+  // `margenVenta` usa la convención "sobre precio de venta" (distinta del
+  // "margen sobre costo" normal) — es la única forma de reproducir la
+  // fórmula acordada con el negocio. Activar/desactivar esta sección NUNCA
+  // afecta a un producto que no la usa: el cálculo de arriba (costo/precio/
+  // margen sobre costo) sigue intacto.
+  const [diferencialActivo, setDiferencialActivo] = React.useState(
+    producto ? Boolean(producto.diferencial_activo) : false,
+  );
+  const [tipoTasaDif, setTipoTasaDif] = React.useState<TipoTasaDiferencial>(
+    (producto?.tipo_tasa_diferencial as TipoTasaDiferencial | null) ?? "bcv",
+  );
+  const [tasaProveedorTexto, setTasaProveedorTexto] = React.useState(
+    producto?.tasa_proveedor_valor != null ? String(producto.tasa_proveedor_valor) : "",
+  );
+  const [margenVentaTexto, setMargenVentaTexto] = React.useState(
+    producto?.margen_venta_pct != null ? dosDecimales(producto.margen_venta_pct) : "",
+  );
+
+  const tasaProveedorAuto =
+    tipoTasaDif === "bcv" ? tasas.bcv : tipoTasaDif === "euro" ? tasas.euro : null;
+  const tasaProveedorNum =
+    tipoTasaDif === "personalizada" ? numero(tasaProveedorTexto) : tasaProveedorAuto;
+  const diferencial =
+    tasaProveedorNum && tasaProveedorNum > 0 && tasas.bcv
+      ? calcularDiferencial(tasaProveedorNum, tasas.bcv)
+      : null;
+
+  /** Recalcula el precio a partir de costo + margen-sobre-venta + diferencial vigente. */
+  function recalcularPrecioConDiferencial(costoStr: string, margenVentaStr: string) {
+    if (!diferencial) return;
+    const c = numero(costoStr);
+    const m = numero(margenVentaStr);
+    if (!(c >= 0) || !Number.isFinite(m)) return;
+    const sinDiferencial = precioDesdeMargenVenta(c, m);
+    if (sinDiferencial === null) return;
+    setPrecio(dosDecimales(sinDiferencial * diferencial));
+  }
+
+  function onToggleDiferencial(activo: boolean) {
+    setDiferencialActivo(activo);
+    if (!activo) return;
+    setSiguiendoGlobal(false);
+    // Primera vez que se activa (sin margen-sobre-venta guardado): arranca
+    // desde el margen sobre venta implícito en el costo/precio actuales, así
+    // el usuario ve un número de partida en vez de un campo vacío.
+    if (!margenVentaTexto) {
+      const estimado = margenSobreVenta(numero(costo), numero(precio));
+      if (estimado !== null) setMargenVentaTexto(dosDecimales(estimado));
+    }
+  }
+
+  function onMargenVenta(value: string) {
+    setMargenVentaTexto(value);
+    recalcularPrecioConDiferencial(costo, value);
+  }
+
+  // Cambiar la tasa del proveedor (tipo o valor personalizado) recalcula el
+  // precio con el margen-sobre-venta ya fijado — mismo criterio que "seguir
+  // el margen global" recalculando al cambiar el costo.
+  React.useEffect(() => {
+    if (!diferencialActivo) return;
+    recalcularPrecioConDiferencial(costo, margenVentaTexto);
+    // Solo reacciona a que CAMBIE el diferencial resultante (tasa proveedor/
+    // tipo), no a cada tecla de costo/margen: esos ya recalculan en su propio
+    // handler (onCosto/onMargenVenta).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [diferencial, diferencialActivo]);
 
   const gananciaUsd = numero(precio) - numero(costo);
   const margenActual = margenSobreCosto(numero(costo), numero(precio));
@@ -366,6 +460,10 @@ export function ProductoForm({
         codigos,
         activo: fd.get("activo") === "1" || fd.get("activo") === "on",
         usaMargenGlobal: siguiendoGlobal,
+        diferencialActivo,
+        tipoTasaDiferencial: diferencialActivo ? tipoTasaDif : null,
+        tasaProveedorValor: diferencialActivo && tasaProveedorNum ? tasaProveedorNum : null,
+        margenVentaPct: diferencialActivo ? numero(margenVentaTexto) || null : null,
         stockMinimo: fd.get("stock_minimo") ? numero(fd.get("stock_minimo")) : undefined,
         stockInicial:
           !editando && fd.get("stock_inicial") ? numero(fd.get("stock_inicial")) : undefined,
@@ -413,6 +511,22 @@ export function ProductoForm({
         <input type="hidden" name="unidad" value={unidadValor} />
         <input type="hidden" name="etiquetas" value={tags.join(",")} />
         <input type="hidden" name="usa_margen_global" value={siguiendoGlobal ? "1" : "0"} />
+        <input type="hidden" name="diferencial_activo" value={diferencialActivo ? "1" : "0"} />
+        <input
+          type="hidden"
+          name="tipo_tasa_diferencial"
+          value={diferencialActivo ? tipoTasaDif : ""}
+        />
+        <input
+          type="hidden"
+          name="tasa_proveedor_valor"
+          value={diferencialActivo && tasaProveedorNum ? String(tasaProveedorNum) : ""}
+        />
+        <input
+          type="hidden"
+          name="margen_venta_pct"
+          value={diferencialActivo ? margenVentaTexto : ""}
+        />
 
         {offline ? (
           <div
@@ -712,15 +826,19 @@ export function ProductoForm({
               required
             />
             <div className="space-y-1.5">
-              <Label htmlFor="margen">Margen sobre costo</Label>
+              <Label htmlFor="margen">
+                {diferencialActivo ? "Margen sobre venta" : "Margen sobre costo"}
+              </Label>
               <div className="relative">
                 <Input
                   id="margen"
                   type="number"
                   step="0.1"
                   inputMode="decimal"
-                  value={margen}
-                  onChange={(e) => onMargen(e.target.value)}
+                  value={diferencialActivo ? margenVentaTexto : margen}
+                  onChange={(e) =>
+                    diferencialActivo ? onMargenVenta(e.target.value) : onMargen(e.target.value)
+                  }
                   placeholder="50"
                   className="pr-8 text-right tabular-nums"
                 />
@@ -746,10 +864,103 @@ export function ProductoForm({
                 >
                   ${gananciaUsd.toFixed(2)}
                 </span>{" "}
-                · Margen <span className="font-medium">{margenActual.toFixed(1)}%</span>
+                · Margen sobre costo <span className="font-medium">{margenActual.toFixed(1)}%</span>
               </>
             )}
           </p>
+
+          {/* Diferencial de tasa del proveedor — capa opcional, ver estado arriba. */}
+          <div className="border-border bg-surface space-y-3 rounded-md border p-3">
+            <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
+              <input
+                type="checkbox"
+                checked={diferencialActivo}
+                onChange={(e) => onToggleDiferencial(e.target.checked)}
+                className="size-4 accent-[var(--brand-500)]"
+              />
+              Aplicar diferencial de tasa del proveedor
+            </label>
+            {diferencialActivo ? (
+              <>
+                <p className="text-muted-foreground text-xs">
+                  Este proveedor compra con otra tasa de cambio. El precio de venta se ajusta
+                  automáticamente para compensar la diferencia frente a la tasa BCV.
+                </p>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="tipo_tasa_dif">Tasa del proveedor</Label>
+                    <select
+                      id="tipo_tasa_dif"
+                      className={SELECT_CLASS}
+                      value={tipoTasaDif}
+                      onChange={(e) => setTipoTasaDif(e.target.value as TipoTasaDiferencial)}
+                    >
+                      {(Object.keys(TIPO_TASA_DIFERENCIAL_LABEL) as TipoTasaDiferencial[]).map(
+                        (t) => (
+                          <option key={t} value={t}>
+                            {TIPO_TASA_DIFERENCIAL_LABEL[t]}
+                          </option>
+                        ),
+                      )}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="tasa_proveedor">Valor de la tasa (Bs)</Label>
+                    {tipoTasaDif === "personalizada" ? (
+                      <Input
+                        id="tasa_proveedor"
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        inputMode="decimal"
+                        value={tasaProveedorTexto}
+                        onChange={(e) => setTasaProveedorTexto(e.target.value)}
+                        placeholder="1000,00"
+                        className="tabular-nums"
+                        aria-invalid={Boolean(state.fieldErrors?.tasa_proveedor_valor)}
+                      />
+                    ) : (
+                      <p
+                        id="tasa_proveedor"
+                        className="border-border bg-surface-2/60 text-muted-foreground flex h-10 items-center rounded-md border px-3 text-sm tabular-nums"
+                      >
+                        {tasaProveedorAuto
+                          ? dosDecimales(tasaProveedorAuto)
+                          : "Sin tasa registrada"}
+                      </p>
+                    )}
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Diferencial</Label>
+                    <p className="border-border bg-surface-2/60 text-heading flex h-10 items-center rounded-md border px-3 text-sm font-medium tabular-nums">
+                      {diferencial ? `${diferencial.toFixed(4)}x` : "—"}
+                    </p>
+                  </div>
+                </div>
+                {state.fieldErrors?.tasa_proveedor_valor ? (
+                  <p className="text-danger text-xs">{state.fieldErrors.tasa_proveedor_valor}</p>
+                ) : !tasas.bcv ? (
+                  <p className="text-danger text-xs">
+                    Falta registrar la tasa BCV vigente — no se puede calcular el diferencial.
+                  </p>
+                ) : !tasaProveedorNum ? (
+                  <p className="text-muted-foreground text-xs">
+                    Indica la tasa del proveedor para calcular el diferencial.
+                  </p>
+                ) : diferencial ? (
+                  <p className="text-muted-foreground text-xs">
+                    Diferencial = proveedor ({dosDecimales(tasaProveedorNum)}) ÷ BCV (
+                    {dosDecimales(tasas.bcv)}) ={" "}
+                    <span className="text-heading font-medium">{diferencial.toFixed(4)}x</span>
+                    {" · "}Precio de venta resultante:{" "}
+                    <span className="text-heading font-medium">
+                      ${precio ? Number(precio).toFixed(2) : "0.00"}
+                    </span>
+                  </p>
+                ) : null}
+              </>
+            ) : null}
+          </div>
         </div>
 
         {/* Impuesto + IGTF */}

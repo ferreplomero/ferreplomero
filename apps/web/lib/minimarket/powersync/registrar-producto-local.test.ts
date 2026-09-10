@@ -60,6 +60,10 @@ function baseInput(overrides: Partial<ProductoLocalInput> = {}): ProductoLocalIn
     codigos: [],
     activo: true,
     usaMargenGlobal: false,
+    diferencialActivo: false,
+    tipoTasaDiferencial: null,
+    tasaProveedorValor: null,
+    margenVentaPct: null,
     ...overrides,
   };
 }

@@ -34,6 +34,7 @@ const propsBase = {
   aplicaIgtfDefault: false,
   etiquetasSugeridas: [],
   tasa: null,
+  tasas: { bcv: null, euro: null },
   skuSugerido: 1,
   tenantId: "t1",
   usuarioId: "u1",

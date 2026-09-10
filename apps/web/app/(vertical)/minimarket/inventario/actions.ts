@@ -88,6 +88,13 @@ const productoSchema = z.object({
   sucursal_id: z.string().uuid().optional(),
   activo: z.boolean(),
   usa_margen_global: z.boolean(),
+  diferencial_activo: z.boolean(),
+  tipo_tasa_diferencial: z.enum(["bcv", "euro", "personalizada"]).optional(),
+  tasa_proveedor_valor: z.coerce
+    .number({ invalid_type_error: "Tasa del proveedor inválida." })
+    .min(0)
+    .optional(),
+  margen_venta_pct: z.coerce.number({ invalid_type_error: "Margen inválido." }).optional(),
 });
 
 function fieldErrors(error: z.ZodError): Record<string, string> {
@@ -243,6 +250,11 @@ function parseProducto(ctx: NonNullable<Awaited<ReturnType<typeof contexto>>>, f
     activo: formData.get("activo") === "1" || formData.get("activo") === "on",
     usa_margen_global:
       formData.get("usa_margen_global") === "1" || formData.get("usa_margen_global") === "on",
+    diferencial_activo:
+      formData.get("diferencial_activo") === "1" || formData.get("diferencial_activo") === "on",
+    tipo_tasa_diferencial: opcional(formData.get("tipo_tasa_diferencial")),
+    tasa_proveedor_valor: opcional(formData.get("tasa_proveedor_valor")),
+    margen_venta_pct: opcional(formData.get("margen_venta_pct")),
   });
   if (!parsed.success) return { fieldErrors: fieldErrors(parsed.error) } as const;
 
@@ -250,6 +262,23 @@ function parseProducto(ctx: NonNullable<Awaited<ReturnType<typeof contexto>>>, f
   const permitidos = new Set(opcionesImpuesto(ctx.country).map((o) => o.id));
   if (!permitidos.has(parsed.data.impuesto_id)) {
     return { fieldErrors: { impuesto_id: "Impuesto no válido." } } as const;
+  }
+  // Diferencial de tasa: si está activo, la tasa del proveedor es obligatoria
+  // (el precio de venta depende de ella) — capa 100% opcional, así que un
+  // producto sin diferencial nunca pasa por esta validación.
+  if (parsed.data.diferencial_activo) {
+    if (!parsed.data.tipo_tasa_diferencial) {
+      return {
+        fieldErrors: {
+          tasa_proveedor_valor: "Elige la tasa del proveedor (BCV, euro o personalizada).",
+        },
+      } as const;
+    }
+    if (!parsed.data.tasa_proveedor_valor || parsed.data.tasa_proveedor_valor <= 0) {
+      return {
+        fieldErrors: { tasa_proveedor_valor: "La tasa del proveedor debe ser mayor que cero." },
+      } as const;
+    }
   }
   return {
     data: {
@@ -333,6 +362,10 @@ export async function crearProducto(
       etiquetas: v.etiquetas,
       activo: v.activo,
       usa_margen_global: v.usa_margen_global,
+      diferencial_activo: v.diferencial_activo,
+      tipo_tasa_diferencial: v.diferencial_activo ? (v.tipo_tasa_diferencial ?? null) : null,
+      tasa_proveedor_valor: v.diferencial_activo ? (v.tasa_proveedor_valor ?? null) : null,
+      margen_venta_pct: v.diferencial_activo ? (v.margen_venta_pct ?? null) : null,
       imagen_url: imagen.cambiar ? imagen.url : null,
     })
     .select("id")
@@ -452,6 +485,10 @@ export async function actualizarProducto(
     etiquetas: string[];
     activo: boolean;
     usa_margen_global: boolean;
+    diferencial_activo: boolean;
+    tipo_tasa_diferencial: "bcv" | "euro" | "personalizada" | null;
+    tasa_proveedor_valor: number | null;
+    margen_venta_pct: number | null;
     imagen_url?: string | null;
   } = {
     nombre: v.nombre,
@@ -468,6 +505,10 @@ export async function actualizarProducto(
     etiquetas: v.etiquetas,
     activo: v.activo,
     usa_margen_global: v.usa_margen_global,
+    diferencial_activo: v.diferencial_activo,
+    tipo_tasa_diferencial: v.diferencial_activo ? (v.tipo_tasa_diferencial ?? null) : null,
+    tasa_proveedor_valor: v.diferencial_activo ? (v.tasa_proveedor_valor ?? null) : null,
+    margen_venta_pct: v.diferencial_activo ? (v.margen_venta_pct ?? null) : null,
   };
   if (imagen.cambiar) datos.imagen_url = imagen.url;
 
@@ -579,11 +620,12 @@ export async function actualizarPrecioRapido(formData: FormData): Promise<Action
     .maybeSingle();
 
   // Edición manual del precio: el producto deja de seguir el margen global
-  // (si lo seguía) — igual criterio que editar el precio desde el formulario
-  // completo. Un cambio del % global ya no debe volver a tocar este precio.
+  // (si lo seguía) y el diferencial de tasa (si lo tenía) — igual criterio
+  // que editar el precio desde el formulario completo. Un cambio del % global
+  // o de la tasa del proveedor ya no debe volver a tocar este precio.
   const { error } = await ctx.supabase
     .from("mm_productos")
-    .update({ precio_usd: precio, usa_margen_global: false })
+    .update({ precio_usd: precio, usa_margen_global: false, diferencial_activo: false })
     .eq("tenant_id", ctx.tenantId)
     .eq("id", id);
   if (error) return { error: "No se pudo actualizar el precio." };

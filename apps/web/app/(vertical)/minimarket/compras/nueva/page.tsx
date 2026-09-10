@@ -5,7 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { getCountryConfig } from "@arkiteq/core";
 import { getSessionContext } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
-import { getTasaVigente } from "@/lib/minimarket/exchange-rate";
+import { getTasaVigente, getTodasLasTasas } from "@/lib/minimarket/exchange-rate";
 import { TZ_DEFAULT } from "@/lib/minimarket/timezone";
 import { listCategorias, siguienteCorrelativoSku } from "@/lib/minimarket/data/inventario";
 import { defaultsFiscalesProducto, opcionesImpuesto } from "@/lib/minimarket/producto-opciones";
@@ -32,6 +32,7 @@ export default async function NuevaCompraPage() {
     { data: proveedores },
     { data: sucursales },
     tasa,
+    todasLasTasas,
     configRes,
     categorias,
     skuSugerido,
@@ -75,6 +76,7 @@ export default async function NuevaCompraPage() {
       .is("deleted_at", null)
       .order("nombre", { ascending: true }),
     getTasaVigente(supabase, tenantId),
+    getTodasLasTasas(supabase, tenantId),
     supabase.from("mm_config_negocio").select("parametros").eq("tenant_id", tenantId).maybeSingle(),
     listCategorias(supabase, tenantId),
     siguienteCorrelativoSku(supabase, tenantId),
@@ -151,6 +153,10 @@ export default async function NuevaCompraPage() {
         proveedores={proveedores ?? []}
         sucursales={sucursales}
         tasa={tasa?.valor ?? 1}
+        tasas={{
+          bcv: todasLasTasas.bcv ? todasLasTasas.bcv.valor : null,
+          euro: todasLasTasas.euro ? todasLasTasas.euro.valor : null,
+        }}
         locale={country.locale}
         tenantId={tenantId}
         usuarioId={session.user.id}
