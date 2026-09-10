@@ -73,11 +73,12 @@ export default async function AjustesPage() {
           </p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-sm">
+            <table className="w-full min-w-[720px] text-sm">
               <thead className="border-border text-muted-foreground border-b text-left text-xs uppercase tracking-wide">
                 <tr>
                   <th className="px-4 py-3">Fecha</th>
                   <th className="px-4 py-3">Producto</th>
+                  <th className="px-4 py-3">SKU</th>
                   <th className="px-4 py-3">Tipo</th>
                   <th className="px-4 py-3 text-right">Cantidad</th>
                   <th className="px-4 py-3">Motivo</th>
@@ -96,6 +97,9 @@ export default async function AjustesPage() {
                       </td>
                       <td className="text-heading px-4 py-3 font-medium">
                         {m.producto_nombre ?? "—"}
+                      </td>
+                      <td className="text-muted-foreground px-4 py-3 font-mono text-xs tabular-nums">
+                        {m.producto_codigo ?? "—"}
                       </td>
                       <td className="px-4 py-3">
                         <span

@@ -532,7 +532,12 @@ export function InventarioCliente({
                       onChange={() => alternarSeleccion(p.id)}
                       className="accent-danger mt-1.5 size-5 shrink-0 rounded"
                     />
-                    <div className="bg-surface-2 border-border relative size-12 shrink-0 overflow-hidden rounded-md border">
+                    <button
+                      type="button"
+                      onClick={() => setPrecioRapido(p)}
+                      aria-label={`Ver precio y stock de ${p.nombre}`}
+                      className="bg-surface-2 border-border relative size-12 shrink-0 cursor-pointer overflow-hidden rounded-md border"
+                    >
                       {p.imagen_url ? (
                         <Image
                           src={p.imagen_url}
@@ -546,7 +551,7 @@ export function InventarioCliente({
                           <ImageIcon className="size-5" aria-hidden />
                         </div>
                       )}
-                    </div>
+                    </button>
                     <div className="min-w-0 flex-1">
                       <p className="text-heading truncate font-medium" title={p.nombre}>
                         {p.nombre}
@@ -731,7 +736,12 @@ export function InventarioCliente({
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
-                            <div className="bg-surface-2 border-border relative size-12 shrink-0 overflow-hidden rounded-md border">
+                            <button
+                              type="button"
+                              onClick={() => setPrecioRapido(p)}
+                              aria-label={`Ver precio y stock de ${p.nombre}`}
+                              className="bg-surface-2 border-border relative size-12 shrink-0 cursor-pointer overflow-hidden rounded-md border"
+                            >
                               {p.imagen_url ? (
                                 <Image
                                   src={p.imagen_url}
@@ -745,7 +755,7 @@ export function InventarioCliente({
                                   <ImageIcon className="size-5" aria-hidden />
                                 </div>
                               )}
-                            </div>
+                            </button>
                             <div className="min-w-0 max-w-[240px] xl:max-w-xs">
                               <div className="text-heading truncate font-medium" title={p.nombre}>
                                 {p.nombre}
@@ -1015,6 +1025,15 @@ export function InventarioCliente({
         ivaActivo={ivaActivo}
         ivaPct={ivaPct}
         locale={locale}
+        stock={
+          precioRapido
+            ? {
+                disponible: resolverStock(precioRapido).disponible,
+                cantidad: resolverStock(precioRapido).stock,
+                unidad: precioRapido.unidad,
+              }
+            : undefined
+        }
       />
     </div>
   );

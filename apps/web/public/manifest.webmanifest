@@ -5,7 +5,7 @@
   "description": "Plataforma SaaS multiproducto para PYMES de Latinoamérica. Funciona con o sin internet.",
   "lang": "es",
   "dir": "ltr",
-  "start_url": "/inicio",
+  "start_url": "/minimarket",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",

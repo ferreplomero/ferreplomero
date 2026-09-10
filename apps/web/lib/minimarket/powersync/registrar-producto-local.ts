@@ -23,6 +23,9 @@ export interface ProductoLocalInput {
   categoriaId: string | null;
   tipoVenta: "unidad" | "granel";
   unidad: string;
+  marca: string | null;
+  modelo: string | null;
+  color: string | null;
   costoUsd: number;
   precioUsd: number;
   impuestoId: string;
@@ -113,10 +116,10 @@ export async function crearProductoLocal(
     await tx.execute(
       `insert into mm_productos
          (id, tenant_id, nombre, codigo, codigo_barras, categoria_id, tipo_venta, unidad,
-          costo_usd, precio_usd, impuesto_id, aplica_igtf, proveedor_id, etiquetas, activo,
-          usa_margen_global, diferencial_activo, tipo_tasa_diferencial, tasa_proveedor_valor,
-          margen_venta_pct, created_at, updated_at)
-       values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          marca, modelo, color, costo_usd, precio_usd, impuesto_id, aplica_igtf, proveedor_id,
+          etiquetas, activo, usa_margen_global, diferencial_activo, tipo_tasa_diferencial,
+          tasa_proveedor_valor, margen_venta_pct, created_at, updated_at)
+       values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         productoId,
         input.tenantId,
@@ -126,6 +129,9 @@ export async function crearProductoLocal(
         input.categoriaId,
         input.tipoVenta,
         input.unidad,
+        input.marca,
+        input.modelo,
+        input.color,
         input.costoUsd,
         input.precioUsd,
         input.impuestoId,
@@ -212,9 +218,10 @@ export async function actualizarProductoLocal(
     await tx.execute(
       `update mm_productos set
          nombre = ?, codigo = ?, codigo_barras = ?, categoria_id = ?, tipo_venta = ?, unidad = ?,
-         costo_usd = ?, precio_usd = ?, impuesto_id = ?, aplica_igtf = ?, proveedor_id = ?,
-         etiquetas = ?, activo = ?, usa_margen_global = ?, diferencial_activo = ?,
-         tipo_tasa_diferencial = ?, tasa_proveedor_valor = ?, margen_venta_pct = ?, updated_at = ?
+         marca = ?, modelo = ?, color = ?, costo_usd = ?, precio_usd = ?, impuesto_id = ?,
+         aplica_igtf = ?, proveedor_id = ?, etiquetas = ?, activo = ?, usa_margen_global = ?,
+         diferencial_activo = ?, tipo_tasa_diferencial = ?, tasa_proveedor_valor = ?,
+         margen_venta_pct = ?, updated_at = ?
        where tenant_id = ? and id = ?`,
       [
         input.nombre,
@@ -223,6 +230,9 @@ export async function actualizarProductoLocal(
         input.categoriaId,
         input.tipoVenta,
         input.unidad,
+        input.marca,
+        input.modelo,
+        input.color,
         input.costoUsd,
         input.precioUsd,
         input.impuestoId,

@@ -1009,6 +1009,10 @@ export interface Database {
           categoria_id: string | null;
           tipo_venta: MmTipoVenta;
           unidad: string;
+          /** Atributos descriptivos opcionales (ferretería: marca/modelo/color de la herramienta). */
+          marca: string | null;
+          modelo: string | null;
+          color: string | null;
           costo_usd: number;
           precio_usd: number;
           impuesto_id: string;
@@ -1037,6 +1041,9 @@ export interface Database {
           categoria_id?: string | null;
           tipo_venta?: MmTipoVenta;
           unidad?: string;
+          marca?: string | null;
+          modelo?: string | null;
+          color?: string | null;
           costo_usd?: number;
           precio_usd?: number;
           impuesto_id?: string;
@@ -1061,6 +1068,9 @@ export interface Database {
           categoria_id?: string | null;
           tipo_venta?: MmTipoVenta;
           unidad?: string;
+          marca?: string | null;
+          modelo?: string | null;
+          color?: string | null;
           costo_usd?: number;
           precio_usd?: number;
           impuesto_id?: string;

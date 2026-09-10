@@ -74,6 +74,9 @@ const productoSchema = z.object({
   categoria_id: z.string().uuid().optional(),
   tipo_venta: z.enum(["unidad", "granel"]),
   unidad: z.string().trim().min(1).max(32),
+  marca: z.string().trim().max(80).optional(),
+  modelo: z.string().trim().max(80).optional(),
+  color: z.string().trim().max(40).optional(),
   costo_usd: z.coerce
     .number({ invalid_type_error: "Costo inválido." })
     .min(0, "El costo no puede ser negativo."),
@@ -239,6 +242,9 @@ function parseProducto(ctx: NonNullable<Awaited<ReturnType<typeof contexto>>>, f
     categoria_id: opcional(formData.get("categoria_id")),
     tipo_venta: opcional(formData.get("tipo_venta")) ?? "unidad",
     unidad: opcional(formData.get("unidad")) ?? "unidad",
+    marca: opcional(formData.get("marca")),
+    modelo: opcional(formData.get("modelo")),
+    color: opcional(formData.get("color")),
     costo_usd: opcional(formData.get("costo_usd")) ?? "0",
     precio_usd: formData.get("precio_usd"),
     impuesto_id: opcional(formData.get("impuesto_id")) ?? "exento",
@@ -354,6 +360,9 @@ export async function crearProducto(
       categoria_id: v.categoria_id ?? null,
       tipo_venta: v.tipo_venta,
       unidad: v.unidad,
+      marca: v.marca ?? null,
+      modelo: v.modelo ?? null,
+      color: v.color ?? null,
       costo_usd: v.costo_usd,
       precio_usd: v.precio_usd,
       impuesto_id: v.impuesto_id,
@@ -477,6 +486,9 @@ export async function actualizarProducto(
     categoria_id: string | null;
     tipo_venta: "unidad" | "granel";
     unidad: string;
+    marca: string | null;
+    modelo: string | null;
+    color: string | null;
     costo_usd: number;
     precio_usd: number;
     impuesto_id: string;
@@ -497,6 +509,9 @@ export async function actualizarProducto(
     categoria_id: v.categoria_id ?? null,
     tipo_venta: v.tipo_venta,
     unidad: v.unidad,
+    marca: v.marca ?? null,
+    modelo: v.modelo ?? null,
+    color: v.color ?? null,
     costo_usd: v.costo_usd,
     precio_usd: v.precio_usd,
     impuesto_id: v.impuesto_id,

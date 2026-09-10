@@ -14,6 +14,13 @@ export interface ProductoParaPrecioRapido {
   impuesto_id: string | null;
 }
 
+/** Stock a mostrar — `disponible: false` es "no disponible aquí" (sucursal filtrada sin presencia). */
+export interface StockParaPrecioRapido {
+  disponible: boolean;
+  cantidad: number;
+  unidad: string;
+}
+
 interface PrecioRapidoModalProps {
   /** `null` = cerrado (no hay producto que mostrar). */
   producto: ProductoParaPrecioRapido | null;
@@ -24,6 +31,10 @@ interface PrecioRapidoModalProps {
   ivaActivo: boolean;
   ivaPct: number;
   locale: string;
+  /** Stock del producto (mismo criterio de sucursal que el listado). Opcional
+   * — algún llamador puede no tener este dato a mano; el modal simplemente
+   * no muestra la fila de stock en ese caso. */
+  stock?: StockParaPrecioRapido;
 }
 
 /**
@@ -41,6 +52,7 @@ export function PrecioRapidoModal({
   ivaActivo,
   ivaPct,
   locale,
+  stock,
 }: PrecioRapidoModalProps) {
   const money = React.useCallback(
     (valor: number, moneda: string) => {
@@ -132,6 +144,21 @@ export function PrecioRapidoModal({
                 <p className="text-muted-foreground text-xs">
                   El IVA está desactivado en Configuración — no se está cobrando por ahora.
                 </p>
+              ) : null}
+
+              {stock ? (
+                <div className="border-border w-full border-t pt-3 text-center">
+                  <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
+                    Stock disponible
+                  </p>
+                  {stock.disponible ? (
+                    <p className="text-heading text-lg font-semibold tabular-nums">
+                      {stock.cantidad} <span className="text-muted-foreground">{stock.unidad}</span>
+                    </p>
+                  ) : (
+                    <p className="text-muted-foreground text-sm">No disponible aquí</p>
+                  )}
+                </div>
               ) : null}
             </div>
           </>

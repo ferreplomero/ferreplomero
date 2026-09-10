@@ -377,6 +377,16 @@ export function ProductoForm({
   const gananciaUsd = numero(precio) - numero(costo);
   const margenActual = margenSobreCosto(numero(costo), numero(precio));
 
+  // ---- Marca, modelo y color (opcionales) ----
+  const [marca, setMarca] = React.useState(producto?.marca ?? "");
+  const [modelo, setModelo] = React.useState(producto?.modelo ?? "");
+  const [color, setColor] = React.useState(producto?.color ?? "");
+  // El input nativo type="color" exige un hex de 7 caracteres exacto o se
+  // resetea a negro — si el usuario escribió texto libre ("rojo") o dejó el
+  // campo vacío, el selector muestra un gris neutro en vez de forzar un color
+  // que no corresponde a lo escrito.
+  const colorSelectorValor = /^#[0-9a-fA-F]{6}$/.test(color) ? color : "#94a3b8";
+
   // ---- Etiquetas (chips) ----
   const [tags, setTags] = React.useState<string[]>(producto?.etiquetas ?? []);
   const [tagInput, setTagInput] = React.useState("");
@@ -451,6 +461,9 @@ export function ProductoForm({
         categoriaId: (fd.get("categoria_id") as string) || null,
         tipoVenta,
         unidad: unidadValor,
+        marca: marca.trim() || null,
+        modelo: modelo.trim() || null,
+        color: color.trim() || null,
         costoUsd: numero(fd.get("costo_usd")),
         precioUsd: numero(fd.get("precio_usd")),
         impuestoId: (fd.get("impuesto_id") as string) || impuestoIdDefault,
@@ -780,6 +793,53 @@ export function ProductoForm({
           </div>
         </div>
 
+        {/* Marca, modelo y color (opcionales) */}
+        <div className="grid gap-4 sm:grid-cols-3">
+          <div className="space-y-2">
+            <Label htmlFor="marca">Marca (opcional)</Label>
+            <Input
+              id="marca"
+              name="marca"
+              value={marca}
+              onChange={(e) => setMarca(e.target.value)}
+              placeholder="Stanley"
+              maxLength={80}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="modelo">Modelo (opcional)</Label>
+            <Input
+              id="modelo"
+              name="modelo"
+              value={modelo}
+              onChange={(e) => setModelo(e.target.value)}
+              placeholder="STHT16-125"
+              maxLength={80}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="color">Color (opcional)</Label>
+            <div className="flex gap-2">
+              <input
+                type="color"
+                aria-label="Elegir color de la paleta"
+                value={colorSelectorValor}
+                onChange={(e) => setColor(e.target.value)}
+                className="border-border h-10 w-11 shrink-0 cursor-pointer rounded-md border p-0.5"
+              />
+              <Input
+                id="color"
+                name="color"
+                value={color}
+                onChange={(e) => setColor(e.target.value)}
+                placeholder="#RRGGBB o nombre"
+                maxLength={40}
+                className="min-w-0 flex-1"
+              />
+            </div>
+          </div>
+        </div>
+
         {/* Precios y margen */}
         <div className="border-border bg-surface-2/40 space-y-3 rounded-lg border p-3">
           {hayMargenGlobal || producto?.usa_margen_global ? (
@@ -809,7 +869,7 @@ export function ProductoForm({
           <div className="grid gap-4 sm:grid-cols-3">
             <CampoMontoDual
               id="costo"
-              label="Precio de compra (USD)"
+              label="Precio de costo (USD)"
               name="costo_usd"
               valorUsd={costo}
               onChangeUsd={onCosto}

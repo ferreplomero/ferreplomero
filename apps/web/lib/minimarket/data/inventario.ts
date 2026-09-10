@@ -421,6 +421,7 @@ export async function getProductoDetalle(
       motivo: m.motivo,
       created_at: m.created_at,
       producto_nombre: prod.nombre,
+      producto_codigo: prod.codigo ?? null,
       sucursal_nombre: m.sucursal?.nombre ?? "—",
     })),
   };
@@ -446,6 +447,8 @@ export interface MovimientoConDetalle {
   motivo: string | null;
   created_at: string;
   producto_nombre: string;
+  /** Código/SKU del producto; null si no tiene o si el producto fue eliminado. */
+  producto_codigo: string | null;
   sucursal_nombre: string;
 }
 
@@ -459,7 +462,7 @@ export async function listMovimientos(
   let query = client
     .from("mm_movimientos_inventario")
     .select(
-      "id, tipo, cantidad, motivo, created_at, producto:mm_productos(nombre), sucursal:mm_sucursales(nombre)",
+      "id, tipo, cantidad, motivo, created_at, producto:mm_productos(nombre, codigo), sucursal:mm_sucursales(nombre)",
     )
     .eq("tenant_id", tenantId)
     .order("created_at", { ascending: false });
@@ -475,7 +478,7 @@ export async function listMovimientos(
       cantidad: number;
       motivo: string | null;
       created_at: string;
-      producto: { nombre: string } | null;
+      producto: { nombre: string; codigo: string | null } | null;
       sucursal: { nombre: string } | null;
     }[]
   >();
@@ -489,6 +492,7 @@ export async function listMovimientos(
     motivo: m.motivo,
     created_at: m.created_at,
     producto_nombre: m.producto?.nombre ?? "Producto eliminado",
+    producto_codigo: m.producto?.codigo ?? null,
     sucursal_nombre: m.sucursal?.nombre ?? "—",
   }));
 }

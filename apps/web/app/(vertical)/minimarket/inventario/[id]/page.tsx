@@ -168,6 +168,27 @@ export default async function ProductoDetallePage({ params }: { params: Promise<
         <Dato label="Proveedor habitual" valor={producto.proveedor_nombre ?? "—"} />
       </Card>
 
+      {/* Marca / modelo / color — solo si el producto tiene al menos uno cargado. */}
+      {producto.marca || producto.modelo || producto.color ? (
+        <Card className="grid gap-4 p-5 sm:grid-cols-3">
+          <Dato label="Marca" valor={producto.marca ?? "—"} />
+          <Dato label="Modelo" valor={producto.modelo ?? "—"} />
+          <div className="space-y-1">
+            <p className="text-muted-foreground text-xs">Color</p>
+            <div className="flex items-center gap-2">
+              {producto.color && /^#[0-9a-fA-F]{6}$/.test(producto.color) ? (
+                <span
+                  className="border-border size-4 shrink-0 rounded-full border"
+                  style={{ backgroundColor: producto.color }}
+                  aria-hidden
+                />
+              ) : null}
+              <p className="text-heading font-medium">{producto.color ?? "—"}</p>
+            </div>
+          </div>
+        </Card>
+      ) : null}
+
       {/* Stock por sucursal */}
       {stockPorSucursal.length > 0 ? (
         <section className="space-y-3">
