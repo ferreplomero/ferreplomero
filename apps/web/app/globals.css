@@ -21,8 +21,16 @@
        viewport — un badge, una sombra, un desborde puntual en cualquier
        pantalla) puede empujar scroll horizontal de TODO el documento. El
        scroll horizontal solo existe dentro de contenedores propios (p. ej.
-       las tablas anchas, que ya llevan su propio overflow-x-auto). */
-    overflow-x: hidden;
+       las tablas anchas, que ya llevan su propio overflow-x-auto).
+       `clip` en vez de `hidden`: mismo efecto (bloquea el desborde), pero
+       `hidden` en html/body fuerza a overflow-y a computarse como `auto`
+       (regla de la spec: un eje visible + el otro no-visible se resuelve a
+       auto), lo que convierte a html/body en el "contenedor de scroll" de
+       referencia para `position: sticky` en vez del viewport real -- y como
+       html/body en sí no scrollean (scrollTop siempre 0, es el viewport el
+       que se mueve), CUALQUIER sticky de toda la app queda roto (se comporta
+       como static). `clip` no dispara esa coerción. */
+    overflow-x: clip;
   }
 
   body {
@@ -32,7 +40,7 @@
     font-feature-settings: "cv11", "ss01";
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    overflow-x: hidden;
+    overflow-x: clip;
     width: 100%;
     /* Causa raíz real del "contenido corrido con espacio vacío" en móvil: un
        nombre/código/correo SIN espacios (SKU, barcode, email largo) no tiene

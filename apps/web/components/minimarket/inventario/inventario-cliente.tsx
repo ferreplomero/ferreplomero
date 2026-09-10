@@ -130,6 +130,17 @@ export function InventarioCliente({
   const headerCheckboxRef = React.useRef<HTMLInputElement>(null);
   const mobileCheckboxRef = React.useRef<HTMLInputElement>(null);
 
+  // Scroll horizontal duplicado (arriba, fijo) para la tabla de escritorio —
+  // el navegador solo dibuja la barra nativa pegada al borde inferior de la
+  // tabla, que queda fuera de vista si hay muchas filas. Este par de divs
+  // sincroniza scrollLeft entre sí; `syncingScrollRef` evita el loop infinito
+  // que dispararía cada scroll el onScroll del otro.
+  const scrollArribaRef = React.useRef<HTMLDivElement>(null);
+  const scrollTablaRef = React.useRef<HTMLDivElement>(null);
+  const tablaRef = React.useRef<HTMLTableElement>(null);
+  const syncingScrollRef = React.useRef(false);
+  const [anchoTabla, setAnchoTabla] = React.useState(0);
+
   const money = React.useCallback(
     (valor: number, moneda: string) => {
       try {
@@ -259,6 +270,42 @@ export function InventarioCliente({
     if (headerCheckboxRef.current) headerCheckboxRef.current.indeterminate = indeterminado;
     if (mobileCheckboxRef.current) mobileCheckboxRef.current.indeterminate = indeterminado;
   }, [algunosVisiblesSeleccionados, todosVisiblesSeleccionados]);
+
+  // Ancho real de la tabla (para la barra de scroll superior) — se recalcula
+  // con ResizeObserver, no solo al cambiar de página: el ancho también cambia
+  // si una columna crece por contenido nuevo (ej. nombres largos) sin que
+  // cambie la cantidad de filas.
+  React.useEffect(() => {
+    const tabla = tablaRef.current;
+    if (!tabla) return;
+    const actualizar = () => setAnchoTabla(tabla.scrollWidth);
+    actualizar();
+    const observer = new ResizeObserver(actualizar);
+    observer.observe(tabla);
+    return () => observer.disconnect();
+  }, [paginaProductos]);
+
+  function onScrollArriba() {
+    if (syncingScrollRef.current) {
+      syncingScrollRef.current = false;
+      return;
+    }
+    syncingScrollRef.current = true;
+    if (scrollTablaRef.current && scrollArribaRef.current) {
+      scrollTablaRef.current.scrollLeft = scrollArribaRef.current.scrollLeft;
+    }
+  }
+
+  function onScrollTabla() {
+    if (syncingScrollRef.current) {
+      syncingScrollRef.current = false;
+      return;
+    }
+    syncingScrollRef.current = true;
+    if (scrollArribaRef.current && scrollTablaRef.current) {
+      scrollArribaRef.current.scrollLeft = scrollTablaRef.current.scrollLeft;
+    }
+  }
 
   function alternarSeleccion(id: string) {
     setSeleccionados((prev) => {
@@ -690,9 +737,21 @@ export function InventarioCliente({
           </div>
 
           {/* Tabla — escritorio */}
-          <Card className="hidden overflow-hidden p-0 lg:block">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] text-sm">
+          {/* Barra de scroll horizontal duplicada arriba, fija bajo el header
+              (top-16 = altura del header sticky) — mismo scrollLeft que la
+              barra nativa de abajo, para no tener que bajar hasta el fondo de
+              una tabla larga solo para desplazarla de lado. */}
+          <div
+            ref={scrollArribaRef}
+            onScroll={onScrollArriba}
+            className="border-border bg-background sticky top-16 z-20 hidden overflow-x-auto overflow-y-hidden rounded-t-lg border-x border-t lg:block"
+            style={{ height: 14 }}
+          >
+            <div style={{ width: anchoTabla, height: 1 }} />
+          </div>
+          <Card className="hidden overflow-hidden rounded-t-none border-t-0 p-0 lg:block">
+            <div ref={scrollTablaRef} onScroll={onScrollTabla} className="overflow-x-auto">
+              <table ref={tablaRef} className="w-full min-w-[900px] text-sm">
                 <thead className="border-border text-muted-foreground whitespace-nowrap border-b text-left text-xs uppercase tracking-wide">
                   <tr>
                     <th className="w-10 px-4 py-3">

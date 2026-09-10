@@ -249,7 +249,7 @@ export function VerticalShell({
   }, []);
 
   return (
-    <div className="theme-minimarket bg-background flex min-h-dvh overflow-x-hidden">
+    <div className="theme-minimarket bg-background flex min-h-dvh overflow-x-clip">
       {bienvenida ? (
         <BienvenidaSplash nombre={bienvenida.nombre} saludo={bienvenida.saludo} />
       ) : null}
@@ -322,7 +322,7 @@ export function VerticalShell({
       ) : null}
 
       {/* Contenido */}
-      <div className="flex min-w-0 flex-1 flex-col overflow-x-hidden lg:pl-64 print:pl-0">
+      <div className="flex min-w-0 flex-1 flex-col overflow-x-clip lg:pl-64 print:pl-0">
         {/* Barra superior (menú, sincronización, tema) — nunca se imprime, es interfaz de la app. */}
         <div className="sticky top-0 z-30 flex flex-col print:hidden">
           <header className="border-border bg-background/80 flex h-16 items-center gap-3 border-b px-4 backdrop-blur-md lg:px-6">
