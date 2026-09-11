@@ -12,7 +12,7 @@ import { sucursalesPermitidas, esCatalogoIrrestricto } from "@/lib/minimarket/su
 import { getTasaVigente } from "@/lib/minimarket/exchange-rate";
 import { getTimezoneNegocio } from "@/lib/minimarket/timezone";
 import { fmtFechaHora, fmtFechaCorta } from "@/lib/minimarket/date-format";
-import { margenSobreCosto, opcionesImpuesto } from "@/lib/minimarket/producto-opciones";
+import { margenMostrado, opcionesImpuesto } from "@/lib/minimarket/producto-opciones";
 
 export const metadata: Metadata = { title: "Detalle de producto" };
 
@@ -57,7 +57,7 @@ export default async function ProductoDetallePage({ params }: { params: Promise<
   const fechaHora = { format: (d: Date) => fmtFechaHora(d.toISOString(), tz) };
   const fechaCorta = { format: (d: Date) => fmtFechaCorta(d.toISOString(), tz) };
 
-  const margen = margenSobreCosto(Number(producto.costo_usd), Number(producto.precio_usd));
+  const margen = margenMostrado(producto);
   const impuestoLabel =
     opcionesImpuesto(country).find((o) => o.id === producto.impuesto_id)?.label ??
     producto.impuesto_id;

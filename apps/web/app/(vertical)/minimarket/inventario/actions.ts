@@ -282,7 +282,7 @@ function parseProducto(ctx: NonNullable<Awaited<ReturnType<typeof contexto>>>, f
     }
     if (!parsed.data.tasa_proveedor_valor || parsed.data.tasa_proveedor_valor <= 0) {
       return {
-        fieldErrors: { tasa_proveedor_valor: "La tasa del proveedor debe ser mayor que cero." },
+        fieldErrors: { tasa_proveedor_valor: "El valor debe ser mayor que cero." },
       } as const;
     }
   }

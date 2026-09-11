@@ -43,11 +43,13 @@ import { CampoMontoDual } from "@/components/minimarket/shared/campo-monto-dual"
 import { TomarFotoDialog } from "@/components/minimarket/shared/tomar-foto-dialog";
 import { CategoriaForm } from "@/components/minimarket/inventario/categoria-form-cargador";
 import { comprimirImagen } from "@/lib/minimarket/comprimir-imagen";
+import { formatMaskedAmount, parseMaskedInput } from "@/lib/minimarket/currency-mask";
 import {
   TIPO_TASA_DIFERENCIAL_LABEL,
   TIPOS_VENTA,
   UNIDADES_PREDEFINIDAS,
   calcularDiferencial,
+  diferencialManual,
   generarSku,
   margenSobreCosto,
   margenSobreVenta,
@@ -324,12 +326,18 @@ export function ProductoForm({
     producto?.margen_venta_pct != null ? dosDecimales(producto.margen_venta_pct) : "",
   );
 
+  // "Personalizada" es un modo distinto de "bcv"/"euro": el usuario escribe
+  // el DIFERENCIAL directo (ej. 1.22), no una tasa en Bs — se usa tal cual,
+  // sin dividir contra la BCV. Se sigue guardando en la misma columna
+  // `tasa_proveedor_valor` (aquí `tasaProveedorNum`), solo que su significado
+  // pasa a ser "el diferencial" en vez de "la tasa del proveedor en Bs".
+  const esDiferencialManual = tipoTasaDif === "personalizada";
   const tasaProveedorAuto =
     tipoTasaDif === "bcv" ? tasas.bcv : tipoTasaDif === "euro" ? tasas.euro : null;
-  const tasaProveedorNum =
-    tipoTasaDif === "personalizada" ? numero(tasaProveedorTexto) : tasaProveedorAuto;
-  const diferencial =
-    tasaProveedorNum && tasaProveedorNum > 0 && tasas.bcv
+  const tasaProveedorNum = esDiferencialManual ? numero(tasaProveedorTexto) : tasaProveedorAuto;
+  const diferencial = esDiferencialManual
+    ? diferencialManual(numero(tasaProveedorTexto))
+    : tasaProveedorNum && tasaProveedorNum > 0 && tasas.bcv
       ? calcularDiferencial(tasaProveedorNum, tasas.bcv)
       : null;
 
@@ -943,8 +951,9 @@ export function ProductoForm({
             {diferencialActivo ? (
               <>
                 <p className="text-muted-foreground text-xs">
-                  Este proveedor compra con otra tasa de cambio. El precio de venta se ajusta
-                  automáticamente para compensar la diferencia frente a la tasa BCV.
+                  {esDiferencialManual
+                    ? "Este proveedor no factura con una tasa real: da un diferencial propio. Se aplica tal cual, sin calcular contra la BCV."
+                    : "Este proveedor compra con otra tasa de cambio. El precio de venta se ajusta automáticamente para compensar la diferencia frente a la tasa BCV."}
                 </p>
                 <div className="grid gap-3 sm:grid-cols-3">
                   <div className="space-y-1.5">
@@ -965,17 +974,17 @@ export function ProductoForm({
                     </select>
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="tasa_proveedor">Valor de la tasa (Bs)</Label>
-                    {tipoTasaDif === "personalizada" ? (
+                    <Label htmlFor="tasa_proveedor">
+                      {esDiferencialManual ? "Diferencial" : "Valor de la tasa (Bs)"}
+                    </Label>
+                    {esDiferencialManual ? (
                       <Input
                         id="tasa_proveedor"
-                        type="number"
-                        step="0.01"
-                        min="0"
-                        inputMode="decimal"
-                        value={tasaProveedorTexto}
-                        onChange={(e) => setTasaProveedorTexto(e.target.value)}
-                        placeholder="1000,00"
+                        type="text"
+                        inputMode="numeric"
+                        value={formatMaskedAmount(tasaProveedorTexto)}
+                        onChange={(e) => setTasaProveedorTexto(parseMaskedInput(e.target.value))}
+                        placeholder="0,00"
                         className="tabular-nums"
                         aria-invalid={Boolean(state.fieldErrors?.tasa_proveedor_valor)}
                       />
@@ -993,25 +1002,36 @@ export function ProductoForm({
                   <div className="space-y-1.5">
                     <Label>Diferencial</Label>
                     <p className="border-border bg-surface-2/60 text-heading flex h-10 items-center rounded-md border px-3 text-sm font-medium tabular-nums">
-                      {diferencial ? `${diferencial.toFixed(4)}x` : "—"}
+                      {diferencial ? `${diferencial.toFixed(2)}x` : "—"}
                     </p>
                   </div>
                 </div>
                 {state.fieldErrors?.tasa_proveedor_valor ? (
                   <p className="text-danger text-xs">{state.fieldErrors.tasa_proveedor_valor}</p>
-                ) : !tasas.bcv ? (
+                ) : !esDiferencialManual && !tasas.bcv ? (
                   <p className="text-danger text-xs">
                     Falta registrar la tasa BCV vigente — no se puede calcular el diferencial.
                   </p>
                 ) : !tasaProveedorNum ? (
                   <p className="text-muted-foreground text-xs">
-                    Indica la tasa del proveedor para calcular el diferencial.
+                    {esDiferencialManual
+                      ? "Indica el diferencial del proveedor."
+                      : "Indica la tasa del proveedor para calcular el diferencial."}
                   </p>
                 ) : diferencial ? (
                   <p className="text-muted-foreground text-xs">
-                    Diferencial = proveedor ({dosDecimales(tasaProveedorNum)}) ÷ BCV (
-                    {dosDecimales(tasas.bcv)}) ={" "}
-                    <span className="text-heading font-medium">{diferencial.toFixed(4)}x</span>
+                    {esDiferencialManual ? (
+                      <>
+                        Diferencial personalizado (directo, sin calcular contra la BCV):{" "}
+                        <span className="text-heading font-medium">{diferencial.toFixed(2)}x</span>
+                      </>
+                    ) : (
+                      <>
+                        Diferencial = proveedor ({dosDecimales(tasaProveedorNum)}) ÷ BCV (
+                        {dosDecimales(tasas.bcv as number)}) ={" "}
+                        <span className="text-heading font-medium">{diferencial.toFixed(2)}x</span>
+                      </>
+                    )}
                     {" · "}Precio de venta resultante:{" "}
                     <span className="text-heading font-medium">
                       ${precio ? Number(precio).toFixed(2) : "0.00"}

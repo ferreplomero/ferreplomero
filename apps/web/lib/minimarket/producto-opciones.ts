@@ -115,30 +115,48 @@ export function precioDesdeMargen(costo: number, margenPct: number): number {
   return costo * (1 + margenPct / 100);
 }
 
-/** Tipo de tasa con la que compra el proveedor, para el diferencial de precio del producto. */
+/**
+ * Tipo de tasa con la que compra el proveedor, para el diferencial de precio
+ * del producto. "bcv"/"euro" calculan el diferencial automáticamente contra
+ * la tasa vigente (`calcularDiferencial`); "personalizada" es un diferencial
+ * escrito directo por el usuario, sin tasa real detrás (`diferencialManual`).
+ */
 export type TipoTasaDiferencial = "bcv" | "euro" | "personalizada";
 
 export const TIPO_TASA_DIFERENCIAL_LABEL: Record<TipoTasaDiferencial, string> = {
   bcv: "BCV (oficial)",
   euro: "Euro BCV (oficial)",
-  personalizada: "Personalizada",
+  personalizada: "Personalizada (diferencial directo)",
 };
 
 /**
  * Diferencial de tasa de cambio (Bs del proveedor vs. Bs BCV). Cuando el
  * proveedor factura a una tasa distinta (más alta = Bs más caros) de la BCV
  * del negocio, el precio de venta se ajusta multiplicando por este factor
- * para compensar: `diferencial = tasaProveedor / tasaBcv`.
+ * para compensar: `diferencial = tasaProveedor / tasaBcv`, redondeado a 2
+ * decimales (no 4 — el negocio maneja el diferencial con esa precisión).
  *
  * OJO: el orden de los parámetros es tasaProveedor primero — con BCV 820 y
- * tasa proveedor 1000, diferencial = 1000/820 = 1.2195 (el ejemplo de
- * referencia: costo $10, margen 35% -> precio $18.76). Null si alguna tasa
- * no es positiva.
+ * tasa proveedor 1000, diferencial = round(1000/820, 2) = 1.22 (el ejemplo de
+ * referencia: costo $10, margen 35% -> precio $18.77 con este redondeo; con 4
+ * decimales daba $18.76 — 1 centavo de diferencia por el redondeo a 2
+ * decimales). Null si alguna tasa no es positiva.
  */
 export function calcularDiferencial(tasaProveedor: number, tasaBcv: number): number | null {
   if (!Number.isFinite(tasaProveedor) || tasaProveedor <= 0) return null;
   if (!Number.isFinite(tasaBcv) || tasaBcv <= 0) return null;
-  return tasaProveedor / tasaBcv;
+  return Math.round((tasaProveedor / tasaBcv) * 100) / 100;
+}
+
+/**
+ * Diferencial ingresado DIRECTAMENTE por el usuario (modo "personalizada"),
+ * para proveedores que no facturan con ninguna tasa real (BCV/euro) sino con
+ * un factor propio. A diferencia de `calcularDiferencial`, este valor se usa
+ * tal cual — sin dividir contra la BCV — solo redondeado a 2 decimales.
+ */
+export function diferencialManual(valor: number): number | null {
+  if (!Number.isFinite(valor) || valor <= 0) return null;
+  return Math.round(valor * 100) / 100;
 }
 
 /**
@@ -163,4 +181,26 @@ export function precioDesdeMargenVenta(costo: number, margenPct: number): number
   if (!Number.isFinite(costo) || costo < 0) return null;
   if (!Number.isFinite(margenPct) || margenPct >= 100) return null;
   return costo / (1 - margenPct / 100);
+}
+
+/**
+ * Margen a MOSTRAR de un producto (tarjetas, tabla, detalle): con diferencial
+ * de tasa activo, `margenSobreCosto(costo, precio)` incluye el efecto del
+ * diferencial y ya no coincide con el margen que el usuario ingresó — se
+ * muestra en su lugar el margen guardado (`margen_venta_pct`), el mismo con
+ * el que se calculó el precio. Sin diferencial (o sin margen_venta_pct
+ * guardado, capa opcional), se muestra el margen sobre costo de siempre.
+ * NUNCA cambia el cálculo del precio de venta, solo qué número se muestra.
+ */
+export function margenMostrado(producto: {
+  costo_usd: number | string;
+  precio_usd: number | string;
+  diferencial_activo?: boolean | null;
+  margen_venta_pct?: number | string | null;
+}): number | null {
+  if (producto.diferencial_activo && producto.margen_venta_pct != null) {
+    const m = Number(producto.margen_venta_pct);
+    if (Number.isFinite(m)) return m;
+  }
+  return margenSobreCosto(Number(producto.costo_usd), Number(producto.precio_usd));
 }

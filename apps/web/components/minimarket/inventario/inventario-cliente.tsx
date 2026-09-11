@@ -41,7 +41,7 @@ import {
   eliminarProducto,
 } from "@/app/(vertical)/minimarket/inventario/actions";
 import type { ProductoConStock } from "@/lib/minimarket/data/inventario";
-import { margenSobreCosto, type OpcionImpuesto } from "@/lib/minimarket/producto-opciones";
+import { margenMostrado, type OpcionImpuesto } from "@/lib/minimarket/producto-opciones";
 import { ProductoForm } from "./producto-form-cargador";
 import { CategoriaForm } from "./categoria-form-cargador";
 import { MovimientoForm } from "./movimiento-form-cargador";
@@ -212,10 +212,7 @@ export function InventarioCliente({
         case "stock_asc":
           return resolverStock(a).stock - resolverStock(b).stock;
         case "margen_desc":
-          return (
-            (margenSobreCosto(Number(b.costo_usd), Number(b.precio_usd)) ?? -Infinity) -
-            (margenSobreCosto(Number(a.costo_usd), Number(a.precio_usd)) ?? -Infinity)
-          );
+          return (margenMostrado(b) ?? -Infinity) - (margenMostrado(a) ?? -Infinity);
         default:
           return a.nombre.localeCompare(b.nombre);
       }
@@ -566,7 +563,7 @@ export function InventarioCliente({
               Seleccionar todo
             </label>
             {paginaProductos.map((p) => {
-              const margen = margenSobreCosto(Number(p.costo_usd), Number(p.precio_usd));
+              const margen = margenMostrado(p);
               const gananciaUsd = Number(p.precio_usd) - Number(p.costo_usd);
               const info = resolverStock(p);
               return (
@@ -779,7 +776,7 @@ export function InventarioCliente({
                 </thead>
                 <tbody>
                   {paginaProductos.map((p) => {
-                    const margen = margenSobreCosto(Number(p.costo_usd), Number(p.precio_usd));
+                    const margen = margenMostrado(p);
                     const gananciaUsd = Number(p.precio_usd) - Number(p.costo_usd);
                     const info = resolverStock(p);
                     return (
