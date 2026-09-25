@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import { Card } from "@arkiteq/ui";
+import Link from "next/link";
+import { Receipt } from "lucide-react";
+import { Button, Card } from "@arkiteq/ui";
 import { getSessionContext } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getVentaParaRecibo } from "@/lib/minimarket/data/ventas";
@@ -45,6 +47,13 @@ export default async function ReciboPage({ params }: { params: Promise<{ id: str
       ) : null}
 
       <ReciboAcciones />
+
+      <Button asChild variant="outline" className="w-full print:hidden">
+        <Link href={`/minimarket/ventas/${id}/recibo/ticket`}>
+          <Receipt className="size-4" />
+          Imprimir ticket (térmica)
+        </Link>
+      </Button>
     </div>
   );
 }

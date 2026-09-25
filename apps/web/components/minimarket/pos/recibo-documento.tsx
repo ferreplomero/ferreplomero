@@ -1,19 +1,6 @@
 import { LeyendaNoFiscal } from "@arkiteq/ui";
 import type { DocumentoFiscal } from "@/lib/minimarket/documento";
-import { METODOS_PAGO } from "@/lib/minimarket/constants";
-
-function metodoLabel(metodo: string): string {
-  // "Saldo a favor" no vive en METODOS_PAGO (no es un método que el negocio
-  // active/desactive en Configuración) — mismo caso puntual que ya se
-  // resuelve así en el selector de cobro del POS.
-  if (metodo === "credito_cliente") return "Saldo a favor";
-  return METODOS_PAGO.find((m) => m.value === metodo)?.label ?? metodo;
-}
-
-const usd = (n: number) =>
-  new Intl.NumberFormat("es-VE", { style: "currency", currency: "USD" }).format(n);
-const bs = (n: number) =>
-  new Intl.NumberFormat("es-VE", { style: "currency", currency: "VES" }).format(n);
+import { bs, metodoLabel, usd } from "@/lib/minimarket/recibo-formato";
 
 /**
  * Contenido del recibo de venta (para pintar dentro de un `<Card>`). Compartido

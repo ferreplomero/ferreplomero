@@ -7,6 +7,13 @@ import { createClient } from "@/lib/supabase/server";
 import { getOrCreateConfigId, guardarLogoNegocio } from "@/lib/minimarket/config-negocio";
 import { METODOS_PAGO_IDS } from "@/lib/minimarket/metodos-pago";
 import { requirePermisoAccion } from "@/lib/minimarket/permisos";
+import {
+  TICKET_ANCHO_MAX,
+  TICKET_ANCHO_MIN,
+  TICKET_FUENTE_MAX,
+  TICKET_FUENTE_MIN,
+  type FormatoTicket,
+} from "@/lib/minimarket/recibo-formato";
 
 const CONFIG_PATH = "/minimarket/configuracion";
 
@@ -342,6 +349,76 @@ export async function actualizarLeyendaRecibo(
     .eq("id", id);
 
   if (error) return { error: "No se pudo guardar el ajuste de la leyenda." };
+
+  revalidatePath(CONFIG_PATH);
+  revalidatePath("/minimarket/ventas");
+  return { ok: true };
+}
+
+const formatoTicketSchema = z.object({
+  anchoMm: z.coerce
+    .number()
+    .min(TICKET_ANCHO_MIN, `El ancho mínimo es ${TICKET_ANCHO_MIN} mm.`)
+    .max(TICKET_ANCHO_MAX, `El ancho máximo es ${TICKET_ANCHO_MAX} mm.`),
+  fuentePct: z.coerce.number().min(TICKET_FUENTE_MIN).max(TICKET_FUENTE_MAX),
+  mostrarLogo: z.boolean(),
+  mostrarDatosNegocio: z.boolean(),
+});
+
+/**
+ * Guarda el formato del ticket térmico en `parametros.formato_ticket` (merge:
+ * nunca pisa las demás claves de `parametros`). Solo presentación del
+ * ticket — no afecta montos ni el recibo carta.
+ */
+export async function actualizarFormatoTicket(
+  _prev: ConfigResult,
+  formData: FormData,
+): Promise<ConfigResult> {
+  const ctx = await contexto();
+  if (!ctx) return { error: "Sesión no válida." };
+
+  const permisoError = await requirePermisoAccion(
+    ctx.supabase,
+    ctx.tenantId,
+    ctx.userId,
+    "configuracion",
+    "editar",
+  );
+  if (permisoError) return { error: permisoError };
+
+  const parsed = formatoTicketSchema.safeParse({
+    anchoMm: formData.get("anchoMm"),
+    fuentePct: formData.get("fuentePct"),
+    mostrarLogo: formData.get("mostrarLogo") === "1",
+    mostrarDatosNegocio: formData.get("mostrarDatosNegocio") === "1",
+  });
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message ?? "Formato de ticket inválido." };
+  }
+
+  const id = await getOrCreateConfigId(ctx);
+  if (!id) return { error: "No se pudo acceder a la configuración." };
+
+  const { data: configActual } = await ctx.supabase
+    .from("mm_config_negocio")
+    .select("parametros")
+    .eq("id", id)
+    .single();
+  const parametrosActuales =
+    configActual?.parametros &&
+    typeof configActual.parametros === "object" &&
+    !Array.isArray(configActual.parametros)
+      ? (configActual.parametros as Record<string, unknown>)
+      : {};
+
+  const formato: FormatoTicket = parsed.data;
+  const { error } = await ctx.supabase
+    .from("mm_config_negocio")
+    .update({ parametros: { ...parametrosActuales, formato_ticket: { ...formato } } })
+    .eq("tenant_id", ctx.tenantId)
+    .eq("id", id);
+
+  if (error) return { error: "No se pudo guardar el formato del ticket." };
 
   revalidatePath(CONFIG_PATH);
   revalidatePath("/minimarket/ventas");

@@ -25,7 +25,7 @@ interface Props {
   mostrarBotonWhatsapp: boolean;
 }
 
-function ToggleSwitch({
+export function ToggleSwitch({
   checked,
   onToggle,
   label,

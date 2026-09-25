@@ -16,6 +16,8 @@ import { LogoUpload } from "./logo-upload";
 import { ParametrosForm } from "./parametros-form";
 import { MargenGlobalForm } from "./margen-global-form";
 import { ReciboForm } from "./recibo-form";
+import { FormatoTicketForm } from "./formato-ticket-form";
+import { parseFormatoTicket } from "@/lib/minimarket/recibo-formato";
 import { SucursalesPanel } from "./sucursales-panel";
 import { MetodosPagoForm } from "./metodos-pago-form";
 import { CambiarPasswordForm } from "./cambiar-password-form";
@@ -79,6 +81,7 @@ export default async function ConfiguracionPage() {
           mostrarLeyenda={parametros.mostrar_leyenda_no_fiscal !== false}
           mostrarBotonWhatsapp={parametros.mostrar_boton_whatsapp_recibo !== false}
         />
+        <FormatoTicketForm inicial={parseFormatoTicket(parametros)} />
       </section>
 
       {/* Tasas de cambio */}
