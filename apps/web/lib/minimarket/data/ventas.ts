@@ -704,6 +704,42 @@ export interface VentaDetalle extends DocumentoFiscal {
   created_at: string;
   cliente: { id: string; nombre: string; cedula: string | null } | null;
   fiado: FiadoInfo | null;
+  /** La venta estuvo "en espera" y alguien la retomó para cobrarla (0120). */
+  retomada: {
+    por_nombre: string | null;
+    por_rol: string | null;
+    en_espera_por_nombre: string | null;
+    en_espera_por_rol: string | null;
+  } | null;
+}
+
+/**
+ * Datos de "venta retomada desde En espera". Consulta aparte y tolerante a
+ * errores: si la migración 0120 aún no está aplicada (columnas inexistentes),
+ * el detalle de la venta se sigue mostrando igual, solo sin este dato.
+ */
+async function getRetomadaVenta(
+  client: Client,
+  tenantId: string,
+  ventaId: string,
+): Promise<VentaDetalle["retomada"]> {
+  try {
+    const { data, error } = await client
+      .from("mm_ventas")
+      .select("retomada_por_nombre, retomada_por_rol, en_espera_por_nombre, en_espera_por_rol")
+      .eq("tenant_id", tenantId)
+      .eq("id", ventaId)
+      .maybeSingle();
+    if (error || !data || !data.retomada_por_nombre) return null;
+    return {
+      por_nombre: data.retomada_por_nombre,
+      por_rol: data.retomada_por_rol,
+      en_espera_por_nombre: data.en_espera_por_nombre,
+      en_espera_por_rol: data.en_espera_por_rol,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /** Carga la venta completa con cliente, ítems, cajero y fiado para la vista de detalle. */
@@ -724,7 +760,7 @@ export async function getVentaDetalle(
 
   if (!venta) return null;
 
-  const [itemsRes, pagosRes, configRes, clienteRes, perfilRes, fiadoRes, devolucion] =
+  const [itemsRes, pagosRes, configRes, clienteRes, perfilRes, fiadoRes, devolucion, retomada] =
     await Promise.all([
       client
         .from("mm_ventas_items")
@@ -761,6 +797,7 @@ export async function getVentaDetalle(
         .is("deleted_at", null)
         .maybeSingle(),
       getDevolucionVenta(client, tenantId, ventaId),
+      getRetomadaVenta(client, tenantId, ventaId),
     ]);
 
   const negocio = {
@@ -827,6 +864,7 @@ export async function getVentaDetalle(
       ? { id: clienteRes.data.id, nombre: clienteRes.data.nombre, cedula: clienteRes.data.cedula }
       : null,
     fiado,
+    retomada,
     devolucion,
   };
 }

@@ -49,6 +49,7 @@ import {
 } from "@arkiteq/ui";
 import { PowerSyncContext } from "@powersync/react";
 import { registrarVenta } from "@/app/(vertical)/minimarket/ventas/actions";
+import { reclamarVentaEnEsperaAction } from "@/app/(vertical)/minimarket/ventas/en-espera-actions";
 import {
   liberarReservaPresupuesto,
   marcarPresupuestoConvertido,
@@ -404,6 +405,13 @@ export function PosCliente({
   // anterior guardado, visible en el panel "En espera".
   const [activeCartId, setActiveCartId] = React.useState<string | null>(null);
   const [notaActiva, setNotaActiva] = React.useState("");
+  // Venta retomada desde "En espera" (de este u otro usuario): al cobrarla se
+  // deja constancia de quién la retomó y quién la había dejado. Solo aplica
+  // mientras el carrito activo siga siendo esa misma venta (`pendienteId`).
+  const [ventaRetomada, setVentaRetomada] = React.useState<{
+    pendienteId: string;
+    dejadaPorId: string | null;
+  } | null>(null);
   const [restaurado, setRestaurado] = React.useState(false);
   // Id del presupuesto que se está convirtiendo en esta venta, si se llegó
   // desde "Convertir en venta" — ver `presupuestoInicial` más arriba. `null`
@@ -1809,6 +1817,7 @@ export function PosCliente({
     setClienteId("");
     setClienteQuery("");
     setNotaActiva("");
+    setVentaRetomada(null);
     const nuevo = crypto.randomUUID();
     localStorage.setItem(claveCartIdStorage(tenantId), nuevo);
     setActiveCartId(nuevo);
@@ -1922,7 +1931,30 @@ export function PosCliente({
     row,
     carrito: carritoItems,
     pagos: pagosItems,
-  }: VentaPendienteParaRetomar) {
+    soloServidor,
+  }: VentaPendienteParaRetomar): Promise<boolean> {
+    // 0. Con señal, la "reclama" en el servidor (UPDATE condicional: solo si
+    //    sigue en espera) — si otro usuario la retomó primero, no se carga y
+    //    se evita cobrar la misma venta dos veces. Sin señal solo se pueden
+    //    retomar las que ya están en este dispositivo.
+    if (!offline) {
+      try {
+        const res = await reclamarVentaEnEsperaAction(row.id);
+        if (res.error) {
+          toast.error(res.error);
+          return false;
+        }
+      } catch {
+        if (soloServidor) {
+          toast.error("No se pudo retomar la venta: revisa la conexión e inténtalo de nuevo.");
+          return false;
+        }
+      }
+    } else if (soloServidor) {
+      toast.error("Sin conexión no se puede retomar una venta de otro dispositivo.");
+      return false;
+    }
+
     // 1. La venta que se está por abandonar (si tiene algo) se deja marcada
     //    'en_espera' — el cajero la está dejando a un lado a propósito para
     //    atender esta otra.
@@ -1938,6 +1970,7 @@ export function PosCliente({
     //    existente) la vuelve a dejar en espera igual que cualquier otro
     //    cobro sin terminar — no se pierde.
     const omitidos = hidratarDesdeVentaPendiente(row, carritoItems, pagosItems);
+    setVentaRetomada({ pendienteId: row.id, dejadaPorId: row.usuario_id });
     setActiveCartId(row.id);
     localStorage.setItem(claveCartIdStorage(tenantId), row.id);
     setError(null);
@@ -1953,7 +1986,7 @@ export function PosCliente({
           id: row.id,
           tenantId: row.tenant_id,
           sucursalId: row.sucursal_id,
-          usuarioId: row.usuario_id ?? usuarioId,
+          usuarioId,
           clienteId: row.cliente_id,
           nota: row.nota,
           carrito: carritoItems,
@@ -1974,6 +2007,7 @@ export function PosCliente({
     } else {
       toast.success("Venta retomada.");
     }
+    return true;
   }
 
   function confirmarVenta() {
@@ -2123,6 +2157,13 @@ export function PosCliente({
           vuelto: vueltoCash,
           vuelto_digital: vueltoDigital,
           credito_otorgado: creditoOtorgado,
+          retomada:
+            ventaRetomada && ventaRetomada.pendienteId === activeCartId
+              ? {
+                  venta_pendiente_id: ventaRetomada.pendienteId,
+                  dejada_por_id: ventaRetomada.dejadaPorId,
+                }
+              : undefined,
         });
 
         if (res.error || !res.ventaId) {
@@ -2252,7 +2293,8 @@ export function PosCliente({
           sucursalId={sucursalId}
           locale={locale}
           clientes={clientes}
-          onRetomar={(venta) => void retomarVentaPendiente(venta)}
+          onRetomar={retomarVentaPendiente}
+          offline={offline}
         />
       </div>
 
@@ -4188,6 +4230,17 @@ export function PosCliente({
           ivaActivo={ivaActivo}
           ivaPct={ivaPct}
           locale={locale}
+          stock={
+            precioRapido
+              ? {
+                  disponible: true,
+                  cantidad: precioRapido.stock_actual,
+                  unidad: precioRapido.unidad,
+                  cantidadTexto: formatStock(precioRapido),
+                  bajoStock: precioRapido.bajo_minimo || precioRapido.stock_actual <= 0,
+                }
+              : undefined
+          }
         />
       </div>
 

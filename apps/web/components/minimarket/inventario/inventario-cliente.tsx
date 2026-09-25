@@ -1087,6 +1087,8 @@ export function InventarioCliente({
                 disponible: resolverStock(precioRapido).disponible,
                 cantidad: resolverStock(precioRapido).stock,
                 unidad: precioRapido.unidad,
+                bajoStock:
+                  resolverStock(precioRapido).bajoMinimo || resolverStock(precioRapido).stock <= 0,
               }
             : undefined
         }

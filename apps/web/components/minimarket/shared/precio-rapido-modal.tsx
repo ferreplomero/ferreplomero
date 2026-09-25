@@ -19,6 +19,11 @@ export interface StockParaPrecioRapido {
   disponible: boolean;
   cantidad: number;
   unidad: string;
+  /** En o por debajo del mínimo configurado — se pinta en rojo; si no, verde. */
+  bajoStock?: boolean;
+  /** Texto ya formateado de la cantidad (ej. granel con 3 decimales). Si no
+   * viene, se muestra `cantidad` tal cual. */
+  cantidadTexto?: string;
 }
 
 interface PrecioRapidoModalProps {
@@ -39,11 +44,12 @@ interface PrecioRapidoModalProps {
 
 /**
  * Modal "Precio rápido": foto + nombre + precio en USD/Bs, sin IVA y con IVA,
- * para leérselo al cliente en el mostrador sin armar una venta. Reutiliza
- * exactamente la lógica fiscal del POS (`esLineaExenta`, `ivaActivo`/`ivaPct`
- * de la config del negocio) para que los números coincidan con lo que se
- * cobraría en caja. NO incluye IGTF (depende de la forma de pago, no del
- * precio de lista).
+ * para leérselo al cliente en el mostrador sin armar una venta. Usa la misma
+ * lógica fiscal del POS (`esLineaExenta` + `ivaPct` de la config del negocio).
+ * El precio "con IVA" se muestra SIEMPRE (aunque el IVA esté desactivado en
+ * Configuración) como referencia para el cliente — es solo informativo, no
+ * cambia lo que se cobra en caja. NO incluye IGTF (depende de la forma de
+ * pago, no del precio de lista).
  */
 export function PrecioRapidoModal({
   producto,
@@ -67,8 +73,9 @@ export function PrecioRapidoModal({
 
   const exento = producto ? esLineaExenta(producto.impuesto_id) : false;
   const precioSinIvaUsd = producto ? Number(producto.precio_usd) : 0;
-  const aplicaIva = !exento && ivaActivo && ivaPct > 0;
-  const precioConIvaUsd = aplicaIva ? precioSinIvaUsd * (1 + ivaPct / 100) : precioSinIvaUsd;
+  // Alícuota de referencia: la configurada; si no hay una válida, la general (16%).
+  const pctReferencia = ivaPct > 0 ? ivaPct : 16;
+  const precioConIvaUsd = exento ? precioSinIvaUsd : precioSinIvaUsd * (1 + pctReferencia / 100);
 
   return (
     <Dialog open={Boolean(producto)} onOpenChange={(o) => !o && onClose()}>
@@ -104,7 +111,7 @@ export function PrecioRapidoModal({
                   <p className="text-accent-600 font-display text-4xl font-bold tabular-nums">
                     {money(precioSinIvaUsd, "USD")}
                   </p>
-                  <p className="text-muted-foreground text-xl tabular-nums">
+                  <p className="text-heading font-display text-3xl font-bold tabular-nums">
                     {tasa ? money(precioSinIvaUsd * tasa, "VES") : "Sin tasa registrada"}
                   </p>
                 </div>
@@ -117,18 +124,18 @@ export function PrecioRapidoModal({
                     <p className="text-heading font-display text-2xl font-bold tabular-nums">
                       {money(precioSinIvaUsd, "USD")}
                     </p>
-                    <p className="text-muted-foreground text-sm tabular-nums">
+                    <p className="text-heading bg-surface-2 rounded-md px-1.5 py-1 text-lg font-bold tabular-nums">
                       {tasa ? money(precioSinIvaUsd * tasa, "VES") : "—"}
                     </p>
                   </div>
                   <div className="space-y-1">
                     <p className="text-muted-foreground text-xs font-medium uppercase tracking-wide">
-                      {aplicaIva ? `Con IVA (${ivaPct}%)` : "Con IVA"}
+                      Con IVA ({pctReferencia}%)
                     </p>
                     <p className="text-accent-600 font-display text-2xl font-bold tabular-nums">
                       {money(precioConIvaUsd, "USD")}
                     </p>
-                    <p className="text-muted-foreground text-sm tabular-nums">
+                    <p className="text-accent-600 bg-accent-50 rounded-md px-1.5 py-1 text-lg font-bold tabular-nums">
                       {tasa ? money(precioConIvaUsd * tasa, "VES") : "—"}
                     </p>
                   </div>
@@ -140,9 +147,9 @@ export function PrecioRapidoModal({
                   No hay tasa registrada — no se puede mostrar el precio en bolívares.
                 </p>
               ) : null}
-              {!exento && !aplicaIva ? (
+              {!exento && !ivaActivo ? (
                 <p className="text-muted-foreground text-xs">
-                  El IVA está desactivado en Configuración — no se está cobrando por ahora.
+                  El IVA está desactivado en Configuración: el precio con IVA es solo referencial.
                 </p>
               ) : null}
 
@@ -152,8 +159,15 @@ export function PrecioRapidoModal({
                     Stock disponible
                   </p>
                   {stock.disponible ? (
-                    <p className="text-heading text-lg font-semibold tabular-nums">
-                      {stock.cantidad} <span className="text-muted-foreground">{stock.unidad}</span>
+                    <p
+                      className={`mt-1 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-lg font-semibold tabular-nums ${
+                        stock.bajoStock ? "bg-danger/12 text-danger" : "bg-success/12 text-success"
+                      }`}
+                    >
+                      {stock.cantidadTexto ?? `${stock.cantidad} ${stock.unidad}`}
+                      {stock.bajoStock ? (
+                        <span className="text-xs font-medium">· Bajo stock</span>
+                      ) : null}
                     </p>
                   ) : (
                     <p className="text-muted-foreground text-sm">No disponible aquí</p>

@@ -1805,6 +1805,13 @@ export interface Database {
           created_at: string;
           updated_at: string;
           deleted_at: string | null;
+          retomada_por_id: string | null;
+          retomada_por_nombre: string | null;
+          retomada_por_rol: string | null;
+          retomada_at: string | null;
+          en_espera_por_id: string | null;
+          en_espera_por_nombre: string | null;
+          en_espera_por_rol: string | null;
         };
         Insert: {
           id?: string;
@@ -1825,12 +1832,26 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
           deleted_at?: string | null;
+          retomada_por_id?: string | null;
+          retomada_por_nombre?: string | null;
+          retomada_por_rol?: string | null;
+          retomada_at?: string | null;
+          en_espera_por_id?: string | null;
+          en_espera_por_nombre?: string | null;
+          en_espera_por_rol?: string | null;
         };
         Update: {
           estado?: MmVentaEstado;
           numero_documento?: string | null;
           updated_at?: string;
           deleted_at?: string | null;
+          retomada_por_id?: string | null;
+          retomada_por_nombre?: string | null;
+          retomada_por_rol?: string | null;
+          retomada_at?: string | null;
+          en_espera_por_id?: string | null;
+          en_espera_por_nombre?: string | null;
+          en_espera_por_rol?: string | null;
         };
         Relationships: [];
       };
@@ -2206,6 +2227,7 @@ export interface Database {
           updated_at?: string;
         };
         Update: {
+          usuario_id?: string | null;
           cliente_id?: string | null;
           nota?: string | null;
           carrito_json?: Json;

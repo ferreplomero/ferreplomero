@@ -32,6 +32,7 @@ import { getSesionAbierta } from "@/lib/minimarket/data/caja";
 import { listCuentasBancarias } from "@/lib/minimarket/data/bancos";
 import type { MmCreditoClienteTipo, MmCuentaBancaria, MmMetodoPago } from "@arkiteq/db";
 import { requirePermisoAccion } from "@/lib/minimarket/permisos";
+import { resolverEtiquetasUsuarios } from "@/lib/minimarket/usuario-etiqueta";
 import { sucursalesPermitidas, esCatalogoIrrestricto } from "@/lib/minimarket/sucursal-acceso";
 
 export interface VentaItemInput {
@@ -123,6 +124,12 @@ export interface VentaInput {
   vuelto_digital?: VueltoDigitalInput;
   /** Alternativa a `vuelto`/`vuelto_digital`: el excedente se acredita al cliente. */
   credito_otorgado?: CreditoOtorgadoInput;
+  /**
+   * La venta venía de "En espera" y el usuario actual la retomó. Solo deja
+   * constancia (quién la retomó / quién la dejó en espera) — no cambia nada
+   * del cobro. `dejada_por_id` es el usuario que la había dejado en espera.
+   */
+  retomada?: { venta_pendiente_id: string; dejada_por_id: string | null };
 }
 
 export interface VentaResult {
@@ -197,6 +204,12 @@ const ventaSchema = z
         monto: z.coerce.number().positive(),
       })
       .optional(),
+    retomada: z
+      .object({
+        venta_pendiente_id: z.string().uuid(),
+        dejada_por_id: z.string().uuid().nullable(),
+      })
+      .optional(),
   })
   .refine(
     (v) => [v.vuelto, v.vuelto_digital, v.credito_otorgado].filter(Boolean).length <= 1,
@@ -204,6 +217,50 @@ const ventaSchema = z
   );
 
 const redondear = (n: number) => Math.round(n * 100) / 100;
+
+async function anotarVentaRetomada(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  tenantId: string,
+  ventaId: string,
+  sucursalId: string,
+  usuarioId: string,
+  retomada: { venta_pendiente_id: string; dejada_por_id: string | null },
+): Promise<void> {
+  try {
+    const etiquetas = await resolverEtiquetasUsuarios(
+      tenantId,
+      [usuarioId, retomada.dejada_por_id ?? ""],
+      sucursalId,
+    );
+    const quienRetoma = etiquetas.get(usuarioId);
+    const quienDejo = retomada.dejada_por_id ? etiquetas.get(retomada.dejada_por_id) : undefined;
+    const { error } = await supabase
+      .from("mm_ventas")
+      .update({
+        retomada_por_id: usuarioId,
+        retomada_por_nombre: quienRetoma?.nombre ?? null,
+        retomada_por_rol: quienRetoma?.rol ?? null,
+        retomada_at: new Date().toISOString(),
+        en_espera_por_id: quienDejo ? retomada.dejada_por_id : null,
+        en_espera_por_nombre: quienDejo?.nombre ?? null,
+        en_espera_por_rol: quienDejo?.rol ?? null,
+      })
+      .eq("tenant_id", tenantId)
+      .eq("id", ventaId);
+    if (error) console.error("[registrarVenta] no se pudo anotar la venta retomada:", error);
+
+    // La venta en espera ya se cobró: se borra también en el servidor (el POS
+    // la borra en local y PowerSync lo sube; esto evita que quede visible
+    // para otros usuarios si esa subida tarda o sus Sync Rules no la bajan).
+    await supabase
+      .from("mm_ventas_pendientes")
+      .delete()
+      .eq("tenant_id", tenantId)
+      .eq("id", retomada.venta_pendiente_id);
+  } catch (err) {
+    console.error("[registrarVenta] no se pudo anotar la venta retomada:", err);
+  }
+}
 
 /**
  * Registra una venta completa con soporte de pago mixto (N métodos simultáneos)
@@ -872,6 +929,21 @@ export async function registrarVenta(input: VentaInput): Promise<VentaResult> {
     if (pagosRes.error) {
       console.error("[registrarVenta] error al insertar mm_pagos_venta:", pagosRes.error);
       return { error: `Error al guardar los pagos: ${pagosRes.error.message}` };
+    }
+
+    // Venta retomada desde "En espera": deja constancia de quién la retomó y
+    // quién la había dejado (nombre + rol). Es solo auditoría y va DESPUÉS de
+    // que la venta ya quedó completa — si falla (p. ej. la migración 0120 aún
+    // no está aplicada), se registra en el log y la venta sigue intacta.
+    if (v.retomada) {
+      await anotarVentaRetomada(
+        supabase,
+        tenantId,
+        venta.id,
+        sucursalId,
+        session.user.id,
+        v.retomada,
+      );
     }
 
     revalidatePath("/minimarket/ventas");

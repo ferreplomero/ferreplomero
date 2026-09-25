@@ -271,6 +271,31 @@ export default async function VentaDetallePage({ params }: Props) {
               <span className="text-heading font-medium">{venta.cajero_nombre}</span>
             </div>
           ) : null}
+          {venta.retomada ? (
+            <div className="border-border mt-2 space-y-0.5 border-t pt-2 text-xs">
+              <p>
+                <span className="text-muted-foreground">Retomada de espera por: </span>
+                <span className="text-heading font-medium">{venta.retomada.por_nombre}</span>
+                {venta.retomada.por_rol ? (
+                  <span className="text-muted-foreground"> ({venta.retomada.por_rol})</span>
+                ) : null}
+              </p>
+              {venta.retomada.en_espera_por_nombre ? (
+                <p>
+                  <span className="text-muted-foreground">Dejada en espera por: </span>
+                  <span className="text-heading font-medium">
+                    {venta.retomada.en_espera_por_nombre}
+                  </span>
+                  {venta.retomada.en_espera_por_rol ? (
+                    <span className="text-muted-foreground">
+                      {" "}
+                      ({venta.retomada.en_espera_por_rol})
+                    </span>
+                  ) : null}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
         </Card>
       </div>
 
