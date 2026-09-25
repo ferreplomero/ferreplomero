@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Settings,
   ShoppingBag,
+  ShoppingBasket,
   Truck,
   UserCog,
   Users,
@@ -137,6 +138,18 @@ export const MINIMARKET_NAV: VerticalNavItem[] = [
     children: [
       { label: "Lista de presupuestos", href: `${MINIMARKET_BASE}/presupuestos` },
       { label: "Nuevo presupuesto", href: `${MINIMARKET_BASE}/presupuestos/nueva` },
+    ],
+  },
+  {
+    label: "Pedidos",
+    href: `${MINIMARKET_BASE}/pedidos`,
+    icon: ShoppingBasket,
+    description:
+      "Pedidos de tu catálogo en línea: verifica pagos, cobra en el local y conviértelos en ventas.",
+    fase: 9,
+    children: [
+      { label: "Pedidos recibidos", href: `${MINIMARKET_BASE}/pedidos` },
+      { label: "Mi catálogo", href: `${MINIMARKET_BASE}/pedidos/mi-catalogo` },
     ],
   },
   {

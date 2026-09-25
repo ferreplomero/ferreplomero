@@ -77,6 +77,7 @@ const MODULO_POR_RUTA: ModuloDeRuta[] = [
   { prefix: "/minimarket/deudas", modulo: "deudas" },
   { prefix: "/minimarket/bancos", modulo: "bancos" },
   { prefix: "/minimarket/presupuestos", modulo: "presupuestos" },
+  { prefix: "/minimarket/pedidos", modulo: "pedidos" },
 ];
 
 /** Todos los módulos configurables, en el orden en que se muestran en el editor de roles. */
@@ -96,6 +97,7 @@ export const MODULOS: MmModulo[] = [
   "deudas",
   "bancos",
   "presupuestos",
+  "pedidos",
 ];
 
 // `facturacion` ya no tiene ruta ni aparece en MODULOS/MODULO_POR_RUTA (el
@@ -119,6 +121,7 @@ export const MODULO_LABEL: Record<MmModulo, string> = {
   deudas: "Deudas del negocio",
   bancos: "Bancos (dinero digital)",
   presupuestos: "Presupuestos",
+  pedidos: "Pedidos del catálogo en línea",
 };
 
 function moduloDeRuta(pathname: string): MmModulo | null {

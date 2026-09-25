@@ -387,6 +387,7 @@ export function ProductoForm({
 
   // ---- Marca, modelo y color (opcionales) ----
   const [marca, setMarca] = React.useState(producto?.marca ?? "");
+  const [descripcion, setDescripcion] = React.useState(producto?.descripcion ?? "");
   const [modelo, setModelo] = React.useState(producto?.modelo ?? "");
   const [color, setColor] = React.useState(producto?.color ?? "");
   // El input nativo type="color" exige un hex de 7 caracteres exacto o se
@@ -799,6 +800,25 @@ export function ProductoForm({
               />
             ) : null}
           </div>
+        </div>
+
+        {/* Descripción (opcional) — visible en el catálogo público */}
+        <div className="space-y-2">
+          <Label htmlFor="descripcion">Descripción (opcional)</Label>
+          <textarea
+            id="descripcion"
+            name="descripcion"
+            value={descripcion}
+            onChange={(e) => setDescripcion(e.target.value)}
+            rows={2}
+            maxLength={500}
+            placeholder="Ej. Llave ajustable de 10 pulgadas, acero cromado"
+            className="border-border bg-background focus-visible:ring-ring w-full rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2"
+          />
+          <input type="hidden" name="descripcion_previa" value={producto?.descripcion ? "1" : ""} />
+          <p className="text-muted-foreground text-xs">
+            Se muestra a tus clientes en el catálogo en línea.
+          </p>
         </div>
 
         {/* Marca, modelo y color (opcionales) */}

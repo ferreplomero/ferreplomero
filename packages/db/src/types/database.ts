@@ -38,7 +38,8 @@ export type MmModulo =
   | "personal"
   | "deudas"
   | "bancos"
-  | "presupuestos";
+  | "presupuestos"
+  | "pedidos";
 export type MmMovTipo = "entrada" | "salida" | "ajuste" | "merma";
 export type MmCompraEstado = "borrador" | "recibida" | "anulada";
 export type MmDocTipo = "recibo" | "fiscal";
@@ -66,6 +67,15 @@ export type MmTipoVenta = "unidad" | "granel";
 export type MmDeudaEstado = "pendiente" | "pagada";
 /** Estado de un presupuesto ("vencido" se calcula en la app, no se guarda). */
 export type MmPresupuestoEstado = "pendiente" | "convertido" | "rechazado";
+/** Estado de un pedido del catalogo publico (0119). */
+export type MmPedidoPublicoEstado =
+  | "pendiente"
+  | "pago_reportado"
+  | "para_pagar_local"
+  | "aceptado_validado"
+  | "rechazado"
+  | "completado";
+export type MmPedidoFormaPago = "online" | "local";
 export type MmGastoCategoria =
   "alquiler" | "servicios" | "sueldos" | "mantenimiento" | "impuestos_permisos" | "otros";
 /** Discrimina el catalogo de mm_categorias_movimiento (categorias de Gastos vs Otros ingresos). */
@@ -1020,6 +1030,8 @@ export interface Database {
           proveedor_id: string | null;
           etiquetas: string[];
           imagen_url: string | null;
+          /** Descripcion opcional, visible en el catalogo publico (0119). */
+          descripcion: string | null;
           activo: boolean;
           usa_margen_global: boolean;
           /** Diferencial de tasa de cambio (BCV / tasa del proveedor) aplicado al precio de venta. */
@@ -1051,6 +1063,7 @@ export interface Database {
           proveedor_id?: string | null;
           etiquetas?: string[];
           imagen_url?: string | null;
+          descripcion?: string | null;
           activo?: boolean;
           usa_margen_global?: boolean;
           diferencial_activo?: boolean;
@@ -1078,6 +1091,7 @@ export interface Database {
           proveedor_id?: string | null;
           etiquetas?: string[];
           imagen_url?: string | null;
+          descripcion?: string | null;
           activo?: boolean;
           usa_margen_global?: boolean;
           diferencial_activo?: boolean;
@@ -1967,6 +1981,118 @@ export interface Database {
           precio_ajustado?: boolean;
           subtotal_usd?: number;
         };
+        Relationships: [];
+      };
+      mm_catalogo_publico: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          sucursal_id: string;
+          slug: string;
+          activo: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          sucursal_id: string;
+          slug: string;
+          activo?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          slug?: string;
+          activo?: boolean;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      mm_pedidos_publicos: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          sucursal_id: string;
+          numero: number;
+          cliente_nombre: string;
+          cliente_telefono: string;
+          forma_pago: MmPedidoFormaPago;
+          metodo_pago_elegido: string;
+          cuenta_bancaria_id: string | null;
+          comprobante_path: string | null;
+          monto_entregado: number | null;
+          subtotal_usd: number;
+          iva_usd: number;
+          igtf_usd: number;
+          total_usd: number;
+          total_bs: number;
+          tasa_usada: number;
+          estado: MmPedidoPublicoEstado;
+          motivo_rechazo: string | null;
+          venta_id: string | null;
+          usuario_valido_id: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          sucursal_id: string;
+          numero: number;
+          cliente_nombre: string;
+          cliente_telefono: string;
+          forma_pago: MmPedidoFormaPago;
+          metodo_pago_elegido: string;
+          cuenta_bancaria_id?: string | null;
+          comprobante_path?: string | null;
+          monto_entregado?: number | null;
+          subtotal_usd?: number;
+          iva_usd?: number;
+          igtf_usd?: number;
+          total_usd?: number;
+          total_bs?: number;
+          tasa_usada: number;
+          estado: MmPedidoPublicoEstado;
+          motivo_rechazo?: string | null;
+          venta_id?: string | null;
+          usuario_valido_id?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          estado?: MmPedidoPublicoEstado;
+          motivo_rechazo?: string | null;
+          venta_id?: string | null;
+          usuario_valido_id?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      mm_pedidos_publicos_items: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          pedido_id: string;
+          producto_id: string | null;
+          producto_nombre: string;
+          cantidad: number;
+          precio_usd: number;
+          total_usd: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          pedido_id: string;
+          producto_id?: string | null;
+          producto_nombre: string;
+          cantidad: number;
+          precio_usd: number;
+          total_usd: number;
+          created_at?: string;
+        };
+        Update: Record<string, never>;
         Relationships: [];
       };
       mm_cuentas_bancarias: {
@@ -3463,6 +3589,8 @@ export interface Database {
       mm_fiado_estado: MmFiadoEstado;
       mm_tipo_venta: MmTipoVenta;
       mm_deuda_estado: MmDeudaEstado;
+      mm_pedido_publico_estado: MmPedidoPublicoEstado;
+      mm_pedido_forma_pago: MmPedidoFormaPago;
       mm_gasto_categoria: MmGastoCategoria;
       mm_categoria_movimiento_tipo: MmCategoriaMovimientoTipo;
       mm_limpieza_prueba_decision: MmLimpiezaPruebaDecision;
@@ -3549,6 +3677,9 @@ export type MmSaldoInicial = Tables<"mm_saldos_iniciales">;
 export type MmCreditoCliente = Tables<"mm_creditos_cliente">;
 export type MmDevolucionVenta = Tables<"mm_devoluciones_venta">;
 export type MmPresupuesto = Tables<"mm_presupuestos">;
+export type MmCatalogoPublico = Tables<"mm_catalogo_publico">;
+export type MmPedidoPublico = Tables<"mm_pedidos_publicos">;
+export type MmPedidoPublicoItem = Tables<"mm_pedidos_publicos_items">;
 export type MmPresupuestoItem = Tables<"mm_presupuestos_items">;
 export type MmStock = ViewRow<"mm_v_stock">;
 export type MmSaldoCliente = ViewRow<"mm_v_saldo_cliente">;

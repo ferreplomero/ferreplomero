@@ -87,7 +87,12 @@ export type {
   MmCreditoClienteTipo,
   MmSaldoCreditoCliente,
   MmPresupuestoEstado,
+  MmPedidoPublicoEstado,
+  MmPedidoFormaPago,
   MmPresupuesto,
+  MmCatalogoPublico,
+  MmPedidoPublico,
+  MmPedidoPublicoItem,
   MmPresupuestoItem,
   // Enums del vertical Servicio Técnico
   StOrdenEstado,

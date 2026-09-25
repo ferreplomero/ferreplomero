@@ -77,6 +77,7 @@ const productoSchema = z.object({
   marca: z.string().trim().max(80).optional(),
   modelo: z.string().trim().max(80).optional(),
   color: z.string().trim().max(40).optional(),
+  descripcion: z.string().trim().max(500).optional(),
   costo_usd: z.coerce
     .number({ invalid_type_error: "Costo inválido." })
     .min(0, "El costo no puede ser negativo."),
@@ -245,6 +246,7 @@ function parseProducto(ctx: NonNullable<Awaited<ReturnType<typeof contexto>>>, f
     marca: opcional(formData.get("marca")),
     modelo: opcional(formData.get("modelo")),
     color: opcional(formData.get("color")),
+    descripcion: opcional(formData.get("descripcion")),
     costo_usd: opcional(formData.get("costo_usd")) ?? "0",
     precio_usd: formData.get("precio_usd"),
     impuesto_id: opcional(formData.get("impuesto_id")) ?? "exento",
@@ -363,6 +365,9 @@ export async function crearProducto(
       marca: v.marca ?? null,
       modelo: v.modelo ?? null,
       color: v.color ?? null,
+      // Solo si se escribió: un producto sin descripción se guarda exactamente
+      // igual que antes (no depende de la columna nueva de la migración 0119).
+      ...(v.descripcion ? { descripcion: v.descripcion } : {}),
       costo_usd: v.costo_usd,
       precio_usd: v.precio_usd,
       impuesto_id: v.impuesto_id,
@@ -502,6 +507,7 @@ export async function actualizarProducto(
     tasa_proveedor_valor: number | null;
     margen_venta_pct: number | null;
     imagen_url?: string | null;
+    descripcion?: string | null;
   } = {
     nombre: v.nombre,
     codigo: v.codigo ?? null,
@@ -526,6 +532,10 @@ export async function actualizarProducto(
     margen_venta_pct: v.diferencial_activo ? (v.margen_venta_pct ?? null) : null,
   };
   if (imagen.cambiar) datos.imagen_url = imagen.url;
+  // Descripción: se escribe si hay texto, o se limpia si el producto ya tenía
+  // una y el usuario la borró — si nunca tuvo, el update queda igual que antes.
+  if (v.descripcion) datos.descripcion = v.descripcion;
+  else if (formData.get("descripcion_previa")) datos.descripcion = null;
 
   const { error } = await ctx.supabase
     .from("mm_productos")
