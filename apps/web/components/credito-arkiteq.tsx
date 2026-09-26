@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import { cn } from "@arkiteq/ui";
 
-export const CREDITO_URL = "https://kiteq-data.netlify.app";
+export const CREDITO_URL = "https://arkiteq-data.netlify.app";
 
 /**
  * Crédito de autoría ("Diseñado y creado por Arkiteq Data"). Nunca se

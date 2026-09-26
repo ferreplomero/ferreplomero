@@ -110,3 +110,27 @@
     margin: 10mm;
   }
 }
+
+/*
+ * Portada de Ferreplomero (login de inicio): paleta tomada del logo de la
+ * empresa (azul del círculo, naranja del tubo, contorno casi negro). Es una
+ * clase SCOPEADA solo a esa pantalla: no altera los temas claro/oscuro del
+ * sistema. Fija valores claros para que la tarjeta se vea igual en ambos modos.
+ */
+.theme-ferreplomero {
+  --brand-50: #fdf0e6;
+  --brand-500: #e57825;
+  --brand-600: #c4611a;
+  --accent-50: #fdf0e6;
+  --accent-500: #e57825;
+  --accent-600: #c4611a;
+  --bg: #f3f8fb;
+  --surface: #ffffff;
+  --surface-2: #edf4f8;
+  --border: #d6e4ee;
+  --text-title: #041022;
+  --text-body: #33495b;
+  --text-secondary: #5f7587;
+  --ring: #067aad;
+  color-scheme: light;
+}

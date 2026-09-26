@@ -40,7 +40,8 @@ export async function middleware(request: NextRequest) {
   const isAuthRoute = AUTH_ROUTES.some((route) => pathname.startsWith(route));
 
   if (isProtected && !user) {
-    const redirectUrl = new URL("/login", request.url);
+    // La portada "/" es el login (con los colores de la empresa).
+    const redirectUrl = new URL("/", request.url);
     redirectUrl.searchParams.set("siguiente", pathname);
     return redirectPreservando(redirectUrl);
   }
