@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { Boxes, HandCoins, Wrench } from "lucide-react";
+import { Separator } from "@arkiteq/ui";
+import { LoginForm } from "@/components/auth/login-form";
+import { GoogleButton } from "@/components/auth/google-button";
+import { CreditoArkiteq } from "@/components/credito-arkiteq";
+import { FondoPremium } from "@/components/fondo-premium";
 
 export const metadata: Metadata = {
   title: { absolute: "Ferreplomero — Ferretería y Plomería" },
@@ -9,81 +13,70 @@ export const metadata: Metadata = {
     "Todo para tus proyectos de construcción y plomería. Ferretería y plomería con amplio inventario, atención experta y precios justos.",
 };
 
-const FEATURES = [
-  {
-    icon: Boxes,
-    title: "Amplio inventario",
-    description: "Materiales de ferretería y plomería para cada etapa de tu proyecto.",
-  },
-  {
-    icon: Wrench,
-    title: "Atención experta",
-    description:
-      "Te asesoramos para elegir el producto correcto y resolver tu problema a la primera.",
-  },
-  {
-    icon: HandCoins,
-    title: "Precios justos",
-    description: "Precios competitivos y transparentes, sin sorpresas al pagar.",
-  },
-] as const;
-
+/**
+ * Portada: acceso directo al sistema (login centrado sobre fondo fotográfico).
+ * Con sesión activa, el middleware redirige de "/" al panel.
+ */
 export default function HomePage() {
   return (
-    <div className="flex min-h-dvh flex-col bg-white">
-      <header className="border-b border-black/5">
-        <div className="mx-auto flex max-w-6xl items-center gap-3 px-5 py-4">
-          <Image
-            src="/logo.png"
-            alt="Ferreplomero"
-            width={40}
-            height={40}
-            className="rounded-full"
-          />
-          <span className="text-lg font-semibold text-[#1A1A1A]">Ferreplomero</span>
-        </div>
-      </header>
+    <div className="relative isolate flex min-h-dvh flex-col">
+      <FondoPremium />
 
-      <section className="bg-[#1B9DC2] px-5 py-16 text-center text-white sm:py-24">
-        <div className="mx-auto flex max-w-3xl flex-col items-center gap-6">
-          <Image
-            src="/logo.png"
-            alt="Ferreplomero"
-            width={120}
-            height={120}
-            priority
-            className="rounded-full shadow-lg"
-          />
-          <h1 className="text-3xl font-bold sm:text-5xl">Ferreplomero — Ferretería y Plomería</h1>
-          <p className="max-w-xl text-base text-white/90 sm:text-lg">
-            Todo para tus proyectos de construcción y plomería.
-          </p>
-          <Link
-            href="/minimarket"
-            className="inline-flex items-center justify-center rounded-md bg-[#E07B26] px-8 py-3 text-base font-semibold text-white shadow-md transition hover:bg-[#c96a1f]"
-          >
-            Entrar al sistema
-          </Link>
-        </div>
-      </section>
-
-      <section className="px-5 py-16 sm:py-20">
-        <div className="mx-auto grid max-w-6xl gap-6 sm:grid-cols-3">
-          {FEATURES.map(({ icon: Icon, title, description }) => (
-            <div key={title} className="rounded-xl border border-black/5 bg-white p-6 shadow-sm">
-              <div className="mb-4 inline-flex size-12 items-center justify-center rounded-full bg-[#2563EB]/10 text-[#2563EB]">
-                <Icon className="size-6" />
-              </div>
-              <h2 className="text-lg font-semibold text-[#1A1A1A]">{title}</h2>
-              <p className="mt-2 text-sm text-[#1A1A1A]/70">{description}</p>
+      <main className="flex flex-1 items-center justify-center px-5 py-10">
+        <div className="w-full max-w-md">
+          <div className="mb-8 flex flex-col items-center text-center">
+            <div className="relative">
+              <div className="absolute inset-0 rounded-full bg-[#1B9DC2]/40 blur-xl" />
+              <Image
+                src="/logo.png"
+                alt="Ferreplomero"
+                width={96}
+                height={96}
+                priority
+                className="relative rounded-full shadow-2xl ring-4 ring-white/15"
+              />
             </div>
-          ))}
-        </div>
-      </section>
+            <h1 className="font-display mt-5 text-3xl font-bold tracking-tight text-white sm:text-4xl">
+              Ferreplomero
+            </h1>
+            <p className="mt-1.5 text-xs font-medium uppercase tracking-[0.25em] text-white/60">
+              Ferretería · Plomería
+            </p>
+          </div>
 
-      <footer className="mt-auto border-t border-black/5 bg-white px-5 py-6 text-center text-sm text-[#1A1A1A]/60">
-        © 2026 Ferreplomero. Todos los derechos reservados.
-      </footer>
+          <div className="bg-surface rounded-2xl border border-white/20 p-7 shadow-[0_30px_80px_-20px_rgba(0,0,0,0.7)] ring-1 ring-white/10 backdrop-blur-xl sm:p-8">
+            <div className="space-y-6">
+              <div className="space-y-1.5 text-center">
+                <h2 className="font-display text-heading text-2xl font-semibold">
+                  Bienvenido de vuelta
+                </h2>
+                <p className="text-muted-foreground text-sm">
+                  Inicia sesión para gestionar tu negocio.
+                </p>
+              </div>
+
+              <GoogleButton />
+
+              <div className="flex items-center gap-3">
+                <Separator className="flex-1" />
+                <span className="text-muted-foreground text-xs uppercase tracking-wide">o</span>
+                <Separator className="flex-1" />
+              </div>
+
+              <LoginForm />
+
+              <p className="text-muted-foreground text-center text-sm">
+                ¿No tienes cuenta?{" "}
+                <Link href="/registro" className="text-brand-600 font-medium hover:underline">
+                  Crear cuenta
+                </Link>
+              </p>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <CreditoArkiteq tono="oscuro" />
     </div>
   );
 }

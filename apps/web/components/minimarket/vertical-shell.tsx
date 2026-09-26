@@ -16,6 +16,7 @@ import { MINIMARKET_BASE, MINIMARKET_NAV } from "@/lib/minimarket/nav";
 import { moduloPermitido, type ContextoPermisos } from "@/lib/minimarket/permisos";
 import type { SucursalAcceso } from "@/lib/minimarket/sucursal-acceso";
 import { precalentarRutasCriticas } from "@/lib/minimarket/prefetch-warmup";
+import { CreditoArkiteq } from "@/components/credito-arkiteq";
 
 // `@powersync/react` arrastra @powersync/common (varios MB): se difiere por
 // completo al cliente (ssr:false) para que no entre al bundle del servidor.
@@ -345,6 +346,7 @@ export function VerticalShell({
         <main id="main-content" className="min-w-0 flex-1 p-4 lg:p-8 print:p-0">
           {children}
         </main>
+        <CreditoArkiteq className="border-border border-t" />
       </div>
 
       <ArkiTour

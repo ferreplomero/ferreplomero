@@ -45,7 +45,8 @@ export async function middleware(request: NextRequest) {
     return redirectPreservando(redirectUrl);
   }
 
-  if (isAuthRoute && user) {
+  // La portada "/" es el login: con sesión activa se va directo al panel.
+  if ((isAuthRoute || pathname === "/") && user) {
     return redirectPreservando(new URL(APP_HOME, request.url));
   }
 

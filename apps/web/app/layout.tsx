@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { displayFont, sansFont } from "@arkiteq/ui/fonts";
 import { SITE } from "@/lib/site";
+import { PieGlobal } from "@/components/credito-arkiteq";
 import { Providers } from "./providers";
 import "./globals.css";
 
@@ -42,7 +43,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       className={`${displayFont.variable} ${sansFont.variable}`}
     >
       <body className="bg-background text-foreground min-h-dvh font-sans antialiased">
-        <Providers>{children}</Providers>
+        <Providers>
+          {children}
+          <PieGlobal />
+        </Providers>
       </body>
     </html>
   );
