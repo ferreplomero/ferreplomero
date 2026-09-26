@@ -183,6 +183,126 @@ export async function reclamarVentaEnEsperaAction(
   }
 }
 
+const filaSubidaSchema = z.object({
+  id: uuid,
+  sucursal_id: uuid,
+  cliente_id: uuid.nullable(),
+  nota: z.string().max(200).nullable(),
+  carrito_json: z.string().max(200_000),
+  pagos_json: z.string().max(50_000),
+  descuento_pct: z.string().max(20),
+  descuento_monto: z.string().max(20),
+  tasa_tipo: z.enum(["bcv", "euro", "manual"]),
+  subtotal_usd: z.coerce.number().finite(),
+  created_at: z.string().max(40),
+  updated_at: z.string().max(40),
+});
+
+export interface SubirVentasEnEsperaResult {
+  /** ids subidas (o ya presentes igual en el servidor). */
+  subidas: string[];
+  error?: string;
+}
+
+/**
+ * Sube al servidor las ventas en espera que este dispositivo tiene solo en
+ * local. Es el camino que hace que OTROS usuarios las vean: no depende de que
+ * PowerSync esté conectado (sin `NEXT_PUBLIC_POWERSYNC_URL` la base local
+ * nunca sube nada por sí sola).
+ *
+ * No pisa una venta que otro usuario ya retomó (fila `activo` de otro
+ * usuario): esa se omite. `usuario_id` = quien la dejó en espera (el usuario
+ * de esta sesión).
+ */
+export async function subirVentasEnEsperaAction(
+  filas: unknown[],
+): Promise<SubirVentasEnEsperaResult> {
+  try {
+    const ctx = await contexto();
+    if (!ctx) return { subidas: [], error: "Sesión no válida." };
+    const permisoError = await requirePermisoAccion(
+      ctx.supabase,
+      ctx.tenantId,
+      ctx.session.user.id,
+      "ventas",
+      "crear",
+    );
+    if (permisoError) return { subidas: [], error: permisoError };
+
+    const validas = filas
+      .slice(0, 50)
+      .map((f) => filaSubidaSchema.safeParse(f))
+      .flatMap((r) => (r.success ? [r.data] : []));
+    if (validas.length === 0) return { subidas: [] };
+
+    const permitidas = new Set(
+      (await sucursalesPermitidas(ctx.supabase, ctx.tenantId, ctx.session.user.id)).map(
+        (s) => s.id,
+      ),
+    );
+    const { data: existentes } = await ctx.supabase
+      .from("mm_ventas_pendientes")
+      .select("id, usuario_id, estado")
+      .eq("tenant_id", ctx.tenantId)
+      .in(
+        "id",
+        validas.map((f) => f.id),
+      );
+    const existentePorId = new Map((existentes ?? []).map((e) => [e.id, e]));
+
+    const subidas: string[] = [];
+    for (const f of validas) {
+      if (!permitidas.has(f.sucursal_id)) continue;
+      const previa = existentePorId.get(f.id);
+      if (previa && previa.estado !== "en_espera" && previa.usuario_id !== ctx.session.user.id) {
+        continue; // otro usuario la retomó: no se pisa.
+      }
+      let carrito: unknown = [];
+      let pagos: unknown = [];
+      try {
+        carrito = JSON.parse(f.carrito_json);
+        pagos = JSON.parse(f.pagos_json);
+      } catch {
+        continue;
+      }
+      if (!Array.isArray(carrito) || !Array.isArray(pagos) || carrito.length === 0) continue;
+      const articulos = carrito.reduce(
+        (s: number, i) => s + (Number((i as { cantidad?: unknown }).cantidad) || 0),
+        0,
+      );
+      const { error } = await ctx.supabase.from("mm_ventas_pendientes").upsert({
+        id: f.id,
+        tenant_id: ctx.tenantId,
+        sucursal_id: f.sucursal_id,
+        usuario_id: ctx.session.user.id,
+        cliente_id: f.cliente_id,
+        nota: f.nota,
+        carrito_json: carrito as never,
+        pagos_json: pagos as never,
+        descuento_pct: f.descuento_pct,
+        descuento_monto: f.descuento_monto,
+        tasa_tipo: f.tasa_tipo,
+        subtotal_usd: Math.round(f.subtotal_usd * 100) / 100,
+        articulos_count: articulos,
+        estado: "en_espera",
+        created_at: f.created_at,
+        updated_at: f.updated_at,
+      });
+      if (error) {
+        console.error("[subirVentasEnEspera] no se pudo subir", f.id, error.message);
+        continue;
+      }
+      subidas.push(f.id);
+    }
+    return { subidas };
+  } catch (err) {
+    return {
+      subidas: [],
+      error: err instanceof Error ? err.message : "No se pudo subir las ventas en espera.",
+    };
+  }
+}
+
 /** Cancela (borra) una venta en espera en el servidor — para las que no están en local. */
 export async function cancelarVentaEnEsperaAction(id: string): Promise<{ error?: string }> {
   try {

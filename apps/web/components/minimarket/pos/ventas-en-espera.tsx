@@ -45,6 +45,7 @@ import { TIPO_TASA_LABEL, esTipoTasa } from "@/lib/minimarket/exchange-rate";
 import {
   cancelarVentaEnEsperaAction,
   listarVentasEnEsperaAction,
+  subirVentasEnEsperaAction,
   type VentaEnEsperaRemota,
 } from "@/app/(vertical)/minimarket/ventas/en-espera-actions";
 
@@ -57,6 +58,31 @@ export interface VentaPendienteParaRetomar {
 }
 
 type Etiquetas = Record<string, { nombre: string; rol: string }>;
+
+/** Versión (`updated_at`) de cada venta en espera local ya subida al servidor. */
+type Subidas = Record<string, string>;
+
+function claveSubidas(sucursalId: string) {
+  return `mm-en-espera-subidas:${sucursalId}`;
+}
+
+function leerSubidas(sucursalId: string): Subidas {
+  try {
+    const raw = localStorage.getItem(claveSubidas(sucursalId));
+    const data: unknown = raw ? JSON.parse(raw) : {};
+    return data && typeof data === "object" ? (data as Subidas) : {};
+  } catch {
+    return {};
+  }
+}
+
+function guardarSubidas(sucursalId: string, subidas: Subidas) {
+  try {
+    localStorage.setItem(claveSubidas(sucursalId), JSON.stringify(subidas));
+  } catch {
+    // Sin storage: en el peor caso se vuelve a subir (upsert idempotente).
+  }
+}
 
 /** `true` = se retomó; `false` = no se pudo (p. ej. otro usuario la tomó primero). */
 type OnRetomar = (venta: VentaPendienteParaRetomar) => Promise<boolean>;
@@ -141,36 +167,100 @@ function BotonConectado({
     if (errorQuery) console.error("No se pudo leer las ventas en espera:", errorQuery);
   }, [errorQuery]);
 
-  const usuariosLocalesRef = React.useRef<string[]>([]);
-  usuariosLocalesRef.current = pendientes.map((p) => p.usuario_id ?? "").filter(Boolean);
+  const pendientesRef = React.useRef<VentaPendienteRow[]>([]);
+  pendientesRef.current = pendientes;
+  const enCursoRef = React.useRef(false);
 
+  /**
+   * Sincroniza con el servidor (sin depender de PowerSync):
+   *  1. Sube las ventas en espera locales cuya versión (`updated_at`) aún no
+   *     se subió — así los demás usuarios las ven.
+   *  2. Trae las de TODA la sucursal (cualquier usuario) con nombre+rol.
+   *  3. Una local que YA se había subido tal cual y ya no está en espera en
+   *     el servidor la retomó/cobró/canceló otro usuario: se borra en local
+   *     para que no reaparezca ni se cobre dos veces.
+   */
   const cargarRemotas = React.useCallback(async () => {
-    if (offline) return;
+    if (offline || enCursoRef.current) return;
+    enCursoRef.current = true;
     setCargandoRemotas(true);
     try {
-      const res = await listarVentasEnEsperaAction(sucursalId, usuariosLocalesRef.current);
+      const subidas = leerSubidas(sucursalId);
+      const locales = pendientesRef.current;
+      const porSubir = locales.filter((r) => subidas[r.id] !== r.updated_at);
+      if (porSubir.length > 0) {
+        const res = await subirVentasEnEsperaAction(
+          porSubir.map((r) => ({
+            id: r.id,
+            sucursal_id: r.sucursal_id,
+            cliente_id: r.cliente_id,
+            nota: r.nota,
+            carrito_json: r.carrito_json,
+            pagos_json: r.pagos_json,
+            descuento_pct: r.descuento_pct ?? "",
+            descuento_monto: r.descuento_monto ?? "",
+            tasa_tipo: r.tasa_tipo,
+            subtotal_usd: r.subtotal_usd,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+          })),
+        );
+        if (res.error) console.error("No se pudo subir las ventas en espera:", res.error);
+        for (const id of res.subidas) {
+          const fila = porSubir.find((r) => r.id === id);
+          if (fila) subidas[id] = fila.updated_at;
+        }
+        guardarSubidas(sucursalId, subidas);
+      }
+
+      const res = await listarVentasEnEsperaAction(
+        sucursalId,
+        locales.map((p) => p.usuario_id ?? "").filter(Boolean),
+      );
       if (res.error) {
         console.error("No se pudo leer las ventas en espera del servidor:", res.error);
         return;
       }
-      setRemotas(res.ventas ?? []);
+      const remotasRes = res.ventas ?? [];
+      setRemotas(remotasRes);
       setEtiquetas(res.etiquetas ?? {});
+
+      const enServidor = new Set(remotasRes.map((r) => r.id));
+      const tomadasPorOtro = pendientesRef.current.filter(
+        (r) => subidas[r.id] === r.updated_at && !enServidor.has(r.id),
+      );
+      for (const r of tomadasPorOtro) {
+        await eliminarVentaPendienteLocal(db, r.id).catch(() => undefined);
+        delete subidas[r.id];
+      }
+      if (tomadasPorOtro.length > 0) guardarSubidas(sucursalId, subidas);
     } catch (err) {
-      console.error("No se pudo leer las ventas en espera del servidor:", err);
+      console.error("No se pudo sincronizar las ventas en espera:", err);
     } finally {
+      enCursoRef.current = false;
       setCargandoRemotas(false);
     }
-  }, [offline, sucursalId]);
+  }, [db, offline, sucursalId]);
 
-  // Al montar / recuperar señal / volver a la pestaña: refresca las del servidor.
+  // Al montar, cada 15 s con la pestaña visible y al volver a ella.
   React.useEffect(() => {
     void cargarRemotas();
     const alVolver = () => {
       if (document.visibilityState === "visible") void cargarRemotas();
     };
+    const intervalo = window.setInterval(alVolver, 15_000);
     document.addEventListener("visibilitychange", alVolver);
-    return () => document.removeEventListener("visibilitychange", alVolver);
+    return () => {
+      window.clearInterval(intervalo);
+      document.removeEventListener("visibilitychange", alVolver);
+    };
   }, [cargarRemotas]);
+
+  // Apenas cambia una venta en espera local (se dejó una nueva), se sube.
+  const firmaLocales = pendientes.map((r) => `${r.id}:${r.updated_at}`).join("|");
+  React.useEffect(() => {
+    if (firmaLocales) void cargarRemotas();
+  }, [firmaLocales, cargarRemotas]);
 
   const lista = React.useMemo(() => {
     const idsLocalesSet = new Set(idsLocales.map((r) => r.id));
@@ -193,12 +283,11 @@ function BotonConectado({
     if (!window.confirm(`¿Cancelar esta venta en espera${etiqueta}? No se puede deshacer.`)) return;
     setCancelando(row.id);
     try {
-      if (soloServidor) {
+      if (!offline) {
         const res = await cancelarVentaEnEsperaAction(row.id);
         if (res.error) throw new Error(res.error);
-      } else {
-        await eliminarVentaPendienteLocal(db, row.id);
       }
+      if (!soloServidor) await eliminarVentaPendienteLocal(db, row.id);
       setRemotas((prev) => prev.filter((r) => r.id !== row.id));
       toast.success("Venta en espera cancelada.");
     } catch (err) {
