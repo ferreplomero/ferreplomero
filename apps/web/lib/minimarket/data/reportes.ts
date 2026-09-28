@@ -451,6 +451,8 @@ export interface ItemInventarioReporte {
   bajo_minimo: boolean;
   costo_usd: number;
   precio_usd: number;
+  /** "exento" o el id del IVA del país — el precio_usd siempre es SIN IVA. */
+  impuesto_id: string;
   valor_costo_total: number;
   valor_venta_total: number;
 }
@@ -464,10 +466,19 @@ export interface ResumenInventarioReporte {
   items: ItemInventarioReporte[];
 }
 
-/** Valorización completa del inventario para reportes. */
+/**
+ * Valorización completa del inventario para reportes.
+ *
+ * `corteIso` (opcional): instante UTC EXCLUSIVO del corte — el stock se
+ * reconstruye sumando el ledger `mm_movimientos_inventario` con
+ * `created_at < corteIso` (la misma suma que hace la vista `mm_v_stock`,
+ * pero solo hasta esa fecha). Sin `corteIso` se usa el stock actual, igual
+ * que siempre. Costo y precio son los ACTUALES (no hay historial de precios).
+ */
 export async function getInventarioReporte(
   client: Client,
   tenantId: string,
+  opciones: { corteIso?: string } = {},
 ): Promise<ResumenInventarioReporte> {
   // Estas tres tablas se paginan: el catálogo y el stock por sucursal pueden
   // superar largamente las 1000 filas por defecto de PostgREST (carga
@@ -480,11 +491,12 @@ export async function getInventarioReporte(
       categoria_id: string | null;
       costo_usd: number;
       precio_usd: number;
+      impuesto_id: string;
       activo: boolean;
     }>((from, to) =>
       client
         .from("mm_productos")
-        .select("id, nombre, codigo, categoria_id, costo_usd, precio_usd, activo")
+        .select("id, nombre, codigo, categoria_id, costo_usd, precio_usd, impuesto_id, activo")
         .eq("tenant_id", tenantId)
         .is("deleted_at", null)
         .eq("activo", true)
@@ -492,15 +504,27 @@ export async function getInventarioReporte(
         .order("id", { ascending: true })
         .range(from, to),
     ),
-    fetchAllRows<{ producto_id: string | null; stock_actual: number | null }>((from, to) =>
-      client
-        .from("mm_v_stock")
-        .select("producto_id, stock_actual")
-        .eq("tenant_id", tenantId)
-        .order("producto_id", { ascending: true })
-        .order("sucursal_id", { ascending: true })
-        .range(from, to),
-    ),
+    opciones.corteIso
+      ? fetchAllRows<{ producto_id: string | null; cantidad: number | null }>((from, to) =>
+          client
+            .from("mm_movimientos_inventario")
+            .select("producto_id, cantidad")
+            .eq("tenant_id", tenantId)
+            .lt("created_at", opciones.corteIso as string)
+            .order("id", { ascending: true })
+            .range(from, to),
+        ).then((movs) =>
+          movs.map((m) => ({ producto_id: m.producto_id, stock_actual: m.cantidad })),
+        )
+      : fetchAllRows<{ producto_id: string | null; stock_actual: number | null }>((from, to) =>
+          client
+            .from("mm_v_stock")
+            .select("producto_id, stock_actual")
+            .eq("tenant_id", tenantId)
+            .order("producto_id", { ascending: true })
+            .order("sucursal_id", { ascending: true })
+            .range(from, to),
+        ),
     fetchAllRows<{ producto_id: string; stock_minimo: number }>((from, to) =>
       client
         .from("mm_inventario")
@@ -548,6 +572,7 @@ export async function getInventarioReporte(
       bajo_minimo: bajo,
       costo_usd: costo,
       precio_usd: precio,
+      impuesto_id: p.impuesto_id,
       valor_costo_total: costo * stock,
       valor_venta_total: precio * stock,
     };

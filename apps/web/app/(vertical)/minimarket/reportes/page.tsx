@@ -22,7 +22,6 @@ import {
   getVentasPorMetodo,
   getProductosMasVendidos,
   getCierresDiarios,
-  rangoPreset,
   getInventarioReporte,
   getProductosBajaRotacion,
   getVentasPorCajero,
@@ -30,6 +29,8 @@ import {
 import { getResumenCartera } from "@/lib/minimarket/data/clientes";
 import { listCompras } from "@/lib/minimarket/data/compras";
 import { getTimezoneNegocio } from "@/lib/minimarket/timezone";
+import { hoyEnTz } from "@/lib/minimarket/date-format";
+import { corteInventario, resolverRangoReporte } from "@/lib/minimarket/reportes/rango";
 import { ReportesTabs } from "./reportes-tabs";
 
 export const metadata: Metadata = { title: "Reportes" };
@@ -54,10 +55,15 @@ const METODO_LABEL: Record<string, string> = {
 export default async function ReportesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ periodo?: string; inv?: string; inv_filtro?: string }>;
+  searchParams: Promise<{
+    periodo?: string;
+    desde?: string;
+    hasta?: string;
+    inv?: string;
+    inv_filtro?: string;
+  }>;
 }) {
   const sp = await searchParams;
-  const periodo = (sp.periodo ?? "mes") as "hoy" | "semana" | "mes" | "mes-anterior";
   const invFiltro: FiltroInventario =
     sp.inv_filtro === "bajo" || sp.inv_filtro === "stock" ? sp.inv_filtro : "todos";
 
@@ -68,7 +74,13 @@ export default async function ReportesPage({
   const supabase = await createClient();
   const country = getCountryConfig(session.activeTenant?.country);
   const tz = await getTimezoneNegocio(supabase, tenantId);
-  const rango = rangoPreset(periodo, tz);
+  const { rango, periodo } = resolverRangoReporte(sp, tz);
+  // Inventario con corte al final del día "hasta" (si es hoy: stock actual).
+  const { fechaCorte, corteIso } = corteInventario(rango.hasta, tz);
+  // Parámetros del rango para links y descargas (preset o Desde/Hasta).
+  const qRango: Record<string, string> =
+    periodo === "personalizado" ? { desde: rango.desde, hasta: rango.hasta } : { periodo };
+  const qsDescarga = `desde=${rango.desde}&hasta=${rango.hasta}`;
 
   const [
     resumen,
@@ -91,7 +103,7 @@ export default async function ReportesPage({
     getResumenCartera(supabase, tenantId),
     listCompras(supabase, tenantId, { estado: "borrador" }),
     getTasaVigente(supabase, tenantId),
-    getInventarioReporte(supabase, tenantId),
+    getInventarioReporte(supabase, tenantId, { corteIso }),
     getProductosBajaRotacion(supabase, tenantId, rango, tz, 15),
     getVentasPorCajero(supabase, tenantId, rango, tz),
   ]);
@@ -111,7 +123,10 @@ export default async function ReportesPage({
     { key: "mes-anterior", label: "Mes anterior" },
   ] as const;
 
-  const periodoLabel = periodos.find((p) => p.key === periodo)?.label ?? "30 días";
+  const periodoLabel =
+    periodo === "personalizado"
+      ? `${rango.desde} al ${rango.hasta}`
+      : (periodos.find((p) => p.key === periodo)?.label ?? "30 días");
 
   // Detalle de inventario paginado y filtrado (solo la VISTA: las tarjetas y
   // los totales siguen calculándose sobre todo el inventario).
@@ -125,7 +140,7 @@ export default async function ReportesPage({
     invPagina * INVENTARIO_POR_PAGINA,
   );
   const urlInventario = (cambios: { inv?: number; inv_filtro?: FiltroInventario }) => {
-    const q = new URLSearchParams({ periodo });
+    const q = new URLSearchParams(qRango);
     const filtro = cambios.inv_filtro ?? invFiltro;
     if (filtro !== "todos") q.set("inv_filtro", filtro);
     const pagina = cambios.inv ?? invPagina;
@@ -154,20 +169,61 @@ export default async function ReportesPage({
             {rango.desde === rango.hasta ? rango.desde : `${rango.desde} — ${rango.hasta}`}
           </p>
         </div>
-        <div className="flex flex-wrap gap-1">
-          {periodos.map((p) => (
-            <a
-              key={p.key}
-              href={`/minimarket/reportes?periodo=${p.key}`}
-              className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
-                periodo === p.key
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          <div className="flex flex-wrap gap-1">
+            {periodos.map((p) => (
+              <a
+                key={p.key}
+                href={`/minimarket/reportes?periodo=${p.key}`}
+                className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                  periodo === p.key
+                    ? "bg-accent-500 text-white"
+                    : "border-border text-muted-foreground hover:text-heading border"
+                }`}
+              >
+                {p.label}
+              </a>
+            ))}
+          </div>
+          {/* Rango personalizado: GET simple, sin JS. */}
+          <form
+            action="/minimarket/reportes"
+            method="get"
+            className="flex flex-wrap items-end gap-2"
+          >
+            <label className="text-muted-foreground flex flex-col gap-0.5 text-xs">
+              Desde
+              <input
+                type="date"
+                name="desde"
+                defaultValue={rango.desde}
+                max={hoyEnTz(tz)}
+                required
+                className="border-border bg-surface text-heading h-8 rounded-md border px-2 text-xs"
+              />
+            </label>
+            <label className="text-muted-foreground flex flex-col gap-0.5 text-xs">
+              Hasta
+              <input
+                type="date"
+                name="hasta"
+                defaultValue={rango.hasta}
+                max={hoyEnTz(tz)}
+                required
+                className="border-border bg-surface text-heading h-8 rounded-md border px-2 text-xs"
+              />
+            </label>
+            <button
+              type="submit"
+              className={`h-8 rounded-md px-3 text-xs font-medium ${
+                periodo === "personalizado"
                   ? "bg-accent-500 text-white"
-                  : "border-border text-muted-foreground hover:text-heading border"
+                  : "border-border text-heading hover:bg-surface-2 border"
               }`}
             >
-              {p.label}
-            </a>
-          ))}
+              Aplicar rango
+            </button>
+          </form>
         </div>
       </header>
 
@@ -465,14 +521,17 @@ export default async function ReportesPage({
       <section id="inventario" className="scroll-mt-20 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-1">
-            <h2 className="font-display text-heading text-lg font-semibold">Inventario actual</h2>
+            <h2 className="font-display text-heading text-lg font-semibold">
+              {corteIso ? `Inventario al ${fechaCorte}` : "Inventario actual"}
+            </h2>
             <p className="text-muted-foreground text-sm">
               {inventario.totalProductos} productos · {inventario.productosBajoMinimo} bajo mínimo
+              {corteIso ? " · stock al cierre de ese día (costo y precio actuales)" : ""}
             </p>
           </div>
           <div className="flex gap-2">
             <a
-              href={`/minimarket/reportes/exportar?tipo=inventario`}
+              href={`/minimarket/reportes/exportar?tipo=inventario&${qsDescarga}`}
               className="border-border text-muted-foreground hover:text-heading inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
             >
               <Download className="size-3.5" aria-hidden />
@@ -642,7 +701,7 @@ export default async function ReportesPage({
                   {Math.min(invPagina * INVENTARIO_POR_PAGINA, invFiltrados.length)} de{" "}
                   {invFiltrados.length} · la lista completa está en{" "}
                   <a
-                    href="/minimarket/reportes/exportar?tipo=inventario"
+                    href={`/minimarket/reportes/exportar?tipo=inventario&${qsDescarga}`}
                     className="text-accent-600 hover:underline"
                   >
                     Excel
@@ -793,21 +852,21 @@ export default async function ReportesPage({
         </div>
         <div className="flex flex-wrap gap-2">
           <a
-            href={`/minimarket/reportes/exportar?tipo=ventas&desde=${rango.desde}&hasta=${rango.hasta}`}
+            href={`/minimarket/reportes/exportar?tipo=ventas&${qsDescarga}`}
             className="border-border text-muted-foreground hover:text-heading inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors"
           >
             <Download className="size-4" aria-hidden />
             Ventas Excel
           </a>
           <a
-            href={`/minimarket/reportes/exportar?tipo=inventario`}
+            href={`/minimarket/reportes/exportar?tipo=inventario&${qsDescarga}`}
             className="border-border text-muted-foreground hover:text-heading inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors"
           >
             <Download className="size-4" aria-hidden />
             Inventario Excel
           </a>
           <a
-            href={`/minimarket/reportes/exportar?tipo=pdf&desde=${rango.desde}&hasta=${rango.hasta}`}
+            href={`/minimarket/reportes/exportar?tipo=pdf&${qsDescarga}`}
             target="_blank"
             rel="noopener noreferrer"
             className="border-border text-muted-foreground hover:text-heading inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors"

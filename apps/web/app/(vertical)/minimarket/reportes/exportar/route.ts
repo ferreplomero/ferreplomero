@@ -3,7 +3,6 @@ import ExcelJS from "exceljs";
 import { getSessionContext } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import {
-  rangoPreset,
   getInventarioReporte,
   getResumenPeriodo,
   getVentasPorDia,
@@ -12,8 +11,11 @@ import {
   getVentasPorCajero,
 } from "@/lib/minimarket/data/reportes";
 import { getTimezoneNegocio } from "@/lib/minimarket/timezone";
-import { fmtFechaHora, hoyEnTz, rangoLocalAUtc } from "@/lib/minimarket/date-format";
+import { fmtFechaHora, rangoLocalAUtc } from "@/lib/minimarket/date-format";
 import { agregarHoja, respuestaXlsx } from "@/lib/minimarket/reportes/excel-plantilla";
+import { ivaDeValor, preciosConIva } from "@/lib/minimarket/reportes/inventario-iva";
+import { corteInventario, resolverRangoReporte } from "@/lib/minimarket/reportes/rango";
+import { getTasaParaFecha } from "@/lib/minimarket/exchange-rate";
 
 export const runtime = "nodejs";
 
@@ -52,7 +54,7 @@ export async function GET(request: NextRequest) {
   const generado = `Generado: ${fmtFechaHora(new Date().toISOString(), tz)}`;
 
   if (tipo === "ventas") {
-    const rango = desde && hasta ? { desde, hasta } : rangoPreset("mes", tz);
+    const { rango } = resolverRangoReporte({ desde, hasta }, tz);
     const { desdeIso, hastaIso } = rangoLocalAUtc(rango, tz);
     const periodo = rango.desde === rango.hasta ? rango.desde : `${rango.desde} al ${rango.hasta}`;
 
@@ -181,8 +183,48 @@ export async function GET(request: NextRequest) {
 
     return respuestaXlsx(await wb.xlsx.writeBuffer(), `ventas_${rango.desde}_${rango.hasta}.xlsx`);
   } else if (tipo === "inventario") {
-    const inventario = await getInventarioReporte(supabase, tenantId);
-    const hoy = hoyEnTz(tz);
+    // Corte al final del día "hasta" del reporte (sin rango o hasta = hoy →
+    // stock actual). Tasa para los Bs: la de ESE día.
+    const { fechaCorte, corteIso } = corteInventario(hasta ?? "", tz);
+    const [inventario, tasaCorte, { data: cfgIva }] = await Promise.all([
+      getInventarioReporte(supabase, tenantId, { corteIso }),
+      getTasaParaFecha(supabase, tenantId, fechaCorte),
+      supabase
+        .from("mm_config_negocio")
+        .select("parametros")
+        .eq("tenant_id", tenantId)
+        .maybeSingle(),
+    ]);
+    const parametros =
+      cfgIva?.parametros &&
+      typeof cfgIva.parametros === "object" &&
+      !Array.isArray(cfgIva.parametros)
+        ? (cfgIva.parametros as Record<string, unknown>)
+        : {};
+    // Mismo porcentaje que usa la venta (`params.iva_pct ?? 16`). Se aplica
+    // de forma REFERENCIAL a todo producto no exento, aunque el negocio tenga
+    // el IVA desactivado (decisión del usuario) — se aclara en el encabezado.
+    const ivaPct = Number(parametros.iva_pct ?? 16);
+    const ivaActivo = Boolean(parametros.iva_activo ?? false);
+    const tasa = tasaCorte && tasaCorte.valor > 0 ? tasaCorte.valor : null;
+
+    const filas = inventario.items.map((p) => {
+      const precios = preciosConIva(p.precio_usd, p.impuesto_id, ivaPct, tasa);
+      const valorSinIva = r2(p.valor_venta_total);
+      const ivaStock = ivaDeValor(p.valor_venta_total, p.impuesto_id, ivaPct);
+      const valorConIva = r2(valorSinIva + ivaStock);
+      return {
+        p,
+        precios,
+        valorSinIva,
+        ivaStock,
+        valorConIva,
+        valorConIvaBs: tasa ? r2(valorConIva * tasa) : null,
+      };
+    });
+    const sumar = (xs: number[]) => r2(xs.reduce((x, y) => x + y, 0));
+    const totalConIva = sumar(filas.map((f) => f.valorConIva));
+
     const wb = new ExcelJS.Workbook();
     wb.creator = negocio.nombre;
 
@@ -191,42 +233,55 @@ export async function GET(request: NextRequest) {
       titulo: "Inventario valorizado",
       negocio,
       subtitulos: [
-        `Corte al ${hoy} · ${inventario.totalProductos} productos · ${inventario.productosBajoMinimo} bajo mínimo`,
-        generado,
+        `Corte al ${fechaCorte}${corteIso ? " (stock al cierre de ese día)" : " (stock actual)"} · ${inventario.totalProductos} productos · ${inventario.productosBajoMinimo} bajo mínimo`,
+        tasa
+          ? `Tasa del ${fechaCorte}: Bs ${tasa.toFixed(2)} / USD (${tasaCorte?.fuente === "manual" ? "personalizada" : "oficial"}) · IVA ${ivaPct}% sobre productos gravados${ivaActivo ? "" : " (referencial: el IVA está desactivado en Configuración)"}`
+          : `Sin tasa registrada para el ${fechaCorte}: columnas en Bs vacías · IVA ${ivaPct}% sobre productos gravados`,
+        `Costo y precio: valores actuales del producto · ${generado}`,
       ],
-      filas: inventario.items,
+      filas,
       columnas: [
-        { titulo: "SKU", ancho: 14, tipo: "texto", valor: (p) => p.codigo ?? "" },
-        { titulo: "Producto", ancho: 34, tipo: "texto", valor: (p) => p.nombre },
-        { titulo: "Categoría", ancho: 18, tipo: "texto", valor: (p) => p.categoria ?? "" },
-        { titulo: "Stock", ancho: 10, tipo: "cantidad", valor: (p) => p.stock_actual },
-        { titulo: "Stock mínimo", ancho: 12, tipo: "cantidad", valor: (p) => p.stock_minimo },
+        { titulo: "SKU", ancho: 14, tipo: "texto", valor: (f) => f.p.codigo ?? "" },
+        { titulo: "Producto", ancho: 32, tipo: "texto", valor: (f) => f.p.nombre },
+        { titulo: "Categoría", ancho: 16, tipo: "texto", valor: (f) => f.p.categoria ?? "" },
+        { titulo: "Stock al corte", ancho: 11, tipo: "cantidad", valor: (f) => f.p.stock_actual },
+        { titulo: "Stock mínimo", ancho: 10, tipo: "cantidad", valor: (f) => f.p.stock_minimo },
         {
           titulo: "Bajo mínimo",
-          ancho: 11,
+          ancho: 9,
           tipo: "texto",
-          valor: (p) => (p.bajo_minimo ? "Sí" : "No"),
+          valor: (f) => (f.p.bajo_minimo ? "Sí" : "No"),
         },
-        { titulo: "Costo USD", ancho: 13, tipo: "usd", valor: (p) => p.costo_usd },
-        { titulo: "Precio USD", ancho: 13, tipo: "usd", valor: (p) => p.precio_usd },
+        { titulo: "Costo USD", ancho: 12, tipo: "usd", valor: (f) => f.p.costo_usd },
+        {
+          titulo: "Impuesto",
+          ancho: 10,
+          tipo: "texto",
+          valor: (f) => (f.precios.gravado ? `IVA ${ivaPct}%` : "Exento"),
+        },
+        { titulo: "Precio sin IVA USD", ancho: 13, tipo: "usd", valor: (f) => f.precios.sinIvaUsd },
+        { titulo: "IVA USD", ancho: 11, tipo: "usd", valor: (f) => f.precios.ivaUsd },
+        { titulo: "Precio con IVA USD", ancho: 13, tipo: "usd", valor: (f) => f.precios.conIvaUsd },
+        { titulo: "Precio sin IVA Bs", ancho: 15, tipo: "bs", valor: (f) => f.precios.sinIvaBs },
+        { titulo: "IVA Bs", ancho: 13, tipo: "bs", valor: (f) => f.precios.ivaBs },
+        { titulo: "Precio con IVA Bs", ancho: 15, tipo: "bs", valor: (f) => f.precios.conIvaBs },
         {
           titulo: "Margen %",
-          ancho: 11,
+          ancho: 9,
           tipo: "pct",
-          valor: (p) => (p.precio_usd > 0 ? (p.precio_usd - p.costo_usd) / p.precio_usd : null),
+          valor: (f) =>
+            f.p.precio_usd > 0 ? (f.p.precio_usd - f.p.costo_usd) / f.p.precio_usd : null,
         },
         {
           titulo: "Valor costo USD",
-          ancho: 16,
+          ancho: 14,
           tipo: "usd",
-          valor: (p) => r2(p.valor_costo_total),
+          valor: (f) => r2(f.p.valor_costo_total),
         },
-        {
-          titulo: "Valor venta USD",
-          ancho: 16,
-          tipo: "usd",
-          valor: (p) => r2(p.valor_venta_total),
-        },
+        { titulo: "Valor venta sin IVA USD", ancho: 15, tipo: "usd", valor: (f) => f.valorSinIva },
+        { titulo: "IVA del stock USD", ancho: 13, tipo: "usd", valor: (f) => f.ivaStock },
+        { titulo: "Valor venta con IVA USD", ancho: 15, tipo: "usd", valor: (f) => f.valorConIva },
+        { titulo: "Valor venta con IVA Bs", ancho: 17, tipo: "bs", valor: (f) => f.valorConIvaBs },
       ],
       totales: [
         "TOTALES",
@@ -238,14 +293,23 @@ export async function GET(request: NextRequest) {
         null,
         null,
         null,
-        Math.round(inventario.valorCostoUsd * 100) / 100,
-        Math.round(inventario.valorVentaUsd * 100) / 100,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        r2(inventario.valorCostoUsd),
+        sumar(filas.map((f) => f.valorSinIva)),
+        sumar(filas.map((f) => f.ivaStock)),
+        totalConIva,
+        tasa ? r2(totalConIva * tasa) : null,
       ],
     });
 
-    return respuestaXlsx(await wb.xlsx.writeBuffer(), `inventario_${hoy}.xlsx`);
+    return respuestaXlsx(await wb.xlsx.writeBuffer(), `inventario_${fechaCorte}.xlsx`);
   } else if (tipo === "pdf") {
-    const rango = desde && hasta ? { desde, hasta } : rangoPreset("mes", tz);
+    const { rango } = resolverRangoReporte({ desde, hasta }, tz);
     const usdFmt = new Intl.NumberFormat("es-VE", { style: "currency", currency: "USD" });
     const fmt = (v: number) => usdFmt.format(v);
 
