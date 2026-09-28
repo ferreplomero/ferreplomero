@@ -11,7 +11,8 @@ import { parseMetodosPago } from "@/lib/minimarket/metodos-pago";
 import { getGastoOperativo } from "@/lib/minimarket/data/ganancias";
 import { getImpactoCajaGasto, getSesionAbierta } from "@/lib/minimarket/data/caja";
 import { getSucursalActiva } from "@/lib/minimarket/sucursal-acceso";
-import { listCuentasBancarias } from "@/lib/minimarket/data/bancos";
+import { getImpactoCuentaPorReferencia, listCuentasBancarias } from "@/lib/minimarket/data/bancos";
+import { getMontoNativoRegistrado } from "@/lib/minimarket/monto-nativo";
 import { listCategoriasMovimiento } from "@/lib/minimarket/data/categorias-movimiento";
 import { actualizarGastoOperativo } from "../../actions";
 import { GastoForm } from "../../gasto-form";
@@ -39,7 +40,7 @@ export default async function EditarGastoPage({ params }: Props) {
   const supabase = await createClient();
   const { activa: sucursalActiva } = await getSucursalActiva(supabase, tenantId, session.user.id);
 
-  const [gasto, tasa, tz, configRes, sesion, impacto, cuentasBancarias, categorias] =
+  const [gasto, tasa, tz, configRes, sesion, impacto, cuentasBancarias, categorias, impactoCuenta] =
     await Promise.all([
       getGastoOperativo(supabase, tenantId, id),
       getTasaVigente(supabase, tenantId),
@@ -55,9 +56,22 @@ export default async function EditarGastoPage({ params }: Props) {
       getImpactoCajaGasto(supabase, tenantId, id),
       listCuentasBancarias(supabase, tenantId),
       listCategoriasMovimiento(supabase, tenantId, "gasto"),
+      getImpactoCuentaPorReferencia(supabase, tenantId, id),
     ]);
 
   if (!gasto) notFound();
+
+  // Monto exacto que ya refleja Caja/Bancos, en la moneda nativa del método —
+  // precarga del campo "monto" (nunca monto_usd reconvertido con la tasa de hoy).
+  const montoNativoInicial = gasto.metodo_pago
+    ? await getMontoNativoRegistrado(
+        supabase,
+        tenantId,
+        { metodo_pago: gasto.metodo_pago, monto_usd: gasto.monto_usd, fecha: gasto.fecha },
+        impacto.neto,
+        impactoCuenta,
+      )
+    : null;
 
   const metodosPago = parseMetodosPago(configRes.data?.metodos_pago);
   const montoMetodoBloqueado = Boolean(impacto.sesionId) && !impacto.sesionAbierta;
@@ -86,6 +100,7 @@ export default async function EditarGastoPage({ params }: Props) {
         cajaAbierta={Boolean(sesion)}
         cuentasBancarias={cuentasBancarias}
         montoMetodoBloqueado={montoMetodoBloqueado}
+        montoNativoInicial={montoNativoInicial}
       />
     </div>
   );

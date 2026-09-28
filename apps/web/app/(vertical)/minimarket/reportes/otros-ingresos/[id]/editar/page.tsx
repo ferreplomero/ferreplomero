@@ -11,7 +11,8 @@ import { parseMetodosPago } from "@/lib/minimarket/metodos-pago";
 import { getOtroIngreso } from "@/lib/minimarket/data/ganancias";
 import { getImpactoCajaGasto, getSesionAbierta } from "@/lib/minimarket/data/caja";
 import { getSucursalActiva } from "@/lib/minimarket/sucursal-acceso";
-import { listCuentasBancarias } from "@/lib/minimarket/data/bancos";
+import { getImpactoCuentaPorReferencia, listCuentasBancarias } from "@/lib/minimarket/data/bancos";
+import { getMontoNativoRegistrado } from "@/lib/minimarket/monto-nativo";
 import { listCategoriasMovimiento } from "@/lib/minimarket/data/categorias-movimiento";
 import { actualizarOtroIngreso } from "../../actions";
 import { OtroIngresoForm } from "../../otro-ingreso-form";
@@ -39,25 +40,51 @@ export default async function EditarOtroIngresoPage({ params }: Props) {
   const supabase = await createClient();
   const { activa: sucursalActiva } = await getSucursalActiva(supabase, tenantId, session.user.id);
 
-  const [otroIngreso, tasa, tz, configRes, sesion, impacto, cuentasBancarias, categorias] =
-    await Promise.all([
-      getOtroIngreso(supabase, tenantId, id),
-      getTasaVigente(supabase, tenantId),
-      getTimezoneNegocio(supabase, tenantId),
-      supabase
-        .from("mm_config_negocio")
-        .select("metodos_pago")
-        .eq("tenant_id", tenantId)
-        .maybeSingle(),
-      sucursalActiva
-        ? getSesionAbierta(supabase, tenantId, sucursalActiva.id)
-        : Promise.resolve(null),
-      getImpactoCajaGasto(supabase, tenantId, id),
-      listCuentasBancarias(supabase, tenantId),
-      listCategoriasMovimiento(supabase, tenantId, "otro_ingreso"),
-    ]);
+  const [
+    otroIngreso,
+    tasa,
+    tz,
+    configRes,
+    sesion,
+    impacto,
+    cuentasBancarias,
+    categorias,
+    impactoCuenta,
+  ] = await Promise.all([
+    getOtroIngreso(supabase, tenantId, id),
+    getTasaVigente(supabase, tenantId),
+    getTimezoneNegocio(supabase, tenantId),
+    supabase
+      .from("mm_config_negocio")
+      .select("metodos_pago")
+      .eq("tenant_id", tenantId)
+      .maybeSingle(),
+    sucursalActiva
+      ? getSesionAbierta(supabase, tenantId, sucursalActiva.id)
+      : Promise.resolve(null),
+    getImpactoCajaGasto(supabase, tenantId, id),
+    listCuentasBancarias(supabase, tenantId),
+    listCategoriasMovimiento(supabase, tenantId, "otro_ingreso"),
+    getImpactoCuentaPorReferencia(supabase, tenantId, id),
+  ]);
 
   if (!otroIngreso) notFound();
+
+  // Monto exacto que ya refleja Caja/Bancos, en la moneda nativa del método —
+  // precarga del campo "monto" (nunca monto_usd reconvertido con la tasa de hoy).
+  const montoNativoInicial = otroIngreso.metodo_pago
+    ? await getMontoNativoRegistrado(
+        supabase,
+        tenantId,
+        {
+          metodo_pago: otroIngreso.metodo_pago,
+          monto_usd: otroIngreso.monto_usd,
+          fecha: otroIngreso.fecha,
+        },
+        impacto.neto,
+        impactoCuenta,
+      )
+    : null;
 
   const metodosPago = parseMetodosPago(configRes.data?.metodos_pago);
   const montoMetodoBloqueado = Boolean(impacto.sesionId) && !impacto.sesionAbierta;
@@ -86,6 +113,7 @@ export default async function EditarOtroIngresoPage({ params }: Props) {
         cajaAbierta={Boolean(sesion)}
         cuentasBancarias={cuentasBancarias}
         montoMetodoBloqueado={montoMetodoBloqueado}
+        montoNativoInicial={montoNativoInicial}
       />
     </div>
   );

@@ -6,11 +6,11 @@ import { useRouter } from "next/navigation";
 import { AlertCircle, Info, Lock, PlusCircle, Receipt } from "lucide-react";
 import { Button, Card, Dialog, DialogContent, Input, Label, toast } from "@arkiteq/ui";
 import { SubmitButton } from "@/components/auth/submit-button";
-import { CampoMontoDual } from "@/components/minimarket/shared/campo-monto-dual";
+import { CampoMontoNativo } from "@/components/minimarket/shared/campo-monto-nativo";
 import { CategoriaMovimientoForm } from "@/components/minimarket/shared/categoria-movimiento-form-cargador";
 import { METODOS_GASTO } from "@/lib/minimarket/constants";
 import { esEfectivo } from "@/lib/minimarket/pos-calc";
-import { esMetodoConCuenta } from "@/lib/minimarket/bancos";
+import { esMetodoConCuenta, monedaNativaMetodoPago } from "@/lib/minimarket/bancos";
 import { getCuentaPredeterminada } from "@/lib/minimarket/data/bancos";
 import type { MetodoPagoConfigItem } from "@/lib/minimarket/metodos-pago";
 import type {
@@ -40,6 +40,9 @@ interface GastoFormProps {
    * quedan bloqueados (solo se puede corregir descripción/categoría/fecha/notas).
    */
   montoMetodoBloqueado?: boolean;
+  /** Al editar: monto exacto ya reflejado en Caja/Bancos, en la moneda nativa
+   * del método guardado (`getMontoNativoRegistrado`). */
+  montoNativoInicial?: number | null;
 }
 
 const SELECT_CLASS =
@@ -55,10 +58,11 @@ export function GastoForm({
   cajaAbierta,
   cuentasBancarias,
   montoMetodoBloqueado,
+  montoNativoInicial,
 }: GastoFormProps) {
   const router = useRouter();
   const [state, formAction] = useActionState<GastoResult, FormData>(action, {});
-  const [montoUsd, setMontoUsd] = React.useState(gasto ? String(gasto.monto_usd) : "");
+  const [fecha, setFecha] = React.useState(gasto?.fecha ?? hoy);
   const [cuentaBancariaId, setCuentaBancariaId] = React.useState(gasto?.cuenta_bancaria_id ?? "");
 
   // ---- Categoría (con alta rápida "+ Nueva categoría" sin salir del formulario) ----
@@ -93,6 +97,18 @@ export function GastoForm({
         metodosActivos[0]?.value ??
         "efectivo_bs");
   const [metodoPago, setMetodoPago] = React.useState<MmMetodoPago>(metodoInicial);
+  const monedaNativa = monedaNativaMetodoPago(metodoPago);
+
+  // El monto se teclea EXACTO en la moneda nativa del método (CLAUDE.md
+  // punto 6) — al editar, se precarga con el monto exacto que ya refleja
+  // Caja/Bancos (`montoNativoInicial`, calculado en el servidor), nunca
+  // reconvirtiendo monto_usd con la tasa de hoy. Si el método guardado ya no
+  // está activo (metodoInicial distinto), el número no aplica: queda vacío.
+  const [monto, setMonto] = React.useState(() =>
+    gasto && montoNativoInicial != null && gasto.metodo_pago === metodoInicial
+      ? String(montoNativoInicial)
+      : "",
+  );
 
   React.useEffect(() => {
     if (state.ok && state.gastoId) {
@@ -103,16 +119,21 @@ export function GastoForm({
   // Cuenta bancaria de la que sale el dinero de un gasto digital — mismo
   // patrón que abono-form.tsx: se resetea al CAMBIAR de método, se muestra un
   // selector solo si hay más de una cuenta activa para ese método, y si no se
-  // elige ninguna se usa la predeterminada. `esPrimerRender` evita que este
+  // elige ninguna se usa la predeterminada. `metodoPrevio` evita que este
   // efecto borre la cuenta ya guardada al editar un gasto existente (el
   // efecto también corre una vez al montar).
-  const esPrimerRender = React.useRef(true);
+  // Compara contra el método previo (no un flag de "primer render"): en
+  // StrictMode el efecto corre dos veces al montar y un flag dejaría pasar la
+  // segunda, borrando el monto y la cuenta precargados al editar.
+  const metodoPrevio = React.useRef(metodoPago);
   React.useEffect(() => {
-    if (esPrimerRender.current) {
-      esPrimerRender.current = false;
-      return;
-    }
+    if (metodoPrevio.current === metodoPago) return;
+    metodoPrevio.current = metodoPago;
     setCuentaBancariaId("");
+    // El monto tecleado pierde sentido si cambia la moneda nativa del método
+    // (ej. de Bs a USD) — se limpia para que el usuario lo vuelva a teclear
+    // en la moneda correcta, nunca reinterpretar el mismo número.
+    setMonto("");
   }, [metodoPago]);
   const cuentasDelMetodo = React.useMemo(
     () => cuentasBancarias.filter((c) => c.metodo === metodoPago && c.activa),
@@ -219,7 +240,8 @@ export function GastoForm({
               id="fecha"
               name="fecha"
               type="date"
-              defaultValue={gasto?.fecha ?? hoy}
+              value={fecha}
+              onChange={(e) => setFecha(e.target.value)}
               required
             />
           </div>
@@ -311,31 +333,31 @@ export function GastoForm({
             <Label>Monto del gasto (USD)</Label>
             <p className="border-border bg-surface-2 text-heading flex h-10 items-center rounded-md border px-3 text-sm tabular-nums">
               {new Intl.NumberFormat("es-VE", { style: "currency", currency: "USD" }).format(
-                gasto ? Number(gasto.monto_usd) : Number(montoUsd) || 0,
+                gasto ? Number(gasto.monto_usd) : 0,
               )}
             </p>
-            <input
-              type="hidden"
-              name="monto_usd"
-              value={gasto ? String(gasto.monto_usd) : montoUsd}
-            />
+            <input type="hidden" name="monto" value="1" />
           </div>
         ) : (
-          <CampoMontoDual
-            id="monto_usd"
+          <CampoMontoNativo
+            id="monto"
+            name="monto"
             label={
               <>
-                Monto del gasto (USD) <span className="text-danger">*</span>
+                Monto del gasto ({monedaNativa === "USD" ? "USD" : "Bs"}){" "}
+                <span className="text-danger">*</span>
               </>
             }
-            name="monto_usd"
-            valorUsd={montoUsd}
-            onChangeUsd={setMontoUsd}
-            tasa={tasa}
+            moneda={monedaNativa}
+            value={monto}
+            onChange={setMonto}
+            fecha={fecha}
+            hoy={hoy}
+            tasaHoy={tasa || null}
             required
           />
         )}
-        {fe.monto_usd ? <p className="text-danger -mt-2 text-xs">{fe.monto_usd}</p> : null}
+        {fe.monto ? <p className="text-danger -mt-2 text-xs">{fe.monto}</p> : null}
 
         <div className="space-y-1.5">
           <Label htmlFor="notas">Notas (opcional)</Label>

@@ -34,6 +34,18 @@ export function monedaNativaCuenta(metodo: MetodoConCuenta): "USD" | "VES" {
   return metodo === "zelle" ? "USD" : "VES";
 }
 
+/**
+ * Moneda NATIVA de cualquier método de pago (efectivo o con cuenta) — la
+ * moneda en la que el usuario debe teclear el monto para que quede exacto en
+ * Caja/Bancos, sin conversión de ida y vuelta (CLAUDE.md punto 6). Efectivo
+ * USD y Zelle son las únicas en dólares; el resto se recibe/paga en bolívares.
+ */
+export function monedaNativaMetodoPago(metodo: MmMetodoPago): "USD" | "VES" {
+  if (metodo === "efectivo_usd") return "USD";
+  if (esMetodoConCuenta(metodo)) return monedaNativaCuenta(metodo);
+  return "VES";
+}
+
 /** Pago móvil, transferencia y Zelle tienen sentido como destino de un vuelto
  * digital: son medios "push" (el negocio envía el dinero, USD por Zelle o Bs
  * por los otros dos). Tarjeta/punto no se puede usar para devolver vuelto —

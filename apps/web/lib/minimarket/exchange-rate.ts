@@ -112,6 +112,73 @@ export async function getTasaVigente(
   return getTasaPorTipo(client, tenantId, tipo);
 }
 
+/**
+ * Tasa vigente a una fecha específica (no la más reciente): la última fila de
+ * ese tipo con `fecha <= fecha` dada. Si no hay ninguna anterior (la fecha es
+ * previa a que el negocio empezara a registrar tasas), cae a la más antigua
+ * disponible. Usada para congelar la tasa correcta de un movimiento de dinero
+ * con fecha pasada (otros ingresos/gastos) — nunca la de HOY.
+ */
+export async function getTasaEnFecha(
+  client: Client,
+  tenantId: string,
+  tipo: TipoTasa,
+  fecha: string,
+): Promise<TasaVigente | null> {
+  const { data } = await client
+    .from("mm_tasas_cambio")
+    .select("valor, fuente, fecha, created_at")
+    .eq("tenant_id", tenantId)
+    .eq("tipo", tipo)
+    .lte("fecha", fecha)
+    .order("fecha", { ascending: false })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (data) {
+    return {
+      valor: Number(data.valor),
+      fuente: data.fuente,
+      fecha: data.fecha,
+      created_at: data.created_at,
+    };
+  }
+
+  const { data: masAntigua } = await client
+    .from("mm_tasas_cambio")
+    .select("valor, fuente, fecha, created_at")
+    .eq("tenant_id", tenantId)
+    .eq("tipo", tipo)
+    .order("fecha", { ascending: true })
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (!masAntigua) return null;
+  return {
+    valor: Number(masAntigua.valor),
+    fuente: masAntigua.fuente,
+    fecha: masAntigua.fecha,
+    created_at: masAntigua.created_at,
+  };
+}
+
+/**
+ * Tasa a congelar para un movimiento de dinero con la `fecha` que eligió el
+ * usuario: si es hoy (o una fecha futura), la vigente normal; si es una fecha
+ * PASADA, la tasa histórica de ese día (`getTasaEnFecha`) — corrige el bug
+ * donde un movimiento con fecha pasada quedaba registrado con la tasa de HOY.
+ */
+export async function getTasaParaFecha(
+  client: Client,
+  tenantId: string,
+  fecha: string,
+): Promise<TasaVigente | null> {
+  const tipo = await getTipoPreferido(client, tenantId);
+  const hoy = new Date().toISOString().slice(0, 10);
+  if (fecha >= hoy) return getTasaPorTipo(client, tenantId, tipo);
+  return getTasaEnFecha(client, tenantId, tipo, fecha);
+}
+
 export interface TasaHistorial {
   id: string;
   fecha: string;

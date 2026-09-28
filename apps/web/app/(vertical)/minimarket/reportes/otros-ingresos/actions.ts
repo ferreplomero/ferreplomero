@@ -5,9 +5,15 @@ import { revalidatePath } from "next/cache";
 import { getSessionContext } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { requirePermisoAccion } from "@/lib/minimarket/permisos";
-import { getTasaVigente } from "@/lib/minimarket/exchange-rate";
+import { getTasaParaFecha } from "@/lib/minimarket/exchange-rate";
+import { getMontoNativoRegistrado } from "@/lib/minimarket/monto-nativo";
 import { esEfectivo } from "@/lib/minimarket/pos-calc";
-import { esMetodoConCuenta } from "@/lib/minimarket/bancos";
+import {
+  esMetodoConCuenta,
+  monedaNativaCuenta,
+  monedaNativaMetodoPago,
+  type MetodoConCuenta,
+} from "@/lib/minimarket/bancos";
 import { METODOS_OTRO_INGRESO_IDS } from "@/lib/minimarket/constants";
 import {
   getImpactoCajaGasto,
@@ -53,7 +59,7 @@ async function contexto() {
 const otroIngresoSchema = z.object({
   descripcion: z.string().trim().min(1, "El concepto es obligatorio.").max(160),
   categoria_id: z.string().uuid({ message: "Selecciona una categoría." }),
-  monto_usd: z.coerce
+  monto: z.coerce
     .number({ invalid_type_error: "Monto inválido." })
     .positive("El monto debe ser mayor a cero."),
   fecha: z.string().min(1, "La fecha es obligatoria."),
@@ -66,21 +72,41 @@ const otroIngresoSchema = z.object({
 });
 
 /**
- * Monto y moneda que debe ENTRAR a la CAJA física por un otro-ingreso en
- * efectivo — mismo criterio que `montoCajaParaGasto` (gastos/actions.ts).
+ * Tasa a congelar para este ingreso (histórica si `fecha` es pasada) y monto
+ * canónico en USD para `mm_otros_ingresos.monto_usd` (columna de reporte) —
+ * SOLO se usa tasa cuando la moneda nativa del método es Bs; si es USD
+ * (efectivo_usd/zelle) el canónico es el monto tecleado, exacto, sin tocar
+ * la tasa (CLAUDE.md punto 6: el monto colocado se guarda exacto).
  */
-async function montoCajaParaIngreso(
+async function resolverTasaYMontoUsd(
   supabase: Awaited<ReturnType<typeof createClient>>,
   tenantId: string,
   metodo: MmMetodoPago,
-  montoUsd: number,
-): Promise<{ monto: number; moneda: "USD" | "VES" } | { error: string }> {
-  if (metodo === "efectivo_usd") return { monto: montoUsd, moneda: "USD" };
-  const tasa = await getTasaVigente(supabase, tenantId);
+  montoNativo: number,
+  fecha: string,
+): Promise<{ montoUsd: number; tasa: number | null } | { error: string }> {
+  const monedaNativa = monedaNativaMetodoPago(metodo);
+  if (monedaNativa === "USD") return { montoUsd: montoNativo, tasa: null };
+  const tasa = await getTasaParaFecha(supabase, tenantId, fecha);
   if (!tasa || tasa.valor <= 0) {
-    return { error: "No hay tasa de cambio registrada; no se puede convertir a bolívares." };
+    return { error: "No hay tasa de cambio registrada; no se puede registrar el ingreso." };
   }
-  return { monto: redondear(montoUsd * tasa.valor), moneda: "VES" };
+  return { montoUsd: redondear(montoNativo / tasa.valor), tasa: tasa.valor };
+}
+
+/**
+ * Monto y moneda que debe ENTRAR a la CAJA física por un otro-ingreso en
+ * efectivo: el monto tecleado por el usuario, EXACTO, en la moneda nativa del
+ * método (USD para efectivo_usd, Bs para efectivo_bs) — sin convertir ni
+ * reconvertir con la tasa, así el historial de caja siempre coincide con lo
+ * que se colocó (CLAUDE.md punto 6). Mismo criterio en `montoCajaParaGasto`
+ * (gastos/actions.ts).
+ */
+function montoCajaParaIngreso(
+  metodo: MmMetodoPago,
+  montoNativo: number,
+): { monto: number; moneda: "USD" | "VES" } {
+  return { monto: montoNativo, moneda: monedaNativaMetodoPago(metodo) };
 }
 
 /** Igual criterio que `resolverCuentaGasto` (gastos/actions.ts): la cuenta
@@ -108,18 +134,29 @@ async function resolverCuentaIngreso(
   return { cuentaId: cuenta.id };
 }
 
-/** Monto en USD y Bs que debe entrar a la CUENTA BANCARIA — mismo criterio
- * que `montoCuentaParaGasto` (gastos/actions.ts). */
+/**
+ * Monto en USD y Bs que debe entrar a la CUENTA BANCARIA: la columna de la
+ * moneda NATIVA de esa cuenta guarda el monto tecleado EXACTO; la otra
+ * columna es solo una conversión de referencia con la tasa congelada de la
+ * fecha del movimiento — mismo criterio que ya usa
+ * `registrarMovimientoCuentaManual` (bancos/actions.ts) y
+ * `montoCuentaParaGasto` (gastos/actions.ts).
+ */
 async function montoCuentaParaIngreso(
   supabase: Awaited<ReturnType<typeof createClient>>,
   tenantId: string,
-  montoUsd: number,
+  metodo: MetodoConCuenta,
+  montoNativo: number,
+  fecha: string,
 ): Promise<{ montoUsd: number; montoBs: number; tasa: number } | { error: string }> {
-  const tasa = await getTasaVigente(supabase, tenantId);
+  const tasa = await getTasaParaFecha(supabase, tenantId, fecha);
   if (!tasa || tasa.valor <= 0) {
     return { error: "No hay tasa de cambio registrada; no se puede registrar el ingreso." };
   }
-  return { montoUsd, montoBs: redondear(montoUsd * tasa.valor), tasa: tasa.valor };
+  const monedaNativa = monedaNativaCuenta(metodo);
+  const montoUsd = monedaNativa === "USD" ? montoNativo : redondear(montoNativo / tasa.valor);
+  const montoBs = monedaNativa === "VES" ? montoNativo : redondear(montoNativo * tasa.valor);
+  return { montoUsd, montoBs, tasa: tasa.valor };
 }
 
 export async function crearOtroIngreso(
@@ -140,7 +177,7 @@ export async function crearOtroIngreso(
   const parsed = otroIngresoSchema.safeParse({
     descripcion: formData.get("descripcion"),
     categoria_id: formData.get("categoria_id"),
-    monto_usd: formData.get("monto_usd"),
+    monto: formData.get("monto"),
     fecha: formData.get("fecha"),
     notas: formData.get("notas") ?? "",
     metodo_pago: formData.get("metodo_pago"),
@@ -150,7 +187,7 @@ export async function crearOtroIngreso(
     return { fieldErrors: fieldErrors(parsed.error), error: parsed.error.issues[0]?.message };
   }
   const d = parsed.data;
-  const montoUsd = redondear(d.monto_usd);
+  const montoNativo = redondear(d.monto);
 
   const { count: categoriaValida } = await ctx.supabase
     .from("mm_categorias_movimiento")
@@ -165,6 +202,16 @@ export async function crearOtroIngreso(
       fieldErrors: { categoria_id: "Selecciona una categoría válida." },
     };
   }
+
+  const canonico = await resolverTasaYMontoUsd(
+    ctx.supabase,
+    ctx.tenantId,
+    d.metodo_pago,
+    montoNativo,
+    d.fecha,
+  );
+  if ("error" in canonico) return { error: canonico.error, fieldErrors: { monto: canonico.error } };
+  const montoUsd = canonico.montoUsd;
 
   let sesionId: string | null = null;
   let montoCaja: { monto: number; moneda: "USD" | "VES" } | null = null;
@@ -192,10 +239,8 @@ export async function crearOtroIngreso(
         fieldErrors: { metodo_pago: "Requiere caja abierta." },
       };
     }
-    const res = await montoCajaParaIngreso(ctx.supabase, ctx.tenantId, d.metodo_pago, montoUsd);
-    if ("error" in res) return { error: res.error, fieldErrors: { metodo_pago: res.error } };
     sesionId = sesion.id;
-    montoCaja = res;
+    montoCaja = montoCajaParaIngreso(d.metodo_pago, montoNativo);
   } else if (esMetodoConCuenta(d.metodo_pago)) {
     const cuentaRes = await resolverCuentaIngreso(
       ctx.supabase,
@@ -206,7 +251,13 @@ export async function crearOtroIngreso(
     if ("error" in cuentaRes) {
       return { error: cuentaRes.error, fieldErrors: { cuenta_bancaria_id: cuentaRes.error } };
     }
-    const montoRes = await montoCuentaParaIngreso(ctx.supabase, ctx.tenantId, montoUsd);
+    const montoRes = await montoCuentaParaIngreso(
+      ctx.supabase,
+      ctx.tenantId,
+      d.metodo_pago,
+      montoNativo,
+      d.fecha,
+    );
     if ("error" in montoRes)
       return { error: montoRes.error, fieldErrors: { metodo_pago: montoRes.error } };
     cuentaId = cuentaRes.cuentaId;
@@ -295,7 +346,7 @@ export async function actualizarOtroIngreso(
   const parsed = otroIngresoSchema.safeParse({
     descripcion: formData.get("descripcion"),
     categoria_id: formData.get("categoria_id"),
-    monto_usd: formData.get("monto_usd"),
+    monto: formData.get("monto"),
     fecha: formData.get("fecha"),
     notas: formData.get("notas") ?? "",
     metodo_pago: formData.get("metodo_pago"),
@@ -305,7 +356,7 @@ export async function actualizarOtroIngreso(
     return { fieldErrors: fieldErrors(parsed.error), error: parsed.error.issues[0]?.message };
   }
   const d = parsed.data;
-  const montoUsd = redondear(d.monto_usd);
+  const montoNativo = redondear(d.monto);
 
   const { count: categoriaValida } = await ctx.supabase
     .from("mm_categorias_movimiento")
@@ -323,7 +374,7 @@ export async function actualizarOtroIngreso(
 
   const { data: actual } = await ctx.supabase
     .from("mm_otros_ingresos")
-    .select("monto_usd, metodo_pago, cuenta_bancaria_id")
+    .select("monto_usd, metodo_pago, cuenta_bancaria_id, fecha")
     .eq("tenant_id", ctx.tenantId)
     .eq("id", otroIngresoId)
     .maybeSingle();
@@ -335,6 +386,45 @@ export async function actualizarOtroIngreso(
     ctx.tenantId,
     otroIngresoId,
   );
+
+  // Bloqueado: reutiliza el monto_usd YA guardado tal cual, sin reconvertir
+  // desde el monto nativo tecleado — evita que un redondeo de ida y vuelta
+  // (Bs -> USD) dispare un falso "cambió el monto" y bloquee una edición que
+  // solo tocaba concepto/fecha/notas (CLAUDE.md punto 6: nunca alterar un
+  // monto ya guardado por una conversión).
+  const bloqueadoServer = Boolean(impacto.sesionId) && !impacto.sesionAbierta;
+  let montoUsd: number;
+  // Mismo método y mismo monto nativo que ya refleja el ledger: el monto NO
+  // cambió — se conserva el monto_usd guardado, sin reconvertir con otra tasa
+  // (reconvertir daría un falso "cambió el monto" y reemitiría el movimiento
+  // de caja/banco con un valor distinto al que se colocó).
+  const montoNativoActual =
+    actual.metodo_pago === d.metodo_pago
+      ? await getMontoNativoRegistrado(
+          ctx.supabase,
+          ctx.tenantId,
+          actual,
+          impacto.neto,
+          impactoCuenta,
+        )
+      : null;
+  const mismoMonto =
+    montoNativoActual !== null && Math.abs(montoNativoActual - montoNativo) <= 0.001;
+  if (bloqueadoServer || mismoMonto) {
+    montoUsd = Number(actual.monto_usd);
+  } else {
+    const canonico = await resolverTasaYMontoUsd(
+      ctx.supabase,
+      ctx.tenantId,
+      d.metodo_pago,
+      montoNativo,
+      d.fecha,
+    );
+    if ("error" in canonico)
+      return { error: canonico.error, fieldErrors: { monto: canonico.error } };
+    montoUsd = canonico.montoUsd;
+  }
+
   const cambioMontoOMetodo =
     Math.abs(Number(actual.monto_usd) - montoUsd) > 0.001 || actual.metodo_pago !== d.metodo_pago;
   const cambioCuenta =
@@ -344,13 +434,13 @@ export async function actualizarOtroIngreso(
 
   // Mismo criterio que un gasto: un ingreso que ya pasó por un cierre de caja
   // no puede cambiar de monto/método (rompería un arqueo ya validado).
-  if (cambioMontoOMetodo && impacto.sesionId && !impacto.sesionAbierta) {
+  if (cambioMontoOMetodo && bloqueadoServer) {
     return {
       error:
         "Este ingreso ya pasó por un cierre de caja: el monto y el método no se pueden modificar. " +
         "Solo puedes corregir el concepto, la fecha o las notas.",
       fieldErrors: {
-        monto_usd: "Bloqueado: caja ya cerrada.",
+        monto: "Bloqueado: caja ya cerrada.",
         metodo_pago: "Bloqueado: caja ya cerrada.",
       },
     };
@@ -376,10 +466,8 @@ export async function actualizarOtroIngreso(
         fieldErrors: { metodo_pago: "Requiere caja abierta." },
       };
     }
-    const res = await montoCajaParaIngreso(ctx.supabase, ctx.tenantId, d.metodo_pago, montoUsd);
-    if ("error" in res) return { error: res.error, fieldErrors: { monto_usd: res.error } };
     sesionIdNueva = sesion.id;
-    montoCajaNuevo = res;
+    montoCajaNuevo = montoCajaParaIngreso(d.metodo_pago, montoNativo);
   }
 
   let cuentaIdNueva: string | null = null;
@@ -394,9 +482,15 @@ export async function actualizarOtroIngreso(
     if ("error" in cuentaRes) {
       return { error: cuentaRes.error, fieldErrors: { cuenta_bancaria_id: cuentaRes.error } };
     }
-    const montoRes = await montoCuentaParaIngreso(ctx.supabase, ctx.tenantId, montoUsd);
+    const montoRes = await montoCuentaParaIngreso(
+      ctx.supabase,
+      ctx.tenantId,
+      d.metodo_pago,
+      montoNativo,
+      d.fecha,
+    );
     if ("error" in montoRes)
-      return { error: montoRes.error, fieldErrors: { monto_usd: montoRes.error } };
+      return { error: montoRes.error, fieldErrors: { monto: montoRes.error } };
     cuentaIdNueva = cuentaRes.cuentaId;
     montoCuentaNuevo = montoRes;
   }
