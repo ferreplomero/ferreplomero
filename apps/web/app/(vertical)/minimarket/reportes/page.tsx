@@ -34,6 +34,12 @@ import { ReportesTabs } from "./reportes-tabs";
 
 export const metadata: Metadata = { title: "Reportes" };
 
+/** Filas por página del detalle de inventario en el resumen (la lista
+ * completa se descarga en Excel). */
+const INVENTARIO_POR_PAGINA = 10;
+
+type FiltroInventario = "todos" | "bajo" | "stock";
+
 const METODO_LABEL: Record<string, string> = {
   efectivo_bs: "Efectivo Bs",
   efectivo_usd: "Efectivo USD",
@@ -48,10 +54,12 @@ const METODO_LABEL: Record<string, string> = {
 export default async function ReportesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ periodo?: string }>;
+  searchParams: Promise<{ periodo?: string; inv?: string; inv_filtro?: string }>;
 }) {
   const sp = await searchParams;
   const periodo = (sp.periodo ?? "mes") as "hoy" | "semana" | "mes" | "mes-anterior";
+  const invFiltro: FiltroInventario =
+    sp.inv_filtro === "bajo" || sp.inv_filtro === "stock" ? sp.inv_filtro : "todos";
 
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
@@ -104,6 +112,35 @@ export default async function ReportesPage({
   ] as const;
 
   const periodoLabel = periodos.find((p) => p.key === periodo)?.label ?? "30 días";
+
+  // Detalle de inventario paginado y filtrado (solo la VISTA: las tarjetas y
+  // los totales siguen calculándose sobre todo el inventario).
+  const invFiltrados = inventario.items.filter((p) =>
+    invFiltro === "bajo" ? p.bajo_minimo : invFiltro === "stock" ? p.stock_actual > 0 : true,
+  );
+  const invPaginas = Math.max(1, Math.ceil(invFiltrados.length / INVENTARIO_POR_PAGINA));
+  const invPagina = Math.min(invPaginas, Math.max(1, Number.parseInt(sp.inv ?? "1", 10) || 1));
+  const invVisibles = invFiltrados.slice(
+    (invPagina - 1) * INVENTARIO_POR_PAGINA,
+    invPagina * INVENTARIO_POR_PAGINA,
+  );
+  const urlInventario = (cambios: { inv?: number; inv_filtro?: FiltroInventario }) => {
+    const q = new URLSearchParams({ periodo });
+    const filtro = cambios.inv_filtro ?? invFiltro;
+    if (filtro !== "todos") q.set("inv_filtro", filtro);
+    const pagina = cambios.inv ?? invPagina;
+    if (pagina > 1) q.set("inv", String(pagina));
+    return `/minimarket/reportes?${q.toString()}#inventario`;
+  };
+  const filtrosInventario: { key: FiltroInventario; label: string; n: number }[] = [
+    { key: "todos", label: "Todos", n: inventario.items.length },
+    { key: "bajo", label: "Bajo mínimo", n: inventario.productosBajoMinimo },
+    {
+      key: "stock",
+      label: "Con stock",
+      n: inventario.items.filter((p) => p.stock_actual > 0).length,
+    },
+  ];
 
   return (
     <div className="mx-auto max-w-5xl space-y-8">
@@ -255,10 +292,13 @@ export default async function ReportesPage({
           )}
         </Card>
 
-        {/* Productos más vendidos */}
-        <Card className="overflow-hidden p-0">
+        {/* Productos más vendidos — ancho completo: lleva SKU, precio unitario y margen */}
+        <Card className="overflow-hidden p-0 lg:col-span-2">
           <div className="border-border border-b px-4 py-3">
             <p className="text-heading text-sm font-medium">Top 10 — más vendidos</p>
+            <p className="text-muted-foreground text-xs">
+              Precio al que se vendió cada unidad · margen con el costo actual del producto
+            </p>
           </div>
           {masVendidos.length === 0 ? (
             <p className="text-muted-foreground px-4 py-8 text-center text-sm">
@@ -266,13 +306,15 @@ export default async function ReportesPage({
             </p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[480px] text-sm">
+              <table className="w-full min-w-[640px] text-sm">
                 <thead className="border-border text-muted-foreground border-b text-left text-xs uppercase tracking-wide">
                   <tr>
-                    <th className="px-4 py-2.5">#</th>
-                    <th className="px-4 py-2.5">Producto</th>
-                    <th className="px-4 py-2.5 text-right">Unidades</th>
-                    <th className="px-4 py-2.5 text-right">Ingreso</th>
+                    <th className="px-3 py-2.5">#</th>
+                    <th className="px-3 py-2.5">Producto</th>
+                    <th className="px-3 py-2.5 text-right">Unid.</th>
+                    <th className="px-3 py-2.5 text-right">Precio unit.</th>
+                    <th className="px-3 py-2.5 text-right">Ingreso</th>
+                    <th className="px-3 py-2.5 text-right">Margen</th>
                   </tr>
                 </thead>
                 <tbody className="divide-border divide-y">
@@ -281,13 +323,29 @@ export default async function ReportesPage({
                       key={p.producto_id ?? p.descripcion}
                       className="hover:bg-surface-2 transition-colors"
                     >
-                      <td className="text-muted-foreground px-4 py-2.5 tabular-nums">{i + 1}</td>
-                      <td className="text-heading px-4 py-2.5 font-medium">{p.descripcion}</td>
-                      <td className="text-muted-foreground px-4 py-2.5 text-right tabular-nums">
+                      <td className="text-muted-foreground px-3 py-2.5 tabular-nums">{i + 1}</td>
+                      <td className="px-3 py-2.5">
+                        <p className="text-heading font-medium">{p.descripcion}</p>
+                        <p className="text-muted-foreground text-xs">SKU: {p.codigo ?? "—"}</p>
+                      </td>
+                      <td className="text-muted-foreground px-3 py-2.5 text-right tabular-nums">
                         {p.unidades}
                       </td>
-                      <td className="text-heading px-4 py-2.5 text-right tabular-nums">
+                      <td className="text-muted-foreground px-3 py-2.5 text-right tabular-nums">
+                        {usd(p.precio_unitario_usd)}
+                      </td>
+                      <td className="text-heading px-3 py-2.5 text-right tabular-nums">
                         {usd(p.ingreso_usd)}
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums">
+                        <p
+                          className={`font-medium ${p.margen_usd < 0 ? "text-danger" : "text-heading"}`}
+                        >
+                          {usd(p.margen_usd)}
+                        </p>
+                        <p className="text-muted-foreground text-xs">
+                          {p.margen_pct === null ? "—" : `${p.margen_pct.toFixed(1)}%`}
+                        </p>
                       </td>
                     </tr>
                   ))}
@@ -298,7 +356,7 @@ export default async function ReportesPage({
         </Card>
 
         {/* Fiado y compras pendientes */}
-        <div className="space-y-4">
+        <div className="grid gap-4 lg:col-span-2 lg:grid-cols-2">
           <Card className="p-5">
             <div className="mb-3 flex items-center gap-2">
               <CreditCard className="text-muted-foreground size-4" />
@@ -404,7 +462,7 @@ export default async function ReportesPage({
       </Card>
 
       {/* Inventario — valorización */}
-      <section className="space-y-4">
+      <section id="inventario" className="scroll-mt-20 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="space-y-1">
             <h2 className="font-display text-heading text-lg font-semibold">Inventario actual</h2>
@@ -418,7 +476,7 @@ export default async function ReportesPage({
               className="border-border text-muted-foreground hover:text-heading inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
             >
               <Download className="size-3.5" aria-hidden />
-              Exportar CSV
+              Exportar Excel
             </a>
           </div>
         </div>
@@ -472,14 +530,25 @@ export default async function ReportesPage({
         {/* Tabla de inventario completa */}
         {inventario.items.length > 0 ? (
           <Card className="overflow-hidden p-0">
-            <div className="border-border flex items-center justify-between border-b px-4 py-3">
+            <div className="border-border flex flex-wrap items-center justify-between gap-2 border-b px-4 py-3">
               <p className="text-heading text-sm font-medium">Detalle por producto</p>
-              {inventario.productosBajoMinimo > 0 ? (
-                <span className="inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
-                  <AlertTriangle className="size-3" />
-                  {inventario.productosBajoMinimo} bajo mínimo
-                </span>
-              ) : null}
+              <div className="flex flex-wrap gap-1">
+                {filtrosInventario.map((f) => (
+                  <a
+                    key={f.key}
+                    href={urlInventario({ inv_filtro: f.key, inv: 1 })}
+                    className={`rounded-full px-2.5 py-1 text-xs font-medium transition-colors ${
+                      invFiltro === f.key
+                        ? f.key === "bajo"
+                          ? "bg-red-600 text-white"
+                          : "bg-accent-500 text-white"
+                        : "border-border text-muted-foreground hover:text-heading border"
+                    }`}
+                  >
+                    {f.label} ({f.n})
+                  </a>
+                ))}
+              </div>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full min-w-[760px] text-sm">
@@ -495,7 +564,14 @@ export default async function ReportesPage({
                   </tr>
                 </thead>
                 <tbody className="divide-border divide-y">
-                  {inventario.items.map((p) => (
+                  {invVisibles.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="text-muted-foreground px-4 py-8 text-center">
+                        Ningún producto coincide con este filtro.
+                      </td>
+                    </tr>
+                  ) : null}
+                  {invVisibles.map((p) => (
                     <tr
                       key={p.id}
                       className={`hover:bg-surface-2 transition-colors ${p.bajo_minimo ? "bg-red-50/40" : ""}`}
@@ -547,7 +623,7 @@ export default async function ReportesPage({
                       colSpan={5}
                       className="text-muted-foreground px-4 py-2.5 text-xs font-medium uppercase tracking-wide"
                     >
-                      Totales
+                      Totales del inventario ({inventario.totalProductos} productos)
                     </td>
                     <td className="text-heading px-4 py-2.5 text-right text-xs font-bold tabular-nums">
                       {usd(inventario.valorCostoUsd)}
@@ -559,6 +635,44 @@ export default async function ReportesPage({
                 </tfoot>
               </table>
             </div>
+            {invFiltrados.length > 0 ? (
+              <div className="border-border flex flex-wrap items-center justify-between gap-2 border-t px-4 py-3 text-xs">
+                <p className="text-muted-foreground">
+                  Mostrando {(invPagina - 1) * INVENTARIO_POR_PAGINA + 1}–
+                  {Math.min(invPagina * INVENTARIO_POR_PAGINA, invFiltrados.length)} de{" "}
+                  {invFiltrados.length} · la lista completa está en{" "}
+                  <a
+                    href="/minimarket/reportes/exportar?tipo=inventario"
+                    className="text-accent-600 hover:underline"
+                  >
+                    Excel
+                  </a>
+                </p>
+                {invPaginas > 1 ? (
+                  <div className="flex items-center gap-1">
+                    {invPagina > 1 ? (
+                      <a
+                        href={urlInventario({ inv: invPagina - 1 })}
+                        className="border-border hover:text-heading rounded-md border px-2.5 py-1 font-medium"
+                      >
+                        ← Anterior
+                      </a>
+                    ) : null}
+                    <span className="text-muted-foreground px-2 tabular-nums">
+                      Página {invPagina} de {invPaginas}
+                    </span>
+                    {invPagina < invPaginas ? (
+                      <a
+                        href={urlInventario({ inv: invPagina + 1 })}
+                        className="border-border hover:text-heading rounded-md border px-2.5 py-1 font-medium"
+                      >
+                        Siguiente →
+                      </a>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </Card>
         ) : (
           <Card className="py-12 text-center">
@@ -673,7 +787,8 @@ export default async function ReportesPage({
         <div>
           <p className="text-heading text-sm font-medium">Exportar datos</p>
           <p className="text-muted-foreground text-xs">
-            Descarga los datos del período seleccionado en formato CSV compatible con Excel.
+            Descarga el período seleccionado en Excel (.xlsx, con columnas y totales) o imprímelo en
+            PDF.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -682,14 +797,14 @@ export default async function ReportesPage({
             className="border-border text-muted-foreground hover:text-heading inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors"
           >
             <Download className="size-4" aria-hidden />
-            Ventas CSV
+            Ventas Excel
           </a>
           <a
             href={`/minimarket/reportes/exportar?tipo=inventario`}
             className="border-border text-muted-foreground hover:text-heading inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors"
           >
             <Download className="size-4" aria-hidden />
-            Inventario CSV
+            Inventario Excel
           </a>
           <a
             href={`/minimarket/reportes/exportar?tipo=pdf&desde=${rango.desde}&hasta=${rango.hasta}`}

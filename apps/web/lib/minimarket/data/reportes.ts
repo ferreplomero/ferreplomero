@@ -25,6 +25,18 @@ export interface ProductoMasVendido {
   descripcion: string;
   unidades: number;
   ingreso_usd: number;
+  /** SKU/código actual del producto (null si la línea no tiene producto o no tiene código). */
+  codigo: string | null;
+  /** Precio unitario al que se vendió (`mm_ventas_items.precio_usd`). Si en el
+   * período se vendió a precios distintos, es el promedio ponderado por unidades. */
+  precio_unitario_usd: number;
+  /** Costo unitario ACTUAL del producto (la venta no congela el costo) — mismo
+   * origen que usa `getResumenPeriodo` para la utilidad estimada. 0 sin producto. */
+  costo_unitario_usd: number;
+  /** Σ (precio_usd − costo) × cantidad — mismo criterio que `utilidadEstimadaUsd`. */
+  margen_usd: number;
+  /** margen_usd / Σ (precio_usd × cantidad) × 100; null si esa base es 0. */
+  margen_pct: number | null;
 }
 
 export interface VentaCategoria {
@@ -263,7 +275,9 @@ export async function getProductosMasVendidos(
   const { desdeIso, hastaIso } = rangoLocalAUtc(rango, tz);
   const { data } = await client
     .from("mm_ventas_items")
-    .select("producto_id, descripcion, cantidad, total_usd, venta:mm_ventas(fecha, estado)")
+    .select(
+      "producto_id, descripcion, cantidad, precio_usd, total_usd, venta:mm_ventas(fecha, estado)",
+    )
     .eq("tenant_id", tenantId)
     .gte("created_at", desdeIso)
     .lt("created_at", hastaIso)
@@ -272,6 +286,7 @@ export async function getProductosMasVendidos(
         producto_id: string | null;
         descripcion: string;
         cantidad: number;
+        precio_usd: number;
         total_usd: number;
         venta: { fecha: string; estado: string } | null;
       }[]
@@ -279,7 +294,14 @@ export async function getProductosMasVendidos(
 
   const byProducto = new Map<
     string,
-    { descripcion: string; unidades: number; ingreso_usd: number; producto_id: string | null }
+    {
+      descripcion: string;
+      unidades: number;
+      ingreso_usd: number;
+      producto_id: string | null;
+      /** Σ precio_usd × cantidad (base sin impuestos para precio promedio y margen). */
+      base_usd: number;
+    }
   >();
 
   for (const item of data ?? []) {
@@ -290,13 +312,45 @@ export async function getProductosMasVendidos(
       unidades: 0,
       ingreso_usd: 0,
       producto_id: item.producto_id,
+      base_usd: 0,
     };
     existing.unidades += Number(item.cantidad);
     existing.ingreso_usd += Number(item.total_usd);
+    existing.base_usd += Number(item.precio_usd) * Number(item.cantidad);
     byProducto.set(key, existing);
   }
 
-  return [...byProducto.values()].sort((a, b) => b.unidades - a.unidades).slice(0, limit);
+  const top = [...byProducto.values()].sort((a, b) => b.unidades - a.unidades).slice(0, limit);
+
+  // Código y costo actual solo de los productos que se van a mostrar.
+  const ids = top.map((p) => p.producto_id).filter((id): id is string => id !== null);
+  const prodMap = new Map<string, { codigo: string | null; costo: number }>();
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data: prods } = await client
+      .from("mm_productos")
+      .select("id, codigo, costo_usd")
+      .in("id", ids.slice(i, i + 200));
+    for (const p of prods ?? []) {
+      prodMap.set(p.id, { codigo: p.codigo ?? null, costo: Number(p.costo_usd ?? 0) });
+    }
+  }
+
+  return top.map((p) => {
+    const prod = p.producto_id ? prodMap.get(p.producto_id) : undefined;
+    const costo = prod?.costo ?? 0;
+    const margen = p.base_usd - costo * p.unidades;
+    return {
+      producto_id: p.producto_id,
+      descripcion: p.descripcion,
+      unidades: p.unidades,
+      ingreso_usd: p.ingreso_usd,
+      codigo: prod?.codigo ?? null,
+      precio_unitario_usd: p.unidades > 0 ? p.base_usd / p.unidades : 0,
+      costo_unitario_usd: costo,
+      margen_usd: margen,
+      margen_pct: p.base_usd > 0 ? (margen / p.base_usd) * 100 : null,
+    };
+  });
 }
 
 /** Sesiones de caja cerradas en el período (cierre diario). */
