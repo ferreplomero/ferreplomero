@@ -13,6 +13,11 @@ interface Props {
   negocioNombre: string;
   totalUsd: number;
   totalBs: number;
+  /** Nombre del documento en los textos ("recibo" por defecto; la nota de
+   * entrega reutiliza este mismo botón con "nota de entrega"). */
+  documento?: string;
+  /** Artículo del documento: "el recibo" / "la nota de entrega". */
+  articulo?: "el" | "la";
 }
 
 const usd = (n: number) =>
@@ -34,6 +39,8 @@ export function ReciboWhatsappBoton({
   negocioNombre,
   totalUsd,
   totalBs,
+  documento = "recibo",
+  articulo = "el",
 }: Props) {
   const [abierto, setAbierto] = React.useState(false);
   const [otroNumero, setOtroNumero] = React.useState(!numeroRegistrado);
@@ -45,7 +52,7 @@ export function ReciboWhatsappBoton({
       otroNumero ? numeroPersonalizado : (numeroRegistrado ?? ""),
     );
     if (!numero) {
-      setError("Ingresa un número de WhatsApp válido para enviar el recibo.");
+      setError(`Ingresa un número de WhatsApp válido para enviar ${articulo} ${documento}.`);
       return;
     }
     setError(null);
@@ -53,7 +60,7 @@ export function ReciboWhatsappBoton({
     const mensaje = [
       `¡Hola${clienteNombre ? ` ${clienteNombre}` : ""}! Gracias por tu compra en ${negocioNombre}.`,
       `Total: ${usd(totalUsd)} (${bs(totalBs)}).`,
-      `Puedes ver tu recibo aquí: ${link}`,
+      `Puedes ver tu ${documento} aquí: ${link}`,
     ].join(" ");
 
     window.open(
@@ -73,7 +80,7 @@ export function ReciboWhatsappBoton({
         onClick={() => setAbierto((v) => !v)}
       >
         <WhatsAppIcon className="size-4" aria-hidden />
-        Enviar recibo por WhatsApp
+        Enviar {documento} por WhatsApp
       </Button>
 
       {abierto ? (
@@ -90,7 +97,8 @@ export function ReciboWhatsappBoton({
             </label>
           ) : (
             <p className="text-muted-foreground text-xs">
-              Este cliente no tiene WhatsApp registrado. Ingresa un número para enviarle el recibo.
+              Este cliente no tiene WhatsApp registrado. Ingresa un número para enviarle {articulo}{" "}
+              {documento}.
             </p>
           )}
 

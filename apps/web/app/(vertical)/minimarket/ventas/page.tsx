@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { DollarSign, FileText, Receipt, ShoppingBag, TrendingUp } from "lucide-react";
+import { DollarSign, FileText, Receipt, ShoppingBag, TrendingUp, Truck } from "lucide-react";
 import { Card } from "@arkiteq/ui";
 import { getCountryConfig } from "@arkiteq/core";
 import type { MmMetodoPago } from "@arkiteq/db";
@@ -361,6 +361,13 @@ export default async function VentasHistorialPage({
                           >
                             <FileText className="mr-0.5 inline size-3.5" />
                             Detalle
+                          </Link>
+                          <Link
+                            href={`/minimarket/ventas/${v.id}/nota-entrega`}
+                            className="whitespace-nowrap text-xs text-amber-700 hover:underline"
+                          >
+                            <Truck className="mr-0.5 inline size-3.5" />
+                            Nota de entrega
                           </Link>
                           {v.estado === "completada" ? <BotonAnular ventaId={v.id} /> : null}
                         </div>

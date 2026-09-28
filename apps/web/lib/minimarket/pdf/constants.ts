@@ -8,6 +8,11 @@ export const NOTA_PRESUPUESTO_TEXTO =
   "Los precios pueden variar si cambia la tasa de cambio o el stock disponible al momento de " +
   "aceptar la compra.";
 
+/** Pie de la nota de entrega (PDF y vista en pantalla). */
+export const NOTA_ENTREGA_TEXTO =
+  "Nota de entrega de mercancía relacionada con la venta indicada. Los montos corresponden a " +
+  "la venta y quedan expresados con la tasa de cambio del día en que se realizó.";
+
 export function fmtUsd(n: number): string {
   return `US$ ${n.toLocaleString("es-VE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
