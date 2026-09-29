@@ -50,6 +50,11 @@ export default async function ConfiguracionPage() {
       : TZ_DEFAULT;
   const currentTelefono = typeof parametros.telefono === "string" ? parametros.telefono : "";
   const metodosPago = parseMetodosPago(config?.metodos_pago);
+  const sucursalPredeterminadaId =
+    typeof parametros.sucursal_predeterminada_id === "string" &&
+    parametros.sucursal_predeterminada_id.length > 0
+      ? parametros.sucursal_predeterminada_id
+      : null;
 
   return (
     <div className="mx-auto max-w-3xl space-y-8">
@@ -136,7 +141,7 @@ export default async function ConfiguracionPage() {
       {/* Sucursales */}
       <section className="space-y-4">
         <h2 className="text-heading text-lg font-semibold">Sucursales</h2>
-        <SucursalesPanel sucursales={sucursales} />
+        <SucursalesPanel sucursales={sucursales} predeterminadaId={sucursalPredeterminadaId} />
       </section>
 
       {/* Personal y roles: se mudó a su propia sección del menú lateral */}

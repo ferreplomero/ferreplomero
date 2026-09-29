@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseMetodosPago, METODOS_PAGO_IDS } from "./metodos-pago";
+import { parseMetodosPago, getMetodoPredeterminado, METODOS_PAGO_IDS } from "./metodos-pago";
 
 describe("parseMetodosPago", () => {
   it("devuelve todos los métodos con activo=true cuando el input está vacío", () => {
@@ -70,5 +70,38 @@ describe("parseMetodosPago", () => {
   it("maneja el jsonb null de Supabase como default", () => {
     const result = parseMetodosPago(null);
     expect(result.map((m) => m.metodo)).toEqual([...METODOS_PAGO_IDS]);
+  });
+});
+
+describe("método de pago predeterminado", () => {
+  it("sin ninguno marcado no hay predeterminado", () => {
+    expect(getMetodoPredeterminado(parseMetodosPago([]))).toBeNull();
+  });
+
+  it("conserva el marcado cuando está activo", () => {
+    const result = parseMetodosPago([{ metodo: "pago_movil", activo: true, predeterminado: true }]);
+    expect(getMetodoPredeterminado(result)).toBe("pago_movil");
+  });
+
+  it("deja de valer si el método quedó inactivo", () => {
+    const result = parseMetodosPago([
+      { metodo: "pago_movil", activo: false, predeterminado: true },
+    ]);
+    expect(result.find((m) => m.metodo === "pago_movil")?.predeterminado).toBe(false);
+    expect(getMetodoPredeterminado(result)).toBeNull();
+  });
+
+  it("fiado nunca puede ser predeterminado (exige cliente, no es un cobro)", () => {
+    const result = parseMetodosPago([{ metodo: "fiado", activo: true, predeterminado: true }]);
+    expect(getMetodoPredeterminado(result)).toBeNull();
+  });
+
+  it("con varios marcados deja solo el primero en el orden canónico", () => {
+    const result = parseMetodosPago([
+      { metodo: "zelle", activo: true, predeterminado: true },
+      { metodo: "efectivo_bs", activo: true, predeterminado: true },
+    ]);
+    expect(result.filter((m) => m.predeterminado)).toHaveLength(1);
+    expect(getMetodoPredeterminado(result)).toBe("efectivo_bs");
   });
 });

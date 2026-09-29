@@ -14,6 +14,9 @@ export type MetodoId = (typeof METODOS_PAGO_IDS)[number];
 export interface MetodoPagoConfigItem {
   metodo: MetodoId;
   activo: boolean;
+  /** Método que aparece preseleccionado al cobrar una venta. Como máximo uno
+   * en toda la lista — `parseMetodosPago` lo normaliza (ver más abajo). */
+  predeterminado?: boolean;
   banco?: string;
   telefono?: string;
   titular?: string;
@@ -107,7 +110,43 @@ export function parseMetodosPago(raw: unknown): MetodoPagoConfigItem[] {
   }
 
   const order = Object.fromEntries(METODOS_PAGO_IDS.map((id, i) => [id, i]));
-  return parsed.sort((a, b) => (order[a.metodo] ?? 99) - (order[b.metodo] ?? 99));
+  parsed.sort((a, b) => (order[a.metodo] ?? 99) - (order[b.metodo] ?? 99));
+
+  // Normalización del predeterminado: como mucho UNO, y solo si sigue siendo
+  // un método válido para arrancar un cobro (activo y distinto de fiado). Un
+  // jsonb viejo o editado a mano podría traer varios en true; sin esto, el POS
+  // elegiría el primero que encuentre y la interfaz mostraría dos marcados.
+  let yaHay = false;
+  for (const m of parsed) {
+    if (!m.predeterminado) continue;
+    if (yaHay || !esMetodoPredeterminable(m)) {
+      m.predeterminado = false;
+      continue;
+    }
+    yaHay = true;
+  }
+
+  return parsed;
+}
+
+/** Fiado no sirve como preselección de cobro: exige cliente y no es un pago. */
+function esMetodoPredeterminable(m: MetodoPagoConfigItem): boolean {
+  return m.activo && m.metodo !== "fiado";
+}
+
+/** Métodos que pueden marcarse como predeterminados en Configuración. */
+export const METODOS_PREDETERMINABLES = METODOS_PAGO_IDS.filter(
+  (id) => id !== "fiado",
+) as readonly MetodoId[];
+
+/**
+ * Método de pago preseleccionado al cobrar, o `null` si el negocio no marcó
+ * ninguno (o el que marcó ya no es usable). Quien lo consuma decide el
+ * fallback — en el POS es efectivo Bs, ver `pos-cliente.tsx`.
+ */
+export function getMetodoPredeterminado(metodos: MetodoPagoConfigItem[]): MetodoId | null {
+  const m = metodos.find((x) => x.predeterminado && esMetodoPredeterminable(x));
+  return m?.metodo ?? null;
 }
 
 /**

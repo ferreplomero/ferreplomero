@@ -122,10 +122,44 @@ export const getSucursalActiva = cache(
     const [ownerId, preferredId] = (cookieStore.get(ACTIVE_SUCURSAL_COOKIE)?.value ?? "").split(
       ".",
     );
+    const elegidaPorElUsuario =
+      ownerId === profileId ? permitidas.find((s) => s.id === preferredId) : undefined;
+
+    // Sin elección propia vigente, arranca en la sucursal predeterminada del
+    // negocio (Configuración > Sucursales) y, recién si no hay o no está entre
+    // las suyas, en la primera permitida. Nunca amplía el acceso: siempre se
+    // resuelve DENTRO de `permitidas`.
     const activa =
-      (ownerId === profileId ? permitidas.find((s) => s.id === preferredId) : undefined) ??
+      elegidaPorElUsuario ??
+      (await sucursalPredeterminadaDelNegocio(supabase, tenantId, permitidas)) ??
       permitidas[0] ??
       null;
     return { activa, permitidas };
   },
 );
+
+/**
+ * Sucursal marcada como predeterminada en Configuración
+ * (`mm_config_negocio.parametros.sucursal_predeterminada_id`), solo si está
+ * entre las permitidas del usuario. `undefined` si no hay ninguna marcada.
+ */
+async function sucursalPredeterminadaDelNegocio(
+  supabase: Client,
+  tenantId: string,
+  permitidas: SucursalAcceso[],
+): Promise<SucursalAcceso | undefined> {
+  const { data } = await supabase
+    .from("mm_config_negocio")
+    .select("parametros")
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+
+  const parametros =
+    data?.parametros && typeof data.parametros === "object" && !Array.isArray(data.parametros)
+      ? (data.parametros as Record<string, unknown>)
+      : {};
+  const id = parametros.sucursal_predeterminada_id;
+  if (typeof id !== "string" || id.length === 0) return undefined;
+
+  return permitidas.find((s) => s.id === id);
+}

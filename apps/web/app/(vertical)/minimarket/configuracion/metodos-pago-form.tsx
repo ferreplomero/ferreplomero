@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import { useActionState } from "react";
 import Image from "next/image";
 import {
@@ -20,6 +21,7 @@ import {
   METODO_CAMPOS,
   METODO_META,
   METODOS_PAGO_IDS,
+  getMetodoPredeterminado,
 } from "@/lib/minimarket/metodos-pago";
 import type { MetodoPagoConfigItem } from "@/lib/minimarket/metodos-pago";
 import { esMetodoConCuenta } from "@/lib/minimarket/bancos";
@@ -53,6 +55,17 @@ const INPUT =
 
 export function MetodosPagoForm({ metodos, cuentasBancarias }: Props) {
   const [state, action, pending] = useActionState(actualizarMetodosPago, {});
+  // El predeterminado y el "Activo" se controlan en el cliente porque están
+  // atados: desmarcar "Activo" en el método predeterminado debe soltar también
+  // el radio (un método inactivo no puede ser el que abre el cobro).
+  const [activos, setActivos] = React.useState<Record<string, boolean>>(() =>
+    Object.fromEntries(
+      METODOS_PAGO_IDS.map((id) => [id, metodos.find((m) => m.metodo === id)?.activo ?? true]),
+    ),
+  );
+  const [predeterminado, setPredeterminado] = React.useState<string>(
+    () => getMetodoPredeterminado(metodos) ?? "",
+  );
 
   const get = (id: string): MetodoPagoConfigItem =>
     metodos.find((m) => m.metodo === id) ?? {
@@ -66,7 +79,9 @@ export function MetodosPagoForm({ metodos, cuentasBancarias }: Props) {
         <h2 className="text-heading text-base font-semibold">Métodos de pago</h2>
         <p className="text-muted-foreground text-sm">
           Activa los métodos que acepta tu negocio e ingresa los datos que aparecerán en los recibos
-          y confirmaciones de pago a los clientes.
+          y confirmaciones de pago a los clientes. El que marques como{" "}
+          <span className="text-heading font-medium">Predeterminado</span> es el que aparece
+          preseleccionado al cobrar una venta.
         </p>
       </div>
 
@@ -106,16 +121,37 @@ export function MetodosPagoForm({ metodos, cuentasBancarias }: Props) {
                     <p className="text-muted-foreground text-xs">{meta.descripcion}</p>
                   </div>
                 </div>
-                <label className="flex shrink-0 cursor-pointer items-center gap-2">
-                  <span className="text-muted-foreground text-xs">Activo</span>
-                  <input
-                    type="checkbox"
-                    name={`metodo_${id}_activo`}
-                    value="1"
-                    defaultChecked={m.activo}
-                    className="accent-accent-500 h-4 w-4 cursor-pointer rounded"
-                  />
-                </label>
+                <div className="flex shrink-0 flex-wrap items-center gap-4">
+                  {id !== "fiado" ? (
+                    <label className="flex cursor-pointer items-center gap-2">
+                      <span className="text-muted-foreground text-xs">Predeterminado</span>
+                      <input
+                        type="radio"
+                        name="metodo_predeterminado"
+                        value={id}
+                        checked={predeterminado === id}
+                        disabled={!activos[id]}
+                        onChange={() => setPredeterminado(id)}
+                        className="accent-accent-500 h-4 w-4 cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+                      />
+                    </label>
+                  ) : null}
+                  <label className="flex cursor-pointer items-center gap-2">
+                    <span className="text-muted-foreground text-xs">Activo</span>
+                    <input
+                      type="checkbox"
+                      name={`metodo_${id}_activo`}
+                      value="1"
+                      checked={activos[id] ?? false}
+                      onChange={(e) => {
+                        const activo = e.target.checked;
+                        setActivos((prev) => ({ ...prev, [id]: activo }));
+                        if (!activo && predeterminado === id) setPredeterminado("");
+                      }}
+                      className="accent-accent-500 h-4 w-4 cursor-pointer rounded"
+                    />
+                  </label>
+                </div>
               </div>
 
               {campos.length > 0 && !esMetodoConCuenta(id) ? (

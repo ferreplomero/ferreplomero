@@ -2,13 +2,21 @@
 
 import * as React from "react";
 import { useActionState } from "react";
-import { Check, Pencil, Plus, X } from "lucide-react";
+import { Check, Pencil, Plus, Star, X } from "lucide-react";
 import { Button, Card, cn } from "@arkiteq/ui";
 import type { MmSucursal } from "@arkiteq/db";
-import { crearSucursal, actualizarSucursal, toggleSucursal } from "./actions";
+import {
+  crearSucursal,
+  actualizarSucursal,
+  toggleSucursal,
+  marcarSucursalPredeterminada,
+} from "./actions";
 
 interface Props {
   sucursales: MmSucursal[];
+  /** Sucursal con la que arranca el sistema cuando el usuario no eligió otra
+   * (`parametros.sucursal_predeterminada_id`, ver `getSucursalActiva`). */
+  predeterminadaId: string | null;
 }
 
 const LABEL = "text-muted-foreground block text-xs font-medium uppercase tracking-wide";
@@ -100,13 +108,24 @@ function NuevaSucursalForm() {
   );
 }
 
-function FilaSucursal({ sucursal }: { sucursal: MmSucursal }) {
+function FilaSucursal({
+  sucursal,
+  esPredeterminada,
+}: {
+  sucursal: MmSucursal;
+  esPredeterminada: boolean;
+}) {
   const [editando, setEditando] = React.useState(false);
   const inputRef = React.useRef<HTMLInputElement>(null);
   const boundUpdate = actualizarSucursal.bind(null, sucursal.id);
   const [editState, editAction, editPending] = useActionState(boundUpdate, {});
   const [toggleState, toggleAction, togglePending] = useActionState(
     async (_prev: { ok?: boolean; error?: string }, fd: FormData) => toggleSucursal(fd),
+    {},
+  );
+  const [predetState, predetAction, predetPending] = useActionState(
+    async (_prev: { ok?: boolean; error?: string }, fd: FormData) =>
+      marcarSucursalPredeterminada(fd),
     {},
   );
 
@@ -200,6 +219,23 @@ function FilaSucursal({ sucursal }: { sucursal: MmSucursal }) {
             ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+            {esPredeterminada ? (
+              <span className="bg-accent-50 text-accent-700 flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium">
+                <Star className="size-3 fill-current" aria-hidden />
+                Predeterminada
+              </span>
+            ) : sucursal.activa ? (
+              <form action={predetAction}>
+                <input type="hidden" name="id" value={sucursal.id} />
+                <button
+                  type="submit"
+                  disabled={predetPending}
+                  className="text-muted-foreground hover:text-heading rounded px-2 py-1 text-xs transition-colors disabled:opacity-50"
+                >
+                  {predetPending ? "Guardando…" : "Hacer predeterminada"}
+                </button>
+              </form>
+            ) : null}
             {sucursal.activa ? (
               <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
                 Activa
@@ -234,11 +270,12 @@ function FilaSucursal({ sucursal }: { sucursal: MmSucursal }) {
         </div>
       )}
       {toggleState.error ? <p className="text-danger mt-1 text-xs">{toggleState.error}</p> : null}
+      {predetState.error ? <p className="text-danger mt-1 text-xs">{predetState.error}</p> : null}
     </div>
   );
 }
 
-export function SucursalesPanel({ sucursales }: Props) {
+export function SucursalesPanel({ sucursales, predeterminadaId }: Props) {
   return (
     <div className="space-y-4">
       {sucursales.length > 0 ? (
@@ -247,10 +284,14 @@ export function SucursalesPanel({ sucursales }: Props) {
             <p className="text-heading text-sm font-medium">
               {sucursales.length} sucursal{sucursales.length !== 1 ? "es" : ""}
             </p>
+            <p className="text-muted-foreground text-xs">
+              La sucursal predeterminada es con la que arranca el sistema cuando el usuario aún no
+              eligió otra en el selector.
+            </p>
           </div>
           <div className="divide-border divide-y">
             {sucursales.map((s) => (
-              <FilaSucursal key={s.id} sucursal={s} />
+              <FilaSucursal key={s.id} sucursal={s} esPredeterminada={s.id === predeterminadaId} />
             ))}
           </div>
         </Card>

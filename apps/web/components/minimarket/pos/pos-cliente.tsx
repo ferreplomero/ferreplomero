@@ -95,6 +95,7 @@ import {
 import { esTipoTasa, TIPO_TASA_LABEL, type TipoTasa } from "@/lib/minimarket/exchange-rate";
 import {
   METODO_META,
+  getMetodoPredeterminado,
   type MetodoId,
   type MetodoPagoConfigItem,
 } from "@/lib/minimarket/metodos-pago";
@@ -367,12 +368,24 @@ export function PosCliente({
     () => METODOS_PAGO.filter((m) => metodosActivosSet.has(m.value)),
     [metodosActivosSet],
   );
-  // Método por defecto para una fila de pago nueva: efectivo Bs si sigue
-  // activo (el caso normal — regla 14 de CLAUDE.md), o si el negocio lo
-  // desactivó, el primer método activo que le quede configurado.
-  const metodoPorDefecto: MmMetodoPago = metodosActivosSet.has("efectivo_bs")
-    ? "efectivo_bs"
-    : (metodosPagoActivos[0]?.value ?? "efectivo_bs");
+  // Método por defecto para una fila de pago nueva:
+  //   1) el que el negocio marcó como predeterminado en Configuración > Métodos
+  //      de pago (si sigue activo — `getMetodoPredeterminado` ya lo valida),
+  //   2) efectivo Bs si sigue activo (el caso normal — regla 14 de CLAUDE.md),
+  //   3) el primer método activo que le quede configurado.
+  // Solo cambia qué método viene preseleccionado: el monto sugerido lo sigue
+  // calculando `calcularMontoSaldo` EN LA MONEDA de este método (ver
+  // `abrirCobro`), así que ningún cálculo de tasa/IVA/IGTF se ve afectado.
+  const metodoPredeterminado = React.useMemo(
+    () => getMetodoPredeterminado(metodosPago),
+    [metodosPago],
+  );
+  const metodoPorDefecto: MmMetodoPago =
+    metodoPredeterminado && metodosActivosSet.has(metodoPredeterminado as MmMetodoPago)
+      ? (metodoPredeterminado as MmMetodoPago)
+      : metodosActivosSet.has("efectivo_bs")
+        ? "efectivo_bs"
+        : (metodosPagoActivos[0]?.value ?? "efectivo_bs");
   // Fiado ya otorgado offline esta sesión, por cliente: el saldo cacheado del
   // cliente no se entera de ventas locales aún no sincronizadas.
   const fiadoOfflineRef = React.useRef<Map<string, number>>(new Map());

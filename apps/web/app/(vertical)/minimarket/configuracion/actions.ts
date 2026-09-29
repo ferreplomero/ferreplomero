@@ -584,7 +584,106 @@ export async function toggleSucursal(formData: FormData): Promise<ConfigResult> 
 
   if (error) return { error: "No se pudo actualizar la sucursal." };
 
+  // Si se desactiva la sucursal predeterminada, deja de serlo: si no, el
+  // sistema seguiría arrancando en una sucursal que el negocio ya no opera.
+  if (!activa) await limpiarSucursalPredeterminadaSi(ctx, id);
+
   revalidatePath(CONFIG_PATH);
+  revalidatePath("/minimarket");
+  return { ok: true };
+}
+
+/** Quita la sucursal predeterminada si es la indicada (ver `toggleSucursal`). */
+async function limpiarSucursalPredeterminadaSi(
+  ctx: NonNullable<Awaited<ReturnType<typeof contexto>>>,
+  sucursalId: string,
+): Promise<void> {
+  const { data: config } = await ctx.supabase
+    .from("mm_config_negocio")
+    .select("id, parametros")
+    .eq("tenant_id", ctx.tenantId)
+    .maybeSingle();
+  if (!config) return;
+  const parametros =
+    config.parametros && typeof config.parametros === "object" && !Array.isArray(config.parametros)
+      ? (config.parametros as Record<string, unknown>)
+      : {};
+  if (parametros.sucursal_predeterminada_id !== sucursalId) return;
+
+  await ctx.supabase
+    .from("mm_config_negocio")
+    .update({ parametros: { ...parametros, sucursal_predeterminada_id: null } })
+    .eq("tenant_id", ctx.tenantId)
+    .eq("id", config.id);
+}
+
+/**
+ * Marca (o desmarca) la sucursal predeterminada del negocio: la que queda
+ * activa al entrar cuando el usuario todavía no eligió ninguna en esta
+ * sesión/dispositivo (ver `getSucursalActiva` en `lib/minimarket/sucursal-acceso.ts`).
+ *
+ * Vive en `parametros.sucursal_predeterminada_id` (jsonb de mm_config_negocio),
+ * igual que `timezone`/`telefono`, y se guarda con merge para no pisar el resto
+ * de los parámetros. NO amplía permisos: `getSucursalActiva` sigue eligiendo
+ * solo entre las sucursales permitidas del usuario, y RLS manda igual.
+ */
+export async function marcarSucursalPredeterminada(formData: FormData): Promise<ConfigResult> {
+  const ctx = await contexto();
+  if (!ctx) return { error: "Sesión no válida." };
+
+  const permisoError = await requirePermisoAccion(
+    ctx.supabase,
+    ctx.tenantId,
+    ctx.userId,
+    "configuracion",
+    "editar",
+  );
+  if (permisoError) return { error: permisoError };
+
+  const sucursalId = (formData.get("id") as string | null)?.trim() || null;
+
+  // Se valida contra la base de datos: solo una sucursal del tenant, viva y
+  // activa, puede ser la predeterminada (una inactiva dejaría al sistema
+  // arrancando en una sucursal que el negocio ya no usa).
+  if (sucursalId) {
+    const { data: sucursal } = await ctx.supabase
+      .from("mm_sucursales")
+      .select("id, activa")
+      .eq("tenant_id", ctx.tenantId)
+      .eq("id", sucursalId)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (!sucursal) return { error: "Sucursal no encontrada." };
+    if (!sucursal.activa) return { error: "No se puede usar una sucursal inactiva." };
+  }
+
+  const id = await getOrCreateConfigId(ctx);
+  if (!id) return { error: "No se pudo acceder a la configuración." };
+
+  const { data: configActual } = await ctx.supabase
+    .from("mm_config_negocio")
+    .select("parametros")
+    .eq("id", id)
+    .single();
+  const parametrosActuales =
+    configActual?.parametros &&
+    typeof configActual.parametros === "object" &&
+    !Array.isArray(configActual.parametros)
+      ? (configActual.parametros as Record<string, unknown>)
+      : {};
+
+  const { error } = await ctx.supabase
+    .from("mm_config_negocio")
+    .update({
+      parametros: { ...parametrosActuales, sucursal_predeterminada_id: sucursalId },
+    })
+    .eq("tenant_id", ctx.tenantId)
+    .eq("id", id);
+
+  if (error) return { error: "No se pudo guardar la sucursal predeterminada." };
+
+  revalidatePath(CONFIG_PATH);
+  revalidatePath("/minimarket");
   return { ok: true };
 }
 
@@ -635,6 +734,17 @@ export async function actualizarMetodosPago(
     return { metodo: id, activo, ...extras };
   });
 
+  // Método preseleccionado al cobrar. Solo uno, y solo si quedó activo y no es
+  // fiado (que exige cliente y no es un cobro). Cualquier valor raro del
+  // formulario se ignora en silencio: se guarda sin predeterminado.
+  const predeterminadoRaw = (formData.get("metodo_predeterminado") as string | null)?.trim() ?? "";
+  const predeterminado = metodos.find(
+    (m) => m.metodo === predeterminadoRaw && m.activo && m.metodo !== "fiado",
+  );
+  if (predeterminado) {
+    (predeterminado as { predeterminado?: boolean }).predeterminado = true;
+  }
+
   const id = await getOrCreateConfigId(ctx);
   if (!id) return { error: "No se pudo acceder a la configuración." };
 
@@ -647,6 +757,8 @@ export async function actualizarMetodosPago(
   if (error) return { error: "No se pudo guardar los métodos de pago." };
 
   revalidatePath(CONFIG_PATH);
+  // El POS lee estos métodos (y el predeterminado) al renderizar el cobro.
+  revalidatePath("/minimarket/ventas/nueva");
   return { ok: true };
 }
 
