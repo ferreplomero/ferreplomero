@@ -425,7 +425,14 @@ export async function actualizarPresupuesto(
 
   // Reemplaza los ítems por completo (mismo criterio simple que un formulario
   // de edición que reenvía el carrito completo, no un diff por línea).
-  await supabase.from("mm_presupuestos_items").delete().eq("presupuesto_id", presupuestoId);
+  // Necesita la política de delete de 0122: sin ella el borrado afectaba 0
+  // filas en silencio y los ítems viejos quedaban repetidos junto a los nuevos.
+  const { error: borrarError } = await supabase
+    .from("mm_presupuestos_items")
+    .delete()
+    .eq("presupuesto_id", presupuestoId)
+    .eq("tenant_id", tenantId);
+  if (borrarError) return { error: "No se pudieron reemplazar los productos del presupuesto." };
   const { error: itemsError } = await supabase
     .from("mm_presupuestos_items")
     .insert(itemsParaGuardar);
