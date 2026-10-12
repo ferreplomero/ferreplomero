@@ -31,6 +31,8 @@ export interface DatosPresupuestoExcel {
     imagenPng: Buffer | null;
   }[];
   subtotalUsd: number;
+  descuentoUsd: number;
+  descuentoEtiqueta: string;
   ivaUsd: number;
   totalUsd: number;
   totalBs: number;
@@ -177,6 +179,9 @@ export async function construirExcelPresupuesto(
   fila++;
   const totalesFilas: [string, number, boolean][] = [
     ["Subtotal", datos.subtotalUsd, false],
+    ...(datos.descuentoUsd > 0
+      ? ([[datos.descuentoEtiqueta, -datos.descuentoUsd, false]] as [string, number, boolean][])
+      : []),
     ...(datos.ivaUsd > 0 ? ([["IVA", datos.ivaUsd, false]] as [string, number, boolean][]) : []),
     ["TOTAL (USD)", datos.totalUsd, true],
   ];

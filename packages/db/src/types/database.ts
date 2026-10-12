@@ -67,6 +67,8 @@ export type MmTipoVenta = "unidad" | "granel";
 export type MmDeudaEstado = "pendiente" | "pagada";
 /** Estado de un presupuesto ("vencido" se calcula en la app, no se guarda). */
 export type MmPresupuestoEstado = "pendiente" | "convertido" | "rechazado";
+/** Tipo de descuento global de un presupuesto (0121). */
+export type MmPresupuestoDescuentoTipo = "ninguno" | "porcentaje" | "monto";
 /** Estado de un pedido del catalogo publico (0119). */
 export type MmPedidoPublicoEstado =
   | "pendiente"
@@ -1913,6 +1915,9 @@ export interface Database {
           tasa_usada: number;
           subtotal_usd: number;
           iva_usd: number;
+          descuento_tipo: MmPresupuestoDescuentoTipo;
+          descuento_valor: number;
+          descuento_usd: number;
           total_usd: number;
           total_bs: number;
           estado: MmPresupuestoEstado;
@@ -1938,6 +1943,9 @@ export interface Database {
           tasa_usada: number;
           subtotal_usd?: number;
           iva_usd?: number;
+          descuento_tipo?: MmPresupuestoDescuentoTipo;
+          descuento_valor?: number;
+          descuento_usd?: number;
           total_usd?: number;
           total_bs?: number;
           estado?: MmPresupuestoEstado;
@@ -1959,6 +1967,9 @@ export interface Database {
           tasa_usada?: number;
           subtotal_usd?: number;
           iva_usd?: number;
+          descuento_tipo?: MmPresupuestoDescuentoTipo;
+          descuento_valor?: number;
+          descuento_usd?: number;
           total_usd?: number;
           total_bs?: number;
           estado?: MmPresupuestoEstado;

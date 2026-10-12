@@ -13,6 +13,8 @@ import {
   getPresupuestoDetalle,
 } from "@/lib/minimarket/data/presupuestos";
 import { getTimezoneNegocio } from "@/lib/minimarket/timezone";
+import { calcularTotalesPresupuesto } from "@/lib/minimarket/presupuestos/totales";
+import type { MmPresupuestoDescuentoTipo } from "@arkiteq/db";
 
 const PRESUPUESTOS_PATH = "/minimarket/presupuestos";
 const redondear = (n: number) => Math.round(n * 100) / 100;
@@ -50,6 +52,8 @@ const presupuestoSchema = z.object({
   validez_hasta: z.string().min(1, "Define hasta cuándo es válido el presupuesto."),
   notas: z.string().trim().max(1000).optional().or(z.literal("")),
   items: z.array(itemSchema).min(1, "Agrega al menos un producto."),
+  descuento_tipo: z.enum(["ninguno", "porcentaje", "monto"]).default("ninguno"),
+  descuento_valor: z.number().nonnegative("El descuento no puede ser negativo.").default(0),
 });
 
 function toNull(v: string | undefined): string | null {
@@ -74,6 +78,8 @@ interface DatosPresupuesto {
   validez_hasta: string;
   notas: string | null;
   items: { producto_id: string; cantidad: number; precio_unitario_usd: number }[];
+  descuento_tipo: MmPresupuestoDescuentoTipo;
+  descuento_valor: number;
 }
 
 function parseFormulario(formData: FormData): DatosPresupuesto | { error: string } {
@@ -106,10 +112,15 @@ function parseFormulario(formData: FormData): DatosPresupuesto | { error: string
     validez_hasta: formData.get("validez_hasta"),
     notas: formData.get("notas") ?? "",
     items: itemsValidation.data,
+    descuento_tipo: formData.get("descuento_tipo") || "ninguno",
+    descuento_valor: Number(String(formData.get("descuento_valor") ?? "0").replace(",", ".")) || 0,
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Datos inválidos." };
 
   const d = parsed.data;
+  if (d.descuento_tipo === "porcentaje" && d.descuento_valor > 100) {
+    return { error: "El descuento porcentual no puede pasar de 100 %." };
+  }
   return {
     sucursal_id: d.sucursal_id,
     cliente_id: d.cliente_id ?? null,
@@ -119,6 +130,10 @@ function parseFormulario(formData: FormData): DatosPresupuesto | { error: string
     validez_hasta: d.validez_hasta,
     notas: toNull(d.notas),
     items: d.items,
+    // "ninguno" siempre guarda valor 0, para no dejar un número huérfano
+    // que luego confunda al leer el presupuesto.
+    descuento_tipo: d.descuento_tipo,
+    descuento_valor: d.descuento_tipo === "ninguno" ? 0 : redondear(d.descuento_valor),
   };
 }
 
@@ -196,9 +211,17 @@ export async function crearPresupuesto(
     });
   }
 
-  const subtotalUsd = redondear(itemsParaGuardar.reduce((s, i) => s + i.subtotal_usd, 0));
-  const ivaUsd = ivaActivo && ivaPct > 0 ? redondear((subtotalUsd * ivaPct) / 100) : 0;
-  const totalUsd = redondear(subtotalUsd + ivaUsd);
+  // Mismo cálculo que la vista previa del formulario (ver `totales.ts`).
+  const { subtotalUsd, descuentoUsd, ivaUsd, totalUsd } = calcularTotalesPresupuesto({
+    items: itemsParaGuardar.map((i) => ({
+      cantidad: i.cantidad,
+      precioUnitarioUsd: i.precio_unitario_usd,
+    })),
+    descuentoTipo: datos.descuento_tipo,
+    descuentoValor: datos.descuento_valor,
+    ivaActivo,
+    ivaPct,
+  });
   const totalBs = redondear(totalUsd * tasa.valor);
 
   // Número editable: el usuario ve y puede ajustar el número sugerido en el
@@ -235,6 +258,9 @@ export async function crearPresupuesto(
       tasa_tipo: tipoTasa,
       tasa_usada: tasa.valor,
       subtotal_usd: subtotalUsd,
+      descuento_tipo: datos.descuento_tipo,
+      descuento_valor: datos.descuento_valor,
+      descuento_usd: descuentoUsd,
       iva_usd: ivaUsd,
       total_usd: totalUsd,
       total_bs: totalBs,
@@ -354,9 +380,17 @@ export async function actualizarPresupuesto(
     });
   }
 
-  const subtotalUsd = redondear(itemsParaGuardar.reduce((s, i) => s + i.subtotal_usd, 0));
-  const ivaUsd = ivaActivo && ivaPct > 0 ? redondear((subtotalUsd * ivaPct) / 100) : 0;
-  const totalUsd = redondear(subtotalUsd + ivaUsd);
+  // Mismo cálculo que la vista previa del formulario (ver `totales.ts`).
+  const { subtotalUsd, descuentoUsd, ivaUsd, totalUsd } = calcularTotalesPresupuesto({
+    items: itemsParaGuardar.map((i) => ({
+      cantidad: i.cantidad,
+      precioUnitarioUsd: i.precio_unitario_usd,
+    })),
+    descuentoTipo: datos.descuento_tipo,
+    descuentoValor: datos.descuento_valor,
+    ivaActivo,
+    ivaPct,
+  });
 
   const { data: presupuesto } = await supabase
     .from("mm_presupuestos")
@@ -375,6 +409,9 @@ export async function actualizarPresupuesto(
       cliente_telefono_manual: datos.cliente_id ? null : datos.cliente_telefono_manual,
       validez_hasta: datos.validez_hasta,
       subtotal_usd: subtotalUsd,
+      descuento_tipo: datos.descuento_tipo,
+      descuento_valor: datos.descuento_valor,
+      descuento_usd: descuentoUsd,
       iva_usd: ivaUsd,
       total_usd: totalUsd,
       total_bs: totalBs,
@@ -534,6 +571,9 @@ export async function duplicarPresupuesto(presupuestoId: string): Promise<Presup
       tasa_tipo: tipoTasa,
       tasa_usada: tasa.valor,
       subtotal_usd: original.subtotalUsd,
+      descuento_tipo: original.descuentoTipo,
+      descuento_valor: original.descuentoValor,
+      descuento_usd: original.descuentoUsd,
       iva_usd: original.ivaUsd,
       total_usd: totalUsd,
       total_bs: totalBs,

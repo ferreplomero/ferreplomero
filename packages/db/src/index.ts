@@ -87,6 +87,7 @@ export type {
   MmCreditoClienteTipo,
   MmSaldoCreditoCliente,
   MmPresupuestoEstado,
+  MmPresupuestoDescuentoTipo,
   MmPedidoPublicoEstado,
   MmPedidoFormaPago,
   MmPresupuesto,

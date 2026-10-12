@@ -91,6 +91,16 @@ export default async function PresupuestoPublicoPage({ params }: Props) {
             <span className="text-muted-foreground">Subtotal</span>
             <span className="tabular-nums">{usd(presupuesto.subtotalUsd)}</span>
           </div>
+          {presupuesto.descuentoUsd > 0 ? (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">
+                {presupuesto.descuentoTipo === "porcentaje"
+                  ? `Descuento (${presupuesto.descuentoValor} %)`
+                  : "Descuento"}
+              </span>
+              <span className="tabular-nums">−{usd(presupuesto.descuentoUsd)}</span>
+            </div>
+          ) : null}
           {presupuesto.ivaUsd > 0 ? (
             <div className="flex justify-between">
               <span className="text-muted-foreground">IVA</span>

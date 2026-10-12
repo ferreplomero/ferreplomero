@@ -36,6 +36,10 @@ export interface DatosDocumentoPresupuesto {
     imagenPng: Buffer | null;
   }[];
   subtotalUsd: number;
+  /** Descuento global ya calculado (0 = sin descuento) y su etiqueta lista
+   * para imprimir ("Descuento (10 %)" o "Descuento"). */
+  descuentoUsd: number;
+  descuentoEtiqueta: string;
   ivaUsd: number;
   totalUsd: number;
   totalBs: number;
@@ -101,6 +105,11 @@ export async function obtenerDatosDocumentoPresupuesto(
       };
     }),
     subtotalUsd: presupuesto.subtotalUsd,
+    descuentoUsd: presupuesto.descuentoUsd,
+    descuentoEtiqueta:
+      presupuesto.descuentoTipo === "porcentaje"
+        ? `Descuento (${presupuesto.descuentoValor} %)`
+        : "Descuento",
     ivaUsd: presupuesto.ivaUsd,
     totalUsd: presupuesto.totalUsd,
     totalBs: presupuesto.totalBs,

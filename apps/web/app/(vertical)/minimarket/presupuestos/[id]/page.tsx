@@ -209,6 +209,18 @@ export default async function PresupuestoDetallePage({ params }: Props) {
                   <p className="text-heading tabular-nums">{usd(presupuesto.subtotalUsd)}</p>
                 </td>
               </tr>
+              {presupuesto.descuentoUsd > 0 ? (
+                <tr>
+                  <td colSpan={3} className="text-muted-foreground px-4 py-3 text-right text-sm">
+                    {presupuesto.descuentoTipo === "porcentaje"
+                      ? `Descuento (${presupuesto.descuentoValor} %)`
+                      : "Descuento"}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <p className="text-success tabular-nums">−{usd(presupuesto.descuentoUsd)}</p>
+                  </td>
+                </tr>
+              ) : null}
               {presupuesto.ivaUsd > 0 ? (
                 <tr>
                   <td colSpan={3} className="text-muted-foreground px-4 py-3 text-right text-sm">

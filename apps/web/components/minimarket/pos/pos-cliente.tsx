@@ -169,6 +169,7 @@ export interface PosClienteProps {
    */
   presupuestoInicial?: {
     id: string;
+    numero: string;
     clienteId: string | null;
     notas: string | null;
     tasaTipo: TipoTasa;
@@ -178,6 +179,10 @@ export interface PosClienteProps {
       precioAjustadoUsd?: number;
       motivoAjustePrecio?: string;
     }[];
+    /** Descuento global pactado en el presupuesto (0121). */
+    descuentoTipo: "ninguno" | "porcentaje" | "monto";
+    descuentoValor: number;
+    descuentoUsd: number;
   } | null;
   /** Aviso informativo (nunca bloqueante) de ítems del presupuesto cuyo stock
    * actual ya no alcanza para la cantidad cotizada — mismo criterio "nunca
@@ -1700,15 +1705,45 @@ export function PosCliente({
   // cobro, `confirmarVenta`, `computeCobro`, IGTF, caja/bancos ni fiado.
   React.useEffect(() => {
     if (!presupuestoInicial) return;
+    // El precio pactado solo se marca como "ajustado" en el carrito cuando
+    // difiere del catálogo de hoy (si coincide, se ve como una línea normal);
+    // igual el servidor cobra el precio del presupuesto leído de la BD.
+    const motivo = `Precio del presupuesto ${presupuestoInicial.numero}`;
+    const itemsConPrecio = presupuestoInicial.items.map((item) => {
+      const producto = productos.find((p) => p.id === item.productoId);
+      const difiere =
+        item.precioAjustadoUsd !== undefined &&
+        (!producto || Math.abs(item.precioAjustadoUsd - Number(producto.precio_usd)) > 0.001);
+      return difiere
+        ? { ...item, motivoAjustePrecio: item.motivoAjustePrecio ?? motivo }
+        : { ...item, precioAjustadoUsd: undefined };
+    });
+    // Descuento global del presupuesto: el porcentual se pasa como % (el monto
+    // lo recalcula el POS sobre el subtotal del carrito) y el fijo como monto,
+    // igual que si el cajero lo hubiera escrito en el campo de descuento.
+    const pct = presupuestoInicial.descuentoTipo === "porcentaje";
+    const subtotalPresupuesto = itemsConPrecio.reduce((s, item) => {
+      const producto = productos.find((p) => p.id === item.productoId);
+      const precio = item.precioAjustadoUsd ?? Number(producto?.precio_usd ?? 0);
+      return s + Math.round(precio * item.cantidad * 100) / 100;
+    }, 0);
+    const hayDescuento = presupuestoInicial.descuentoUsd > 0;
     const omitidos = hidratarDesdeVentaPendiente(
       {
         cliente_id: presupuestoInicial.clienteId,
         nota: presupuestoInicial.notas,
-        descuento_pct: "",
-        descuento_monto: "",
+        descuento_pct:
+          hayDescuento && pct
+            ? String(presupuestoInicial.descuentoValor)
+            : hayDescuento && subtotalPresupuesto > 0
+              ? String(
+                  Math.round((presupuestoInicial.descuentoUsd / subtotalPresupuesto) * 10000) / 100,
+                )
+              : "",
+        descuento_monto: hayDescuento ? String(presupuestoInicial.descuentoUsd) : "",
         tasa_tipo: presupuestoInicial.tasaTipo,
       },
-      presupuestoInicial.items,
+      itemsConPrecio,
       [],
     );
     if (omitidos > 0) {
@@ -2159,6 +2194,9 @@ export function PosCliente({
           })),
           pagos: pagosEnvio,
           descuento_usd: descuentoUsd,
+          // Venta que viene de un presupuesto: el servidor cobra los precios
+          // pactados leyéndolos del presupuesto en la BD (ver `registrarVenta`).
+          presupuesto_id: presupuestoIdEnCurso ?? undefined,
           sucursal_id: sucursalId ?? undefined,
           cliente_id: clienteId || null,
           tasa_override: tasaCobro && tasaCobro !== tasa ? tasaCobro : undefined,

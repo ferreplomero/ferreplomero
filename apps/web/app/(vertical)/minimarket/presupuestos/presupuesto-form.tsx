@@ -9,6 +9,8 @@ import { Button, Card, Input, Label, toast } from "@arkiteq/ui";
 import { SubmitButton } from "@/components/auth/submit-button";
 import { CampoMontoDual } from "@/components/minimarket/shared/campo-monto-dual";
 import type { PresupuestoDetalle } from "@/lib/minimarket/data/presupuestos";
+import { calcularTotalesPresupuesto } from "@/lib/minimarket/presupuestos/totales";
+import type { MmPresupuestoDescuentoTipo } from "@arkiteq/db";
 import type { PresupuestoResult } from "./actions";
 
 /** Prefijo fijo de todo número de presupuesto (ver `PREFIJO_NUMERO_PRESUPUESTO`
@@ -135,6 +137,16 @@ export function PresupuestoForm({
     presupuesto?.validezHasta ?? validezPorDefecto(),
   );
   const [notas, setNotas] = React.useState(presupuesto?.notas ?? "");
+  // Descuento global del presupuesto (porcentaje o monto fijo en USD). Viaja
+  // tal cual al POS al convertir en venta (ver `ventas/nueva/page.tsx`).
+  const [descuentoTipo, setDescuentoTipo] = React.useState<MmPresupuestoDescuentoTipo>(
+    presupuesto?.descuentoTipo ?? "ninguno",
+  );
+  const [descuentoValor, setDescuentoValor] = React.useState(
+    presupuesto && presupuesto.descuentoTipo !== "ninguno"
+      ? String(presupuesto.descuentoValor)
+      : "",
+  );
 
   React.useEffect(() => {
     if (state.ok && state.presupuestoId) {
@@ -148,9 +160,16 @@ export function PresupuestoForm({
   const bs = (v: number) =>
     new Intl.NumberFormat(locale, { style: "currency", currency: "VES" }).format(v);
 
-  const subtotalUsd = items.reduce((s, i) => s + i.cantidad * i.precio_unitario_usd, 0);
-  const ivaUsd = ivaActivo && ivaPct > 0 ? (subtotalUsd * ivaPct) / 100 : 0;
-  const totalUsd = subtotalUsd + ivaUsd;
+  // Mismo cálculo que guarda el servidor (`totales.ts`): lo que se ve aquí es
+  // exactamente lo que queda en el presupuesto.
+  const descuentoValorNum = parseFloat(descuentoValor.replace(",", ".")) || 0;
+  const { subtotalUsd, descuentoUsd, ivaUsd, totalUsd } = calcularTotalesPresupuesto({
+    items: items.map((i) => ({ cantidad: i.cantidad, precioUnitarioUsd: i.precio_unitario_usd })),
+    descuentoTipo,
+    descuentoValor: descuentoValorNum,
+    ivaActivo,
+    ivaPct,
+  });
   const totalBs = totalUsd * tasa;
 
   const productosFiltrados = busqueda.trim()
@@ -225,6 +244,8 @@ export function PresupuestoForm({
           fd.set("cliente_cedula_manual", clienteId ? "" : clienteCedulaManual);
           fd.set("cliente_telefono_manual", clienteId ? "" : clienteTelefonoManual);
           if (!presupuesto) fd.set("numero", numeroCompleto);
+          fd.set("descuento_tipo", descuentoTipo);
+          fd.set("descuento_valor", descuentoTipo === "ninguno" ? "0" : String(descuentoValorNum));
           formAction(fd);
         }}
         className="space-y-6"
@@ -535,6 +556,72 @@ export function PresupuestoForm({
                   </span>
                   <span className="text-heading tabular-nums">{usd(subtotalUsd)}</span>
                 </div>
+                <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                  <Label htmlFor="descuento_valor" className="text-muted-foreground font-normal">
+                    Descuento al total
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <div
+                      role="radiogroup"
+                      aria-label="Tipo de descuento"
+                      className="border-border flex overflow-hidden rounded-md border text-xs"
+                    >
+                      {(
+                        [
+                          ["ninguno", "Sin desc."],
+                          ["porcentaje", "%"],
+                          ["monto", "$"],
+                        ] as const
+                      ).map(([valor, etiqueta]) => (
+                        <button
+                          key={valor}
+                          type="button"
+                          role="radio"
+                          aria-checked={descuentoTipo === valor}
+                          onClick={() => {
+                            setDescuentoTipo(valor);
+                            if (valor === "ninguno") setDescuentoValor("");
+                          }}
+                          className={
+                            descuentoTipo === valor
+                              ? "bg-primary text-primary-foreground px-2.5 py-1.5 font-medium"
+                              : "text-muted-foreground hover:bg-muted px-2.5 py-1.5"
+                          }
+                        >
+                          {etiqueta}
+                        </button>
+                      ))}
+                    </div>
+                    {descuentoTipo !== "ninguno" ? (
+                      <Input
+                        id="descuento_valor"
+                        type="number"
+                        inputMode="decimal"
+                        step="0.01"
+                        min="0"
+                        max={descuentoTipo === "porcentaje" ? "100" : undefined}
+                        value={descuentoValor}
+                        onChange={(e) => setDescuentoValor(e.target.value)}
+                        placeholder={descuentoTipo === "porcentaje" ? "0 %" : "0.00"}
+                        className="h-8 w-24 text-right text-sm"
+                        aria-label={
+                          descuentoTipo === "porcentaje"
+                            ? "Descuento en porcentaje"
+                            : "Descuento en dólares"
+                        }
+                      />
+                    ) : null}
+                  </div>
+                </div>
+                {descuentoUsd > 0 ? (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">
+                      Descuento
+                      {descuentoTipo === "porcentaje" ? ` (${descuentoValorNum} %)` : ""}
+                    </span>
+                    <span className="text-success tabular-nums">−{usd(descuentoUsd)}</span>
+                  </div>
+                ) : null}
                 {ivaActivo ? (
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-muted-foreground">IVA ({ivaPct} %)</span>

@@ -130,6 +130,14 @@ export interface VentaInput {
    * del cobro. `dejada_por_id` es el usuario que la había dejado en espera.
    */
   retomada?: { venta_pendiente_id: string; dejada_por_id: string | null };
+  /**
+   * La venta es la conversión de este presupuesto (ya reservado con
+   * `reservarConversionPresupuesto`). El servidor cobra los precios pactados
+   * leyéndolos del presupuesto en la BD — nunca de lo que mande el navegador —
+   * para que la venta salga con el mismo precio aunque el catálogo haya
+   * cambiado desde que se hizo el presupuesto.
+   */
+  presupuesto_id?: string;
 }
 
 export interface VentaResult {
@@ -178,6 +186,7 @@ const ventaSchema = z
         "Solo puede haber un pago de tipo fiado por venta.",
       ),
     descuento_usd: z.coerce.number().nonnegative().optional().default(0),
+    presupuesto_id: z.string().uuid().optional(),
     sucursal_id: z.string().uuid().optional(),
     cliente_id: z.string().uuid().nullable().optional(),
     tasa_override: z.coerce.number().positive().optional(),
@@ -343,6 +352,7 @@ export async function registrarVenta(input: VentaInput): Promise<VentaResult> {
       svResult,
       cuentasRes,
       svCreditoResult,
+      presupuestoRes,
     ] = await Promise.all([
       getTasaVigente(supabase, tenantId),
       supabase
@@ -389,6 +399,19 @@ export async function registrarVenta(input: VentaInput): Promise<VentaResult> {
             .from("mm_v_saldo_credito_cliente")
             .select("saldo_usd")
             .eq("cliente_id", clienteIdParaCredito)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      // Presupuesto en conversión: solo cuenta si está RESERVADO para esta
+      // venta (`convertido` sin `venta_id`, ver reservarConversionPresupuesto).
+      v.presupuesto_id
+        ? supabase
+            .from("mm_presupuestos")
+            .select("id, numero")
+            .eq("id", v.presupuesto_id)
+            .eq("tenant_id", tenantId)
+            .eq("estado", "convertido")
+            .is("venta_id", null)
+            .is("deleted_at", null)
             .maybeSingle()
         : Promise.resolve({ data: null, error: null }),
     ]);
@@ -488,6 +511,44 @@ export async function registrarVenta(input: VentaInput): Promise<VentaResult> {
     // Precios reales desde la BD (no se confía en el cliente).
     if (prodRes.error) return { error: "No se pudieron leer los productos." };
     const mapa = new Map((prodRes.data ?? []).map((p) => [p.id, p]));
+
+    // Precios pactados del presupuesto (si la venta es su conversión): pasan a
+    // ser el precio base de esas líneas en lugar del catálogo de hoy. Las
+    // líneas que el presupuesto ajustó a mano (precio distinto al de lista)
+    // siguen exigiendo `ventas.editar`, mismo criterio que
+    // `prepararConversionPresupuesto`; si falta, se rechaza en vez de cobrar
+    // en silencio otro precio.
+    if (v.presupuesto_id && (presupuestoRes.error || !presupuestoRes.data)) {
+      return {
+        error:
+          "No se pudo confirmar el presupuesto de esta venta (ya no está reservado). Actualiza la página e inténtalo de nuevo.",
+      };
+    }
+    const presupuestoVenta = presupuestoRes.data;
+    const precioPactado = new Map<string, number>();
+    if (presupuestoVenta) {
+      const { data: itemsPresupuestoData, error: itemsPresupuestoError } = await supabase
+        .from("mm_presupuestos_items")
+        .select("producto_id, precio_unitario_usd, precio_ajustado")
+        .eq("presupuesto_id", presupuestoVenta.id)
+        .eq("tenant_id", tenantId);
+      if (itemsPresupuestoError) {
+        return { error: "No se pudieron leer los precios del presupuesto. Inténtalo de nuevo." };
+      }
+      const itemsPresupuesto = itemsPresupuestoData ?? [];
+      if (
+        itemsPresupuesto.some((i) => i.precio_ajustado) &&
+        (await requirePermisoAccion(supabase, tenantId, session.user.id, "ventas", "editar"))
+      ) {
+        return {
+          error:
+            "Este presupuesto tiene precios ajustados. Necesitas permiso de edición de ventas para convertirlo — pide a un supervisor o administrador.",
+        };
+      }
+      for (const i of itemsPresupuesto) {
+        precioPactado.set(i.producto_id, Number(i.precio_unitario_usd));
+      }
+    }
     const lineas = v.items.map((item) => {
       const prod = mapa.get(item.producto_id);
       if (!prod) return null;
@@ -500,8 +561,18 @@ export async function registrarVenta(input: VentaInput): Promise<VentaResult> {
         tienePermisoAjustePrecio && item.precio_usd_override !== undefined
           ? item.precio_usd_override
           : null;
-      const usaAjuste = override !== null;
-      const precioUnitario = override ?? Number(prod.precio_usd);
+      // Sin override: el precio pactado del presupuesto (si la línea viene de
+      // uno) y, si no, el de catálogo. Queda marcada como ajustada cuando el
+      // precio cobrado difiere del catálogo, para que se vea en el historial.
+      const pactado = precioPactado.get(prod.id);
+      const precioUnitario = override ?? pactado ?? Number(prod.precio_usd);
+      const usaAjuste =
+        override !== null || Math.abs(precioUnitario - Number(prod.precio_usd)) > 0.001;
+      const motivoAjuste =
+        item.motivo_ajuste_precio ??
+        (override === null && pactado !== undefined && presupuestoVenta
+          ? `Precio del presupuesto ${presupuestoVenta.numero}`
+          : null);
       const total = redondear(precioUnitario * item.cantidad);
       // Override puntual de IVA/IGTF de esta línea, SOLO para esta venta —
       // nunca toca `mm_productos`. `undefined` = usa el estado guardado del
@@ -523,7 +594,7 @@ export async function registrarVenta(input: VentaInput): Promise<VentaResult> {
         aplica_igtf: aplicaIgtfLinea,
         total_usd: total,
         precio_ajustado: usaAjuste,
-        motivo_ajuste_precio: usaAjuste ? (item.motivo_ajuste_precio ?? null) : null,
+        motivo_ajuste_precio: usaAjuste ? motivoAjuste : null,
       };
     });
     if (lineas.some((l) => l === null)) {

@@ -110,6 +110,8 @@ export interface DatosPresupuestoPdf {
     imagenPng: Buffer | null;
   }[];
   subtotalUsd: number;
+  descuentoUsd: number;
+  descuentoEtiqueta: string;
   ivaUsd: number;
   totalUsd: number;
   totalBs: number;
@@ -188,6 +190,12 @@ export function PresupuestoDocumento({ datos }: { datos: DatosPresupuestoPdf }) 
             <Text style={styles.totalLabel}>Subtotal</Text>
             <Text style={styles.totalValor}>{fmtUsd(datos.subtotalUsd)}</Text>
           </View>
+          {datos.descuentoUsd > 0 ? (
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>{datos.descuentoEtiqueta}</Text>
+              <Text style={styles.totalValor}>-{fmtUsd(datos.descuentoUsd)}</Text>
+            </View>
+          ) : null}
           {datos.ivaUsd > 0 ? (
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>IVA</Text>

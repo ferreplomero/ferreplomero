@@ -124,10 +124,14 @@ export default async function NuevaVentaPage({ searchParams }: Props) {
   // ignora el parámetro y el POS arranca vacío como una venta normal.
   let presupuestoInicial: {
     id: string;
+    numero: string;
     clienteId: string | null;
     notas: string | null;
     tasaTipo: "bcv" | "euro" | "manual";
     items: { productoId: string; cantidad: number; precioAjustadoUsd?: number }[];
+    descuentoTipo: "ninguno" | "porcentaje" | "monto";
+    descuentoValor: number;
+    descuentoUsd: number;
   } | null = null;
   let avisosStockPresupuesto: { nombre: string; cantidadPedida: number; stockActual: number }[] =
     [];
@@ -156,14 +160,25 @@ export default async function NuevaVentaPage({ searchParams }: Props) {
         if (!tieneAjustes || !permisoAjuste) {
           presupuestoInicial = {
             id: presupuesto.id,
+            numero: presupuesto.numero,
             clienteId: presupuesto.clienteId,
             notas: presupuesto.notas,
             tasaTipo: presupuesto.tasaTipo,
+            // TODAS las líneas viajan con el precio pactado en el presupuesto
+            // (no solo las ajustadas a mano): antes las demás se cobraban al
+            // precio de catálogo del día de la venta, así que si el producto
+            // había cambiado de precio desde que se hizo el presupuesto, la
+            // venta salía con otro monto. `registrarVenta` vuelve a leer estos
+            // precios del presupuesto en la BD (ver `presupuesto_id`), no
+            // confía en lo que mande el navegador.
             items: presupuesto.items.map((i) => ({
               productoId: i.productoId,
               cantidad: i.cantidad,
-              precioAjustadoUsd: i.precioAjustado ? i.precioUnitarioUsd : undefined,
+              precioAjustadoUsd: i.precioUnitarioUsd,
             })),
+            descuentoTipo: presupuesto.descuentoTipo,
+            descuentoValor: presupuesto.descuentoValor,
+            descuentoUsd: presupuesto.descuentoUsd,
           };
           avisosStockPresupuesto = presupuesto.items
             .map((i) => {

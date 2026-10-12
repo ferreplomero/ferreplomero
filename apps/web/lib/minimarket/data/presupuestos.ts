@@ -12,7 +12,12 @@
  * `lib/minimarket/data/deudas.ts` y "moroso" en clientes.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database, MmPresupuestoEstado, MmTipoTasa } from "@arkiteq/db";
+import type {
+  Database,
+  MmPresupuestoDescuentoTipo,
+  MmPresupuestoEstado,
+  MmTipoTasa,
+} from "@arkiteq/db";
 import { hoyEnTz } from "../date-format";
 
 type Client = SupabaseClient<Database>;
@@ -54,6 +59,11 @@ export interface PresupuestoDetalle extends PresupuestoResumen {
   tasaTipo: MmTipoTasa;
   tasaUsada: number;
   subtotalUsd: number;
+  /** Descuento global (0121): tipo y valor tal como los escribió el usuario. */
+  descuentoTipo: MmPresupuestoDescuentoTipo;
+  descuentoValor: number;
+  /** Monto del descuento en USD, ya calculado al guardar. */
+  descuentoUsd: number;
   ivaUsd: number;
   notas: string | null;
   usuarioId: string | null;
@@ -246,6 +256,9 @@ export async function getPresupuestoDetalle(
     tasaTipo: p.tasa_tipo as MmTipoTasa,
     tasaUsada: Number(p.tasa_usada),
     subtotalUsd: Number(p.subtotal_usd),
+    descuentoTipo: p.descuento_tipo ?? "ninguno",
+    descuentoValor: Number(p.descuento_valor ?? 0),
+    descuentoUsd: Number(p.descuento_usd ?? 0),
     ivaUsd: Number(p.iva_usd),
     totalUsd: Number(p.total_usd),
     totalBs: Number(p.total_bs),
