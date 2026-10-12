@@ -24,6 +24,10 @@ export interface MedidasEtiqueta {
   secundarioPt: number;
   /** Alto del código de barras en milímetros. */
   barrasMm: number;
+  /** Margen interno y separación entre líneas, en milímetros (más finos en la
+   * pequeña para que nombre, precios, SKU y código de barras quepan con holgura). */
+  paddingMm: number;
+  gapMm: number;
 }
 
 export const TAMANOS_ETIQUETA: Record<TamanoEtiqueta, MedidasEtiqueta> = {
@@ -35,7 +39,9 @@ export const TAMANOS_ETIQUETA: Record<TamanoEtiqueta, MedidasEtiqueta> = {
     productoPt: 7,
     precioPt: 12,
     secundarioPt: 6,
-    barrasMm: 6,
+    barrasMm: 4.5,
+    paddingMm: 1,
+    gapMm: 0.2,
   },
   mediana: {
     etiqueta: "Mediana (70 × 40 mm)",
@@ -46,6 +52,8 @@ export const TAMANOS_ETIQUETA: Record<TamanoEtiqueta, MedidasEtiqueta> = {
     precioPt: 17,
     secundarioPt: 7.5,
     barrasMm: 9,
+    paddingMm: 1.5,
+    gapMm: 0.4,
   },
   grande: {
     etiqueta: "Grande (100 × 60 mm)",
@@ -56,6 +64,8 @@ export const TAMANOS_ETIQUETA: Record<TamanoEtiqueta, MedidasEtiqueta> = {
     precioPt: 26,
     secundarioPt: 10,
     barrasMm: 13,
+    paddingMm: 2,
+    gapMm: 0.6,
   },
 };
 

@@ -197,6 +197,8 @@ function Etiqueta({
       style={{
         width: `${medidas.anchoMm}mm`,
         height: `${medidas.altoMm}mm`,
+        padding: `${medidas.paddingMm}mm ${medidas.paddingMm + 0.5}mm`,
+        gap: `${medidas.gapMm}mm`,
       }}
     >
       {opciones.mostrarNegocio ? (
