@@ -167,49 +167,80 @@ export function CajaCliente({
             Sin movimientos. Las ventas en efectivo aparecen aquí.
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="border-border text-muted-foreground border-b text-left text-xs uppercase tracking-wide">
-                <tr>
-                  <th className="px-4 py-2.5 font-medium">Hora</th>
-                  <th className="px-4 py-2.5 font-medium">Tipo</th>
-                  <th className="px-4 py-2.5 font-medium">Motivo</th>
-                  <th className="px-4 py-2.5 text-right font-medium">Monto</th>
-                </tr>
-              </thead>
-              <tbody>
-                {movimientos.map((m) => {
-                  const suma = m.tipo === "ingreso" || m.tipo === "venta";
-                  const esSaldoInicial = m.motivo === MOTIVO_SALDO_INICIAL;
-                  return (
-                    <tr key={m.id} className="border-border/70 border-b last:border-0">
-                      <td className="text-muted-foreground whitespace-nowrap px-4 py-2.5">
-                        {fecha.format(new Date(m.created_at))}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        {esSaldoInicial ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
-                            Saldo inicial
-                          </span>
-                        ) : (
-                          TIPO_LABEL[m.tipo]
-                        )}
-                      </td>
-                      <td className="text-muted-foreground min-w-[11rem] px-4 py-2.5">
-                        {m.motivo ?? "—"}
-                      </td>
-                      <td
-                        className={`px-4 py-2.5 text-right tabular-nums ${suma ? "text-success" : "text-warning"}`}
+          <>
+            {/* Móvil: tarjetas. */}
+            <ul className="divide-border divide-y md:hidden">
+              {movimientos.map((m) => {
+                const suma = m.tipo === "ingreso" || m.tipo === "venta";
+                const esSaldoInicial = m.motivo === MOTIVO_SALDO_INICIAL;
+                return (
+                  <li key={m.id} className="space-y-1 px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-heading min-w-0 text-sm font-medium">
+                        {esSaldoInicial ? "Saldo inicial" : TIPO_LABEL[m.tipo]}
+                      </p>
+                      <p
+                        className={`shrink-0 whitespace-nowrap font-medium tabular-nums ${suma ? "text-success" : "text-warning"}`}
                       >
                         {suma ? "+" : "−"}
                         {money(Math.abs(m.monto), m.moneda === "USD" ? "USD" : "VES")}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                      </p>
+                    </div>
+                    <p className="text-muted-foreground text-xs">
+                      <span className="whitespace-nowrap tabular-nums">
+                        {fecha.format(new Date(m.created_at))}
+                      </span>
+                      {m.motivo && !esSaldoInicial ? ` · ${m.motivo}` : ""}
+                    </p>
+                  </li>
+                );
+              })}
+            </ul>
+
+            <div className="hidden overflow-x-auto md:block">
+              <table className="w-full text-sm">
+                <thead className="border-border text-muted-foreground border-b text-left text-xs uppercase tracking-wide">
+                  <tr>
+                    <th className="px-4 py-2.5 font-medium">Hora</th>
+                    <th className="px-4 py-2.5 font-medium">Tipo</th>
+                    <th className="px-4 py-2.5 font-medium">Motivo</th>
+                    <th className="px-4 py-2.5 text-right font-medium">Monto</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {movimientos.map((m) => {
+                    const suma = m.tipo === "ingreso" || m.tipo === "venta";
+                    const esSaldoInicial = m.motivo === MOTIVO_SALDO_INICIAL;
+                    return (
+                      <tr key={m.id} className="border-border/70 border-b last:border-0">
+                        <td className="text-muted-foreground whitespace-nowrap px-4 py-2.5">
+                          {fecha.format(new Date(m.created_at))}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          {esSaldoInicial ? (
+                            <span className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+                              Saldo inicial
+                            </span>
+                          ) : (
+                            TIPO_LABEL[m.tipo]
+                          )}
+                        </td>
+                        <td className="text-muted-foreground min-w-[11rem] px-4 py-2.5">
+                          {m.motivo ?? "—"}
+                        </td>
+                        <td
+                          className={`whitespace-nowrap px-4 py-2.5 text-right tabular-nums ${suma ? "text-success" : "text-warning"}`}
+                        >
+                          {suma ? "+" : "−"}
+                          {money(Math.abs(m.monto), m.moneda === "USD" ? "USD" : "VES")}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </Card>
 

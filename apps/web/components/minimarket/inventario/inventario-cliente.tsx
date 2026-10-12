@@ -20,6 +20,7 @@ import {
   Plus,
   Search,
   Tag,
+  Tags,
   Trash2,
   Upload,
   X,
@@ -405,6 +406,12 @@ export function InventarioCliente({
               Exportar
             </Link>
           </Button>
+          <Button asChild variant="outline">
+            <Link href="/minimarket/inventario/etiquetas">
+              <Tags className="size-4" />
+              Etiquetas
+            </Link>
+          </Button>
           <Button variant="outline" onClick={() => setCatOpen(true)}>
             <FolderPlus className="size-4" />
             Categoría
@@ -508,9 +515,17 @@ export function InventarioCliente({
             {seleccionados.size} producto{seleccionados.size === 1 ? "" : "s"} seleccionado
             {seleccionados.size === 1 ? "" : "s"}
           </p>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="ghost" size="sm" onClick={() => setSeleccionados(new Set())}>
               Cancelar
+            </Button>
+            <Button variant="outline" size="sm" className="gap-1.5" asChild>
+              <Link
+                href={`/minimarket/inventario/etiquetas?ids=${Array.from(seleccionados).join(",")}`}
+              >
+                <Tags className="size-4" aria-hidden />
+                Imprimir etiquetas
+              </Link>
             </Button>
             <Button
               variant="danger"

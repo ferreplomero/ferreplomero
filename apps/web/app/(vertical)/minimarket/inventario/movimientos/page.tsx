@@ -60,8 +60,38 @@ export default async function MovimientosPage() {
         </Card>
       ) : (
         <Card className="overflow-hidden p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-sm">
+          {/* Móvil y tablet: tarjetas. */}
+          <ul className="divide-border divide-y lg:hidden">
+            {movimientos.map((m) => {
+              const etq = ETIQUETA[m.tipo];
+              return (
+                <li key={m.id} className="space-y-1 px-4 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <p className="text-heading min-w-0 font-medium">{m.producto_nombre}</p>
+                    <p
+                      className={`shrink-0 whitespace-nowrap font-medium tabular-nums ${m.cantidad < 0 ? "text-danger" : "text-success"}`}
+                    >
+                      {m.cantidad > 0 ? "+" : ""}
+                      {m.cantidad}
+                    </p>
+                  </div>
+                  <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                    <span
+                      className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 font-medium ${etq.clase}`}
+                    >
+                      {etq.texto}
+                    </span>
+                    <span className="tabular-nums">{fecha.format(new Date(m.created_at))}</span>
+                    <span>{m.sucursal_nombre}</span>
+                  </div>
+                  {m.motivo ? <p className="text-muted-foreground text-xs">{m.motivo}</p> : null}
+                </li>
+              );
+            })}
+          </ul>
+
+          <div className="hidden overflow-x-auto lg:block">
+            <table className="w-full text-sm">
               <thead className="border-border text-muted-foreground border-b text-left text-xs uppercase tracking-wide">
                 <tr>
                   <th className="px-4 py-3 font-medium">Fecha</th>
@@ -83,13 +113,13 @@ export default async function MovimientosPage() {
                       <td className="text-heading px-4 py-3">{m.producto_nombre}</td>
                       <td className="px-4 py-3">
                         <span
-                          className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${etq.clase}`}
+                          className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${etq.clase}`}
                         >
                           {etq.texto}
                         </span>
                       </td>
                       <td
-                        className={`px-4 py-3 text-right tabular-nums ${m.cantidad < 0 ? "text-danger" : "text-success"}`}
+                        className={`whitespace-nowrap px-4 py-3 text-right tabular-nums ${m.cantidad < 0 ? "text-danger" : "text-success"}`}
                       >
                         {m.cantidad > 0 ? "+" : ""}
                         {m.cantidad}

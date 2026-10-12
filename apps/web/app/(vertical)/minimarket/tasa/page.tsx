@@ -113,7 +113,7 @@ export default async function TasaPage() {
             </Link>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[420px] text-sm">
+            <table className="w-full text-sm">
               <thead className="border-border text-muted-foreground border-b text-left text-xs uppercase tracking-wide">
                 <tr>
                   <th className="px-4 py-2.5 font-medium">Fecha</th>
@@ -127,7 +127,7 @@ export default async function TasaPage() {
                     <td className="text-muted-foreground px-4 py-2.5">
                       {fecha.format(new Date(t.created_at))}
                     </td>
-                    <td className="px-4 py-2.5 text-right tabular-nums">
+                    <td className="whitespace-nowrap px-4 py-2.5 text-right tabular-nums">
                       Bs. {num.format(t.valor)}
                     </td>
                     <td className="text-muted-foreground px-4 py-2.5">{TIPO_TASA_LABEL[t.tipo]}</td>

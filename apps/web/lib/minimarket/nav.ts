@@ -76,6 +76,7 @@ export const MINIMARKET_NAV: VerticalNavItem[] = [
       { label: "Transferencias", href: `${MINIMARKET_BASE}/inventario/transferencias` },
       { label: "Ajustes / mermas", href: `${MINIMARKET_BASE}/inventario/ajustes` },
       { label: "Carga masiva", href: `${MINIMARKET_BASE}/inventario/carga` },
+      { label: "Etiquetas de precio", href: `${MINIMARKET_BASE}/inventario/etiquetas` },
     ],
   },
   {

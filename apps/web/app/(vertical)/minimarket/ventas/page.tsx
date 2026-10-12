@@ -286,21 +286,94 @@ export default async function VentasHistorialPage({
               {resultado.pages > 1 ? ` · página ${resultado.page} de ${resultado.pages}` : ""}
             </p>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] text-sm">
+          {/* Móvil y tablet: tarjetas (sin tabla que obligue a desplazarse de lado). */}
+          <ul className="divide-border divide-y lg:hidden">
+            {resultado.ventas.map((v) => {
+              const badge = estadoBadge(v);
+              return (
+                <li key={v.id} className="space-y-2 px-4 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-heading whitespace-nowrap font-mono text-sm font-medium">
+                        {v.numero ?? "—"}
+                      </p>
+                      <p className="text-muted-foreground text-xs tabular-nums">
+                        {fechaHoraStr(v.created_at)}
+                      </p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-heading whitespace-nowrap font-medium tabular-nums">
+                        {usd(v.total_usd)}
+                      </p>
+                      <p className="text-muted-foreground whitespace-nowrap text-xs tabular-nums">
+                        {bs(v.total_bs)}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                    <span
+                      className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 font-medium ${badge.cls}`}
+                    >
+                      {badge.label}
+                    </span>
+                    {v.cliente_nombre ? (
+                      <Link
+                        href={`/minimarket/clientes/${v.cliente_id}`}
+                        className="text-accent-600 hover:underline"
+                      >
+                        {v.cliente_nombre}
+                      </Link>
+                    ) : (
+                      <span>Consumidor</span>
+                    )}
+                    <span>{v.metodos.map(metodoLabel).join(", ") || "—"}</span>
+                    <span className="whitespace-nowrap">
+                      {v.num_items} ítem{v.num_items !== 1 ? "s" : ""}
+                    </span>
+                    {v.igtf_usd > 0 ? (
+                      <span className="whitespace-nowrap">IGTF {usd(v.igtf_usd)}</span>
+                    ) : null}
+                    {v.cajero_nombre ? <span>Cajero: {v.cajero_nombre}</span> : null}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                    <Link
+                      href={`/minimarket/ventas/${v.id}`}
+                      className="text-accent-600 whitespace-nowrap text-xs font-medium hover:underline"
+                    >
+                      <FileText className="mr-0.5 inline size-3.5" />
+                      Detalle
+                    </Link>
+                    <Link
+                      href={`/minimarket/ventas/${v.id}/nota-entrega`}
+                      className="whitespace-nowrap text-xs text-amber-700 hover:underline"
+                    >
+                      <Truck className="mr-0.5 inline size-3.5" />
+                      Nota de entrega
+                    </Link>
+                    {v.estado === "completada" ? <BotonAnular ventaId={v.id} /> : null}
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+
+          {/* Escritorio: tabla. Nº y fecha comparten columna, igual que USD y Bs,
+              para que quepa sin scroll lateral en una pantalla de 1280 px. */}
+          <div className="hidden overflow-x-auto lg:block">
+            <table className="w-full text-sm">
               <thead className="border-border text-muted-foreground border-b text-left text-xs uppercase tracking-wide">
                 <tr>
-                  <th className="px-4 py-3">Nº</th>
-                  <th className="px-4 py-3">Fecha y hora</th>
+                  <th className="whitespace-nowrap px-4 py-3">Nº / Fecha</th>
                   <th className="px-4 py-3">Cliente</th>
                   <th className="px-4 py-3">Método(s)</th>
-                  <th className="px-4 py-3 text-right">Items</th>
-                  <th className="px-4 py-3 text-right">IGTF</th>
-                  <th className="px-4 py-3 text-right">Total USD</th>
-                  <th className="px-4 py-3 text-right">Total Bs</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-right">Ítems</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-right">IGTF</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-right">Total</th>
                   <th className="px-4 py-3">Cajero</th>
                   <th className="px-4 py-3">Estado</th>
-                  <th className="px-4 py-3" />
+                  <th className="px-4 py-3">
+                    <span className="sr-only">Acciones</span>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-border divide-y">
@@ -308,11 +381,13 @@ export default async function VentasHistorialPage({
                   const badge = estadoBadge(v);
                   return (
                     <tr key={v.id} className="hover:bg-surface-2 transition-colors">
-                      <td className="text-muted-foreground whitespace-nowrap px-4 py-3 font-mono text-xs">
-                        {v.numero ?? "—"}
-                      </td>
-                      <td className="text-muted-foreground px-4 py-3 text-xs tabular-nums">
-                        {fechaHoraStr(v.created_at)}
+                      <td className="px-4 py-3">
+                        <p className="text-heading whitespace-nowrap font-mono text-xs font-medium">
+                          {v.numero ?? "—"}
+                        </p>
+                        <p className="text-muted-foreground whitespace-nowrap text-xs tabular-nums">
+                          {fechaHoraStr(v.created_at)}
+                        </p>
                       </td>
                       <td className="px-4 py-3">
                         {v.cliente_nombre ? (
@@ -334,30 +409,30 @@ export default async function VentasHistorialPage({
                       <td className="text-muted-foreground px-4 py-3 text-right tabular-nums">
                         {v.num_items}
                       </td>
-                      <td className="text-muted-foreground px-4 py-3 text-right tabular-nums">
+                      <td className="text-muted-foreground whitespace-nowrap px-4 py-3 text-right tabular-nums">
                         {v.igtf_usd > 0 ? usd(v.igtf_usd) : "—"}
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="whitespace-nowrap px-4 py-3 text-right">
                         <p className="text-heading font-medium tabular-nums">{usd(v.total_usd)}</p>
-                      </td>
-                      <td className="text-muted-foreground px-4 py-3 text-right tabular-nums">
-                        {bs(v.total_bs)}
+                        <p className="text-muted-foreground text-xs tabular-nums">
+                          {bs(v.total_bs)}
+                        </p>
                       </td>
                       <td className="text-muted-foreground px-4 py-3 text-xs">
                         {v.cajero_nombre ?? "—"}
                       </td>
                       <td className="px-4 py-3">
                         <span
-                          className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}
+                          className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}
                         >
                           {badge.label}
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-col items-start gap-1">
                           <Link
                             href={`/minimarket/ventas/${v.id}`}
-                            className="text-accent-600 text-xs hover:underline"
+                            className="text-accent-600 whitespace-nowrap text-xs hover:underline"
                           >
                             <FileText className="mr-0.5 inline size-3.5" />
                             Detalle
