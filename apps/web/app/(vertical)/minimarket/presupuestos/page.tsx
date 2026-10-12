@@ -66,17 +66,17 @@ export default async function PresupuestosPage({ searchParams }: Props) {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="space-y-1">
+      <header className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+        <div className="min-w-0 flex-1 basis-72 space-y-1">
           <h1 className="font-display text-heading text-2xl font-semibold">Presupuestos</h1>
           <p className="text-muted-foreground">
-            Cotiza con precios editables. Mientras están pendientes no tocan inventario ni dinero —
-            solo al convertirse en venta.
+            Prepara cotizaciones con precios personalizados. Un presupuesto no afecta el inventario
+            ni la caja hasta que se convierte en venta.
           </p>
         </div>
         <Link
           href="/minimarket/presupuestos/nueva"
-          className="bg-accent-500 hover:bg-accent-600 focus-visible:ring-ring inline-flex shrink-0 items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-medium text-white transition-colors focus-visible:outline-none focus-visible:ring-2"
+          className="bg-accent-500 hover:bg-accent-600 focus-visible:ring-ring inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-md px-4 py-2 text-sm font-medium text-white transition-colors focus-visible:outline-none focus-visible:ring-2"
         >
           <Plus className="size-4" />
           Nuevo presupuesto
@@ -158,9 +158,9 @@ export default async function PresupuestosPage({ searchParams }: Props) {
       {presupuestos.length === 0 ? (
         <Card className="py-16 text-center">
           <FileSpreadsheet className="text-muted-foreground mx-auto mb-3 size-10" />
-          <p className="text-heading font-medium">Sin presupuestos</p>
+          <p className="text-heading font-medium">No hay presupuestos</p>
           <p className="text-muted-foreground mt-1 text-sm">
-            Crea tu primer presupuesto para cotizar a un cliente.
+            Crea un presupuesto para enviar una cotización a tu cliente.
           </p>
           <Link
             href="/minimarket/presupuestos/nueva"
@@ -177,17 +177,63 @@ export default async function PresupuestosPage({ searchParams }: Props) {
               {presupuestos.length} presupuesto{presupuestos.length !== 1 ? "s" : ""}
             </p>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[640px] text-sm">
+          {/* Móvil: tarjetas (sin tabla que obligue a desplazarse de lado). */}
+          <ul className="divide-border divide-y md:hidden">
+            {presupuestos.map((p) => {
+              const badge = badgeDe(estadoVisible(p));
+              return (
+                <li key={p.id}>
+                  <Link
+                    href={`/minimarket/presupuestos/${p.id}`}
+                    className="hover:bg-surface-2 block space-y-1.5 px-4 py-3 transition-colors"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-heading whitespace-nowrap font-medium">{p.numero}</p>
+                        <p className="text-muted-foreground text-sm">
+                          {p.clienteNombre ?? "Cliente ocasional"}
+                        </p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-heading whitespace-nowrap font-medium tabular-nums">
+                          {usd(p.totalUsd)}
+                        </p>
+                        <p className="text-muted-foreground whitespace-nowrap text-xs tabular-nums">
+                          {bs(p.totalBs)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span
+                        className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}
+                      >
+                        {badge.label}
+                      </span>
+                      <span className="text-muted-foreground text-xs tabular-nums">
+                        Emitido {fmtFechaCorta(p.fechaEmision, tz)} · Vence{" "}
+                        {fmtFechaCorta(p.validezHasta, tz)}
+                      </span>
+                    </div>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+
+          {/* Tablet y escritorio: tabla. */}
+          <div className="hidden overflow-x-auto md:block">
+            <table className="w-full text-sm">
               <thead className="border-border text-muted-foreground border-b text-left text-xs uppercase tracking-wide">
                 <tr>
-                  <th className="px-4 py-3">Número</th>
+                  <th className="whitespace-nowrap px-4 py-3">Número</th>
                   <th className="px-4 py-3">Cliente</th>
-                  <th className="px-4 py-3">Emisión</th>
-                  <th className="px-4 py-3">Válido hasta</th>
-                  <th className="px-4 py-3 text-right">Total</th>
-                  <th className="px-4 py-3">Estado</th>
-                  <th className="px-4 py-3" />
+                  <th className="whitespace-nowrap px-4 py-3">Emisión</th>
+                  <th className="whitespace-nowrap px-4 py-3">Válido hasta</th>
+                  <th className="whitespace-nowrap px-4 py-3 text-right">Total</th>
+                  <th className="whitespace-nowrap px-4 py-3">Estado</th>
+                  <th className="px-4 py-3">
+                    <span className="sr-only">Acciones</span>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-border divide-y">
@@ -195,15 +241,17 @@ export default async function PresupuestosPage({ searchParams }: Props) {
                   const badge = badgeDe(estadoVisible(p));
                   return (
                     <tr key={p.id} className="hover:bg-surface-2 transition-colors">
-                      <td className="text-heading px-4 py-3 font-medium">{p.numero}</td>
+                      <td className="text-heading whitespace-nowrap px-4 py-3 font-medium">
+                        {p.numero}
+                      </td>
                       <td className="px-4 py-3">{p.clienteNombre ?? "Cliente ocasional"}</td>
-                      <td className="text-muted-foreground px-4 py-3 tabular-nums">
+                      <td className="text-muted-foreground whitespace-nowrap px-4 py-3 tabular-nums">
                         {fmtFechaCorta(p.fechaEmision, tz)}
                       </td>
-                      <td className="text-muted-foreground px-4 py-3 tabular-nums">
+                      <td className="text-muted-foreground whitespace-nowrap px-4 py-3 tabular-nums">
                         {fmtFechaCorta(p.validezHasta, tz)}
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="whitespace-nowrap px-4 py-3 text-right">
                         <p className="text-heading font-medium tabular-nums">{usd(p.totalUsd)}</p>
                         <p className="text-muted-foreground text-xs tabular-nums">
                           {bs(p.totalBs)}
@@ -211,15 +259,15 @@ export default async function PresupuestosPage({ searchParams }: Props) {
                       </td>
                       <td className="px-4 py-3">
                         <span
-                          className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}
+                          className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}
                         >
                           {badge.label}
                         </span>
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="whitespace-nowrap px-4 py-3 text-right">
                         <Link
                           href={`/minimarket/presupuestos/${p.id}`}
-                          className="text-accent-600 text-xs hover:underline"
+                          className="text-accent-600 text-xs font-medium hover:underline"
                         >
                           Ver detalle
                         </Link>

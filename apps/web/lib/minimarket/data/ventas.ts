@@ -967,7 +967,7 @@ export async function getVentaParaRecibo(
   const { data: venta } = await client
     .from("mm_ventas")
     .select(
-      "tipo_documento, numero_documento, fecha, tasa_usada, subtotal_usd, igtf_usd, total_usd, total_bs, cliente_id, estado",
+      "tipo_documento, numero_documento, fecha, tasa_usada, subtotal_usd, descuento_usd, igtf_usd, total_usd, total_bs, cliente_id, estado",
     )
     .eq("tenant_id", tenantId)
     .eq("id", ventaId)

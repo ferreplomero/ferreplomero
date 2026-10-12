@@ -31,6 +31,20 @@ export interface TotalesPresupuesto {
   totalUsd: number;
 }
 
+/**
+ * Etiqueta del descuento para mostrar e imprimir, con el número en formato
+ * venezolano ("Descuento (7,5 %)"). La comparten el detalle, la página
+ * pública, el PDF y el Excel para que digan exactamente lo mismo.
+ */
+export function etiquetaDescuentoPresupuesto(
+  tipo: MmPresupuestoDescuentoTipo,
+  valor: number,
+): string {
+  if (tipo !== "porcentaje") return "Descuento";
+  const pct = new Intl.NumberFormat("es-VE", { maximumFractionDigits: 2 }).format(valor);
+  return `Descuento (${pct} %)`;
+}
+
 /** Monto del descuento en USD, siempre entre 0 y el subtotal. */
 export function calcularDescuentoPresupuesto(
   subtotalUsd: number,

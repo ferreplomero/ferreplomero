@@ -655,6 +655,16 @@ export function PosCliente({
     };
   }, [scannerOpen]);
 
+  /** Número con coma decimal según el país del negocio ("876,80", "6,7"). */
+  const numeroLocal = React.useCallback(
+    (valor: number, decimales = 2) =>
+      new Intl.NumberFormat(locale, {
+        minimumFractionDigits: decimales === 2 ? 2 : 0,
+        maximumFractionDigits: decimales,
+      }).format(valor),
+    [locale],
+  );
+
   const money = React.useCallback(
     (valor: number, moneda: string) => {
       try {
@@ -899,14 +909,17 @@ export function PosCliente({
     }
 
     const monedaPago = monedaDe(pago.metodo);
+    // Montos en formato venezolano (coma decimal, punto de miles): este texto
+    // lo recibe el cliente por WhatsApp.
+    const tasaTexto = tasaCobro ? numeroLocal(tasaCobro) : "";
     const montoTexto =
       monedaPago === "USD"
         ? tasaCobro
-          ? `$${num.toFixed(2)} USD (Bs ${(num * tasaCobro).toFixed(2)} a la tasa de Bs ${tasaCobro.toFixed(2)}/USD)`
-          : `$${num.toFixed(2)} USD`
+          ? `${money(num, "USD")} (${money(num * tasaCobro, "VES")} a la tasa de Bs ${tasaTexto} por USD)`
+          : money(num, "USD")
         : tasaCobro
-          ? `Bs ${num.toFixed(2)} (tasa: Bs ${tasaCobro.toFixed(2)}/USD)`
-          : `Bs ${num.toFixed(2)}`;
+          ? `${money(num, "VES")} (tasa: Bs ${tasaTexto} por USD)`
+          : money(num, "VES");
 
     const itemsTexto = lineas.map((l) => `${l.cantidad} ${l.producto.nombre}`).join(", ");
 
@@ -2866,7 +2879,9 @@ export function PosCliente({
             </div>
             {descuentoUsd > 0 ? (
               <div className="flex justify-between text-xs">
-                <span className="text-muted-foreground">Descuento ({descPctNum.toFixed(1)}%)</span>
+                <span className="text-muted-foreground">
+                  Descuento ({numeroLocal(descPctNum, 1)} %)
+                </span>
                 <span className="text-success tabular-nums">−{money(descuentoUsd, "USD")}</span>
               </div>
             ) : null}
@@ -2977,7 +2992,7 @@ export function PosCliente({
                 <DialogTitle>Cobrar venta</DialogTitle>
                 <DialogDescription>
                   {lineas.reduce((s, l) => s + l.cantidad, 0)} artículo(s)
-                  {descuentoUsd > 0 ? ` · descuento $${descuentoUsd.toFixed(2)}` : ""}
+                  {descuentoUsd > 0 ? ` · descuento ${money(descuentoUsd, "USD")}` : ""}
                 </DialogDescription>
               </DialogHeader>
               <BotonCalculadora

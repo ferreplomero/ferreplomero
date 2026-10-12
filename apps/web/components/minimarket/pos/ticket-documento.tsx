@@ -103,7 +103,14 @@ export function TicketDocumento({
       ))}
 
       <Separador />
-      <Fila izq="Subtotal" der={m(doc.subtotalUsd)} />
+      {(doc.descuentoUsd ?? 0) > 0 ? (
+        <>
+          <Fila izq="Subtotal" der={m(doc.subtotalUsd + (doc.descuentoUsd ?? 0))} />
+          <Fila izq="Descuento" der={`-${m(doc.descuentoUsd ?? 0)}`} />
+        </>
+      ) : (
+        <Fila izq="Subtotal" der={m(doc.subtotalUsd)} />
+      )}
       {doc.ivaUsd > 0 ? <Fila izq="IVA" der={m(doc.ivaUsd)} /> : null}
       {doc.igtfUsd > 0 ? <Fila izq="IGTF (3 %)" der={m(doc.igtfUsd)} /> : null}
       <div className="text-[1.15em]">

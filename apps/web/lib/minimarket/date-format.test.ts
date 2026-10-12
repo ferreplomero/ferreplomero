@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { fechaEnTz, hoyEnTz, rangoLocalAUtc } from "./date-format";
+import {
+  fechaEnTz,
+  fmtFechaCorta,
+  fmtFechaHora,
+  fmtFechaLarga,
+  hoyEnTz,
+  rangoLocalAUtc,
+} from "./date-format";
 
 describe("fechaEnTz", () => {
   it("usa la fecha de calendario del negocio, no la de UTC", () => {
@@ -78,5 +85,20 @@ describe("rangoLocalAUtc", () => {
     );
     expect(desdeIso).toBe("2026-06-29T00:00:00.000Z");
     expect(hastaIso).toBe("2026-06-30T00:00:00.000Z");
+  });
+});
+
+describe("fmtFechaCorta / fmtFechaLarga con fechas sin hora", () => {
+  it("una fecha de calendario (YYYY-MM-DD) se muestra tal cual, sin correrse al día anterior en Caracas", () => {
+    expect(fmtFechaCorta("2026-10-12", "America/Caracas")).toBe(
+      fmtFechaCorta("2026-10-12T12:00:00.000Z", "UTC"),
+    );
+    expect(fmtFechaLarga("2026-10-12", "America/Caracas")).toContain("12 de octubre de 2026");
+  });
+
+  it("un timestamp con hora sigue usando la zona del negocio", () => {
+    // 01:00 UTC del 13 = 21:00 del 12 en Caracas.
+    expect(fmtFechaLarga("2026-10-13T01:00:00.000Z", "America/Caracas")).toContain("12 de octubre");
+    expect(fmtFechaHora("2026-10-13T01:00:00.000Z", "America/Caracas")).toContain("12");
   });
 });

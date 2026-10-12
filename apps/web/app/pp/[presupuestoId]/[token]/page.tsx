@@ -6,6 +6,7 @@ import { getPresupuestoDetalle } from "@/lib/minimarket/data/presupuestos";
 import { getTimezoneNegocio } from "@/lib/minimarket/timezone";
 import { fmtFechaCorta, fmtFechaLarga } from "@/lib/minimarket/date-format";
 import { tokenPresupuestoValido } from "@/lib/minimarket/presupuesto-link";
+import { etiquetaDescuentoPresupuesto } from "@/lib/minimarket/presupuestos/totales";
 
 // Contiene datos del cliente y precios cotizados: nunca indexable.
 export const metadata: Metadata = {
@@ -60,7 +61,8 @@ export default async function PresupuestoPublicoPage({ params }: Props) {
         <div className="space-y-1 text-center">
           <p className="text-heading font-display text-lg font-semibold">{nombreComercial}</p>
           <p className="text-muted-foreground text-sm">
-            Presupuesto {presupuesto.numero} · {fmtFechaLarga(presupuesto.fechaEmision, tz)}
+            Presupuesto <span className="whitespace-nowrap">{presupuesto.numero}</span> ·{" "}
+            {fmtFechaLarga(presupuesto.fechaEmision, tz)}
           </p>
           <p className="text-muted-foreground text-xs">
             Válido hasta {fmtFechaCorta(presupuesto.validezHasta, tz)}
@@ -69,17 +71,14 @@ export default async function PresupuestoPublicoPage({ params }: Props) {
 
         <div className="border-border divide-border divide-y rounded-md border">
           {presupuesto.items.map((item) => (
-            <div
-              key={item.id}
-              className="flex items-center justify-between gap-2 px-3 py-2 text-sm"
-            >
+            <div key={item.id} className="flex items-start justify-between gap-3 px-3 py-2 text-sm">
               <div className="min-w-0">
-                <p className="text-heading truncate font-medium">{item.descripcion}</p>
-                <p className="text-muted-foreground text-xs">
+                <p className="text-heading font-medium">{item.descripcion}</p>
+                <p className="text-muted-foreground text-xs tabular-nums">
                   {item.cantidad} × {usd(item.precioUnitarioUsd)}
                 </p>
               </div>
-              <p className="text-heading shrink-0 font-medium tabular-nums">
+              <p className="text-heading shrink-0 whitespace-nowrap font-medium tabular-nums">
                 {usd(item.subtotalUsd)}
               </p>
             </div>
@@ -89,29 +88,32 @@ export default async function PresupuestoPublicoPage({ params }: Props) {
         <div className="space-y-1 text-sm">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Subtotal</span>
-            <span className="tabular-nums">{usd(presupuesto.subtotalUsd)}</span>
+            <span className="whitespace-nowrap tabular-nums">{usd(presupuesto.subtotalUsd)}</span>
           </div>
           {presupuesto.descuentoUsd > 0 ? (
             <div className="flex justify-between">
               <span className="text-muted-foreground">
-                {presupuesto.descuentoTipo === "porcentaje"
-                  ? `Descuento (${presupuesto.descuentoValor} %)`
-                  : "Descuento"}
+                {etiquetaDescuentoPresupuesto(
+                  presupuesto.descuentoTipo,
+                  presupuesto.descuentoValor,
+                )}
               </span>
-              <span className="tabular-nums">−{usd(presupuesto.descuentoUsd)}</span>
+              <span className="whitespace-nowrap tabular-nums">
+                −{usd(presupuesto.descuentoUsd)}
+              </span>
             </div>
           ) : null}
           {presupuesto.ivaUsd > 0 ? (
             <div className="flex justify-between">
               <span className="text-muted-foreground">IVA</span>
-              <span className="tabular-nums">{usd(presupuesto.ivaUsd)}</span>
+              <span className="whitespace-nowrap tabular-nums">{usd(presupuesto.ivaUsd)}</span>
             </div>
           ) : null}
           <div className="border-border flex justify-between border-t pt-1.5 font-semibold">
             <span className="text-heading">Total</span>
             <div className="text-right">
-              <p className="tabular-nums">{usd(presupuesto.totalUsd)}</p>
-              <p className="text-muted-foreground text-xs font-normal tabular-nums">
+              <p className="whitespace-nowrap tabular-nums">{usd(presupuesto.totalUsd)}</p>
+              <p className="text-muted-foreground whitespace-nowrap text-xs font-normal tabular-nums">
                 {bs(presupuesto.totalBs)}
               </p>
             </div>
@@ -136,7 +138,7 @@ export default async function PresupuestoPublicoPage({ params }: Props) {
         </div>
 
         <p className="text-muted-foreground text-center text-xs">
-          Este es un presupuesto/cotización, no es una factura ni un recibo de venta.
+          Este documento es una cotización. No es una factura ni un recibo de venta.
         </p>
         <LeyendaNoFiscal className="pt-1 text-center opacity-70" />
       </Card>

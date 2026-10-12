@@ -55,6 +55,28 @@
     word-break: break-word;
   }
 
+  /* `word-break: break-word` (arriba) hace que el ancho mínimo de CUALQUIER
+     texto sea una sola letra. En títulos y en tablas eso es un desastre: el
+     navegador comprime la columna o el título hasta partir cada palabra letra
+     por letra ("Presupuesto" en vertical, "39.456,00" partido en dos líneas)
+     cuando otro elemento al lado (botones, otras columnas) pide espacio. Aquí
+     se vuelve al corte normal: solo entre palabras, y una palabra se parte
+     únicamente si por sí sola no cabe en todo el ancho disponible
+     (`overflow-wrap: break-word` no reduce el ancho mínimo, a diferencia de
+     `word-break: break-word`). Las tablas ya viven dentro de contenedores con
+     scroll horizontal propio, así que una columna ancha no desborda la página. */
+  h1,
+  h2,
+  h3,
+  h4,
+  th,
+  td,
+  button,
+  label {
+    word-break: normal;
+    overflow-wrap: break-word;
+  }
+
   h1,
   h2,
   h3,

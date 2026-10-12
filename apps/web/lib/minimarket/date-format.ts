@@ -1,5 +1,18 @@
 const LOCALE = "es-VE";
 
+/**
+ * Una fecha de calendario SIN hora ("2026-10-12", columnas `date` como
+ * `fecha_emision` o `validez_hasta`) se interpreta como medianoche UTC, que
+ * en Venezuela (UTC−4) cae el DÍA ANTERIOR: el presupuesto emitido el 12/10
+ * se mostraba como 11/10. Para esas fechas no hay instante que convertir, así
+ * que se formatean en UTC y salen tal cual. Los timestamps con hora siguen
+ * formateándose en la zona horaria del negocio, igual que siempre.
+ */
+const SOLO_FECHA = /^\d{4}-\d{2}-\d{2}$/;
+function zonaPara(iso: string, tz: string): string {
+  return SOLO_FECHA.test(iso) ? "UTC" : tz;
+}
+
 /** "lun. 29 jun. 2026, 2:14 p. m." */
 export function fmtFechaHora(iso: string, tz: string): string {
   return new Intl.DateTimeFormat(LOCALE, {
@@ -16,7 +29,7 @@ export function fmtFechaLarga(iso: string, tz: string): string {
     year: "numeric",
     month: "long",
     day: "numeric",
-    timeZone: tz,
+    timeZone: zonaPara(iso, tz),
   }).format(new Date(iso));
 }
 
@@ -24,7 +37,7 @@ export function fmtFechaLarga(iso: string, tz: string): string {
 export function fmtFechaCorta(iso: string, tz: string): string {
   return new Intl.DateTimeFormat(LOCALE, {
     dateStyle: "short",
-    timeZone: tz,
+    timeZone: zonaPara(iso, tz),
   }).format(new Date(iso));
 }
 

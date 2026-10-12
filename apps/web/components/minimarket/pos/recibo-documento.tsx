@@ -90,10 +90,25 @@ export function ReciboDocumento({ doc, fecha }: { doc: DocumentoFiscal; fecha: s
       </div>
 
       <div className="space-y-1 text-sm">
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">Subtotal</span>
-          <span className="tabular-nums">{usd(doc.subtotalUsd)}</span>
-        </div>
+        {(doc.descuentoUsd ?? 0) > 0 ? (
+          <>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Subtotal</span>
+              <span className="whitespace-nowrap tabular-nums">
+                {usd(doc.subtotalUsd + (doc.descuentoUsd ?? 0))}
+              </span>
+            </div>
+            <div className="flex justify-between gap-4">
+              <span className="text-muted-foreground">Descuento</span>
+              <span className="whitespace-nowrap tabular-nums">−{usd(doc.descuentoUsd ?? 0)}</span>
+            </div>
+          </>
+        ) : (
+          <div className="flex justify-between gap-4">
+            <span className="text-muted-foreground">Subtotal</span>
+            <span className="whitespace-nowrap tabular-nums">{usd(doc.subtotalUsd)}</span>
+          </div>
+        )}
         {doc.ivaUsd > 0 ? (
           <div className="flex justify-between">
             <span className="text-muted-foreground">IVA</span>

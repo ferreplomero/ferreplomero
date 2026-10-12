@@ -9,7 +9,10 @@ import { Button, Card, Input, Label, toast } from "@arkiteq/ui";
 import { SubmitButton } from "@/components/auth/submit-button";
 import { CampoMontoDual } from "@/components/minimarket/shared/campo-monto-dual";
 import type { PresupuestoDetalle } from "@/lib/minimarket/data/presupuestos";
-import { calcularTotalesPresupuesto } from "@/lib/minimarket/presupuestos/totales";
+import {
+  calcularTotalesPresupuesto,
+  etiquetaDescuentoPresupuesto,
+} from "@/lib/minimarket/presupuestos/totales";
 import type { MmPresupuestoDescuentoTipo } from "@arkiteq/db";
 import type { PresupuestoResult } from "./actions";
 
@@ -69,9 +72,13 @@ const SELECT_CLASS =
   "border-border bg-background focus-visible:ring-ring h-10 w-full rounded-md border px-3 text-sm focus-visible:outline-none focus-visible:ring-2";
 
 function validezPorDefecto(): string {
+  // Fecha LOCAL del dispositivo, no `toISOString()` (que da la fecha UTC:
+  // después de las 8 p. m. en Venezuela ya es "mañana" y corría un día).
   const d = new Date();
   d.setDate(d.getDate() + 7);
-  return d.toISOString().slice(0, 10);
+  const mes = String(d.getMonth() + 1).padStart(2, "0");
+  const dia = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mes}-${dia}`;
 }
 
 let nextKey = 1;
@@ -282,7 +289,7 @@ export function PresupuestoForm({
               <div className="relative">
                 <Search className="text-muted-foreground absolute left-3 top-1/2 size-4 -translate-y-1/2" />
                 <Input
-                  placeholder="Buscar cliente existente por nombre o cédula..."
+                  placeholder="Buscar cliente por nombre o cédula"
                   value={clienteQuery}
                   onChange={(e) => setClienteQuery(e.target.value)}
                   className="pl-9"
@@ -310,7 +317,7 @@ export function PresupuestoForm({
               ) : null}
 
               <p className="text-muted-foreground text-xs">
-                O ingresa los datos del cliente directamente (no crea una ficha en Clientes):
+                O escribe los datos del cliente (no se guardará en tu lista de clientes):
               </p>
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="space-y-1.5">
@@ -364,15 +371,16 @@ export function PresupuestoForm({
                 />
               </div>
               <p className="text-muted-foreground text-xs">
-                Se asignará como <span className="text-heading font-medium">{numeroCompleto}</span>.
-                Puedes dejarlo así (sigue tu numeración automática) o escribir otro — por ejemplo si
-                vienes de otro sistema y quieres continuar su numeración.
+                Se asignará el número{" "}
+                <span className="text-heading whitespace-nowrap font-medium">{numeroCompleto}</span>
+                . Puedes mantenerlo (numeración automática) o escribir otro, por ejemplo para
+                continuar la numeración de un sistema anterior.
               </p>
               {avisoNumeroMenor ? (
                 <p className="text-warning text-xs">
                   El último número usado fue {PREFIJO_NUMERO}
-                  {String(ultimoNumeroUsado).padStart(6, "0")}. Puedes continuar, pero el siguiente
-                  presupuesto después de este seguirá siendo {numeroSugerido}.
+                  {String(ultimoNumeroUsado).padStart(6, "0")}. Puedes continuar; el siguiente
+                  presupuesto volverá a sugerir el número {numeroSugerido}.
                 </p>
               ) : null}
             </div>
@@ -418,7 +426,7 @@ export function PresupuestoForm({
               rows={2}
               value={notas}
               onChange={(e) => setNotas(e.target.value)}
-              placeholder="Condiciones, observaciones..."
+              placeholder="Condiciones de pago, tiempo de entrega, observaciones…"
               className="border-border bg-background focus-visible:ring-ring w-full resize-none rounded-md border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2"
             />
           </div>
@@ -429,14 +437,14 @@ export function PresupuestoForm({
         <Card className="space-y-4 p-5">
           <h3 className="text-heading font-medium">Productos</h3>
           <p className="text-muted-foreground text-sm">
-            El precio se prellena con el precio normal del producto — puedes ajustarlo libremente
-            para este presupuesto (mayorista o el que decidas) sin cambiar el precio del inventario.
+            Cada producto se agrega con su precio de lista. Puedes ajustarlo para este presupuesto
+            (por ejemplo, precio mayorista) sin modificar el precio del inventario.
           </p>
 
           <div className="relative">
             <Search className="text-muted-foreground absolute left-3 top-1/2 size-4 -translate-y-1/2" />
             <Input
-              placeholder="Buscar producto por nombre o código..."
+              placeholder="Buscar producto por nombre o código"
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
               className="pl-9"
@@ -469,14 +477,14 @@ export function PresupuestoForm({
                         </span>
                       )}
                     </span>
-                    <span className="min-w-0 truncate">
+                    <span className="min-w-0">
                       <span className="text-heading font-medium">{p.nombre}</span>
                       {p.codigo ? (
                         <span className="text-muted-foreground ml-2 text-xs">{p.codigo}</span>
                       ) : null}
                     </span>
                   </span>
-                  <span className="text-muted-foreground shrink-0 tabular-nums">
+                  <span className="text-muted-foreground shrink-0 whitespace-nowrap tabular-nums">
                     {usd(p.precio_usd)}
                   </span>
                 </button>
@@ -494,15 +502,16 @@ export function PresupuestoForm({
                   <div key={item.key} className="bg-surface-2 space-y-2 rounded-lg px-3 py-2.5">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <p className="text-heading truncate text-sm font-medium">{item.nombre}</p>
+                        <p className="text-heading text-sm font-medium">{item.nombre}</p>
                         <p className="text-muted-foreground text-xs tabular-nums">
-                          Precio normal: {usd(item.precio_lista_usd)}
+                          Precio de lista: {usd(item.precio_lista_usd)}
                           {ajustado ? " · precio ajustado" : ""}
                         </p>
                       </div>
                       <button
                         type="button"
                         onClick={() => quitarItem(item.key)}
+                        aria-label={`Quitar ${item.nombre}`}
                         className="text-muted-foreground hover:text-danger flex size-8 shrink-0 items-center justify-center rounded transition-colors"
                       >
                         <Trash2 className="size-4" />
@@ -536,11 +545,13 @@ export function PresupuestoForm({
                           className="h-9 text-sm"
                         />
                       </div>
-                      <div className="space-y-1">
+                      {/* En móvil el subtotal ocupa su propia fila completa (etiqueta a
+                          la izquierda, monto a la derecha) en vez de quedar suelto debajo. */}
+                      <div className="col-span-2 flex items-center justify-between gap-2 sm:col-span-1 sm:block sm:space-y-1">
                         <p className="text-muted-foreground text-[11px] uppercase tracking-wide">
                           Subtotal
                         </p>
-                        <p className="text-heading pt-2 text-right text-sm font-medium tabular-nums">
+                        <p className="text-heading whitespace-nowrap text-right text-sm font-medium tabular-nums sm:pt-2">
                           {usd(item.cantidad * item.precio_unitario_usd)}
                         </p>
                       </div>
@@ -554,7 +565,9 @@ export function PresupuestoForm({
                   <span className="text-muted-foreground">
                     Subtotal ({items.length} producto{items.length !== 1 ? "s" : ""})
                   </span>
-                  <span className="text-heading tabular-nums">{usd(subtotalUsd)}</span>
+                  <span className="text-heading whitespace-nowrap tabular-nums">
+                    {usd(subtotalUsd)}
+                  </span>
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
                   <Label htmlFor="descuento_valor" className="text-muted-foreground font-normal">
@@ -568,7 +581,7 @@ export function PresupuestoForm({
                     >
                       {(
                         [
-                          ["ninguno", "Sin desc."],
+                          ["ninguno", "Ninguno"],
                           ["porcentaje", "%"],
                           ["monto", "$"],
                         ] as const
@@ -616,25 +629,30 @@ export function PresupuestoForm({
                 {descuentoUsd > 0 ? (
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">
-                      Descuento
-                      {descuentoTipo === "porcentaje" ? ` (${descuentoValorNum} %)` : ""}
+                      {etiquetaDescuentoPresupuesto(descuentoTipo, descuentoValorNum)}
                     </span>
-                    <span className="text-success tabular-nums">−{usd(descuentoUsd)}</span>
+                    <span className="text-success whitespace-nowrap tabular-nums">
+                      −{usd(descuentoUsd)}
+                    </span>
                   </div>
                 ) : null}
                 {ivaActivo ? (
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-muted-foreground">IVA ({ivaPct} %)</span>
-                    <span className="text-muted-foreground tabular-nums">{usd(ivaUsd)}</span>
+                    <span className="text-muted-foreground whitespace-nowrap tabular-nums">
+                      {usd(ivaUsd)}
+                    </span>
                   </div>
                 ) : null}
                 <div className="border-border flex items-center justify-between border-t pt-1.5">
                   <span className="text-heading font-medium">Total</span>
                   <div className="text-right">
-                    <p className="text-heading font-display text-lg font-semibold tabular-nums">
+                    <p className="text-heading font-display whitespace-nowrap text-lg font-semibold tabular-nums">
                       {usd(totalUsd)}
                     </p>
-                    <p className="text-muted-foreground text-xs tabular-nums">{bs(totalBs)}</p>
+                    <p className="text-muted-foreground whitespace-nowrap text-xs tabular-nums">
+                      {bs(totalBs)}
+                    </p>
                   </div>
                 </div>
               </div>

@@ -27,7 +27,7 @@ export function PresupuestoAcciones({ presupuestoId, estado, vencido }: Presupue
     if (
       vencido &&
       !confirm(
-        "Este presupuesto ya venció. ¿Confirmas los precios con el cliente y quieres continuar?",
+        "Este presupuesto está vencido. ¿Ya confirmaste los precios con el cliente y deseas continuar con la venta?",
       )
     ) {
       return;
@@ -44,7 +44,7 @@ export function PresupuestoAcciones({ presupuestoId, estado, vencido }: Presupue
   }
 
   async function handleRechazar() {
-    if (!confirm("¿Marcar este presupuesto como rechazado?")) return;
+    if (!confirm("¿Deseas marcar este presupuesto como rechazado?")) return;
     setCargando("rechazar");
     setError(null);
     const res = await rechazarPresupuesto(presupuestoId);
@@ -66,7 +66,7 @@ export function PresupuestoAcciones({ presupuestoId, estado, vencido }: Presupue
   }
 
   async function handleEliminar() {
-    if (!confirm("¿Eliminar este presupuesto? Esta acción no se puede deshacer.")) return;
+    if (!confirm("¿Deseas eliminar este presupuesto? Esta acción no se puede deshacer.")) return;
     setCargando("eliminar");
     setError(null);
     const res = await eliminarPresupuesto(presupuestoId);
@@ -79,9 +79,9 @@ export function PresupuestoAcciones({ presupuestoId, estado, vencido }: Presupue
   }
 
   return (
-    <div className="space-y-2 sm:shrink-0">
+    <div className="space-y-2">
       {error ? <p className="text-danger rounded-md bg-red-50 px-3 py-2 text-xs">{error}</p> : null}
-      <div className="flex flex-wrap gap-2 sm:justify-end">
+      <div className="flex flex-wrap gap-2">
         {estado === "pendiente" ? (
           <>
             <Button variant="outline" size="sm" asChild>
@@ -98,13 +98,13 @@ export function PresupuestoAcciones({ presupuestoId, estado, vencido }: Presupue
               className="text-danger hover:text-danger"
             >
               <XCircle className="mr-1.5 size-4" />
-              {cargando === "rechazar" ? "Rechazando..." : "Rechazar"}
+              {cargando === "rechazar" ? "Rechazando…" : "Rechazar"}
             </Button>
           </>
         ) : null}
         <Button variant="outline" size="sm" onClick={handleDuplicar} disabled={cargando !== null}>
           <Copy className="mr-1.5 size-4" />
-          {cargando === "duplicar" ? "Duplicando..." : "Duplicar"}
+          {cargando === "duplicar" ? "Duplicando…" : "Duplicar"}
         </Button>
         {estado !== "convertido" ? (
           <Button
@@ -115,7 +115,7 @@ export function PresupuestoAcciones({ presupuestoId, estado, vencido }: Presupue
             className="text-danger hover:text-danger"
           >
             <Trash2 className="mr-1.5 size-4" />
-            {cargando === "eliminar" ? "Eliminando..." : "Eliminar"}
+            {cargando === "eliminar" ? "Eliminando…" : "Eliminar"}
           </Button>
         ) : null}
         {estado === "pendiente" ? (
@@ -126,7 +126,7 @@ export function PresupuestoAcciones({ presupuestoId, estado, vencido }: Presupue
             className="bg-green-600 text-white hover:bg-green-700"
           >
             <ArrowRightCircle className="mr-1.5 size-4" />
-            {cargando === "convertir" ? "Preparando..." : "Convertir en venta"}
+            {cargando === "convertir" ? "Preparando…" : "Convertir en venta"}
           </Button>
         ) : null}
       </div>

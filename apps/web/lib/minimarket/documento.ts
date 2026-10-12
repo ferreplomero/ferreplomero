@@ -90,7 +90,13 @@ export interface DocumentoFiscal {
   /** null = venta a cliente ocasional (sin cliente asignado). */
   cliente: ClienteDocumento | null;
   lineas: LineaDocumento[];
+  /** Subtotal YA con el descuento aplicado (lo que se guarda en la venta). */
   subtotalUsd: number;
+  /** Descuento global de la venta (0 = sin descuento). Opcional: los
+   * documentos armados fuera de `construirRecibo` no lo traen. Cuando es > 0
+   * el recibo muestra "Subtotal" (antes del descuento), "Descuento" y el resto,
+   * para que el cliente vea de dónde sale el total. */
+  descuentoUsd?: number;
   igtfUsd: number;
   /** IVA cobrado en la venta, derivado (total − IGTF − subtotal). 0 si el
    * negocio no cobra IVA o si todo lo vendido estaba exento. */
@@ -118,6 +124,7 @@ export function construirRecibo(
     | "fecha"
     | "tasa_usada"
     | "subtotal_usd"
+    | "descuento_usd"
     | "igtf_usd"
     | "total_usd"
     | "total_bs"
@@ -156,6 +163,7 @@ export function construirRecibo(
       sinIgtf: i.aplica_igtf === false,
     })),
     subtotalUsd: Number(venta.subtotal_usd),
+    descuentoUsd: Number(venta.descuento_usd ?? 0),
     igtfUsd: Number(venta.igtf_usd),
     // Derivado (mismo criterio que `ivaRegistradoUsd` en Finanzas): la venta
     // no guarda su propio `iva_usd`, así que se reconstruye a partir de lo

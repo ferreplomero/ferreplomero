@@ -12,6 +12,7 @@ import { getTimezoneNegocio } from "@/lib/minimarket/timezone";
 import { fmtFechaCorta, fmtFechaLarga } from "@/lib/minimarket/date-format";
 import { linkPublicoPresupuesto } from "@/lib/minimarket/presupuesto-link";
 import { PresupuestoWhatsappBoton } from "@/components/minimarket/presupuestos/presupuesto-whatsapp-boton";
+import { etiquetaDescuentoPresupuesto } from "@/lib/minimarket/presupuestos/totales";
 import { PresupuestoAcciones } from "./presupuesto-acciones";
 
 interface Props {
@@ -71,6 +72,16 @@ export default async function PresupuestoDetallePage({ params }: Props) {
   const badge = badgeDe(estadoVisible);
   const linkPublico = linkPublicoPresupuesto(presupuesto.id, tenantId);
 
+  const tasaTexto = new Intl.NumberFormat(country.locale, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(presupuesto.tasaUsada);
+  const etiquetaDescuento = etiquetaDescuentoPresupuesto(
+    presupuesto.descuentoTipo,
+    presupuesto.descuentoValor,
+  );
+  const cantidadProductos = `${presupuesto.items.length} producto${presupuesto.items.length !== 1 ? "s" : ""}`;
+
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <header className="space-y-1">
@@ -81,13 +92,18 @@ export default async function PresupuestoDetallePage({ params }: Props) {
           <ArrowLeft className="size-4" />
           Presupuestos
         </Link>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
+        {/* flex-wrap + basis: si los botones no caben junto al título, bajan a
+            la línea siguiente en vez de comprimir el título hasta dejarlo en
+            una columna de una letra. */}
+        <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+          <div className="min-w-0 flex-1 basis-64">
             <h1 className="font-display text-heading text-2xl font-semibold">
-              Presupuesto {presupuesto.numero}
+              Presupuesto <span className="whitespace-nowrap">{presupuesto.numero}</span>
             </h1>
-            <div className="mt-1 flex items-center gap-2">
-              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span
+                className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}
+              >
                 {badge.label}
               </span>
               <span className="text-muted-foreground text-sm">
@@ -105,28 +121,30 @@ export default async function PresupuestoDetallePage({ params }: Props) {
 
       {presupuesto.estado === "convertido" && presupuesto.ventaId ? (
         <p className="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800">
-          Este presupuesto ya fue convertido en venta.{" "}
-          <Link href={`/minimarket/ventas/${presupuesto.ventaId}/recibo`} className="underline">
-            Ver recibo de la venta
+          Este presupuesto ya se convirtió en venta.{" "}
+          <Link
+            href={`/minimarket/ventas/${presupuesto.ventaId}/recibo`}
+            className="font-medium underline"
+          >
+            Ver el recibo
           </Link>
-          .
         </p>
       ) : null}
 
       {presupuesto.estado === "convertido" && !presupuesto.ventaId ? (
         <p className="rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Este presupuesto quedó marcado como convertido pero no se pudo confirmar qué venta se
-          generó — probablemente hubo un corte de conexión justo al confirmar el cobro. Revisa el{" "}
-          <Link href="/minimarket/ventas" className="underline">
-            Historial de ventas
+          Este presupuesto figura como convertido, pero no se pudo confirmar la venta asociada
+          (posible falla de conexión al momento del cobro). Verifica en el{" "}
+          <Link href="/minimarket/ventas" className="font-medium underline">
+            historial de ventas
           </Link>{" "}
-          antes de reintentar; si no encuentras la venta, duplica este presupuesto para generar uno
-          nuevo.
+          antes de volver a cobrarlo. Si la venta no aparece, duplica este presupuesto para generar
+          uno nuevo.
         </p>
       ) : null}
 
       <Card className="grid gap-4 p-5 sm:grid-cols-3">
-        <div>
+        <div className="min-w-0">
           <p className="text-muted-foreground text-xs">Cliente</p>
           <p className="text-heading mt-0.5 font-medium">
             {presupuesto.clienteNombre ?? "Cliente ocasional"}
@@ -137,7 +155,7 @@ export default async function PresupuestoDetallePage({ params }: Props) {
         </div>
         <div>
           <p className="text-muted-foreground text-xs">Fecha de emisión</p>
-          <p className="text-heading mt-0.5 font-medium tabular-nums">
+          <p className="text-heading mt-0.5 font-medium">
             {fmtFechaLarga(presupuesto.fechaEmision, tz)}
           </p>
         </div>
@@ -148,10 +166,8 @@ export default async function PresupuestoDetallePage({ params }: Props) {
           </p>
         </div>
         <div className="sm:col-span-3">
-          <p className="text-muted-foreground text-xs">Tasa usada al emitir</p>
-          <p className="text-heading mt-0.5 font-medium tabular-nums">
-            Bs {presupuesto.tasaUsada.toFixed(2)} / USD
-          </p>
+          <p className="text-muted-foreground text-xs">Tasa de cambio al emitir</p>
+          <p className="text-heading mt-0.5 font-medium tabular-nums">Bs {tasaTexto} por USD</p>
         </div>
         {presupuesto.notas ? (
           <div className="sm:col-span-3">
@@ -163,18 +179,41 @@ export default async function PresupuestoDetallePage({ params }: Props) {
 
       <Card className="overflow-hidden p-0">
         <div className="border-border border-b px-4 py-3">
-          <p className="text-heading text-sm font-medium">
-            {presupuesto.items.length} producto{presupuesto.items.length !== 1 ? "s" : ""}
-          </p>
+          <p className="text-heading text-sm font-medium">{cantidadProductos}</p>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[520px] text-sm">
+
+        {/* Móvil: cada producto como tarjeta (sin una tabla que obligue a
+            desplazarse de lado para ver los precios). */}
+        <ul className="divide-border divide-y sm:hidden">
+          {presupuesto.items.map((item) => (
+            <li key={item.id} className="space-y-1 px-4 py-3">
+              <div className="flex items-start justify-between gap-3">
+                <p className="text-heading min-w-0 font-medium">{item.descripcion}</p>
+                <p className="text-heading shrink-0 whitespace-nowrap font-medium tabular-nums">
+                  {usd(item.subtotalUsd)}
+                </p>
+              </div>
+              <p className="text-muted-foreground text-xs tabular-nums">
+                {item.cantidad} × {usd(item.precioUnitarioUsd)}
+              </p>
+              {item.precioAjustado ? (
+                <p className="text-muted-foreground text-xs">
+                  Precio de lista: {usd(item.precioListaUsd)}
+                </p>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+
+        {/* Tablet y escritorio: tabla. */}
+        <div className="hidden overflow-x-auto sm:block">
+          <table className="w-full text-sm">
             <thead className="border-border text-muted-foreground border-b text-left text-xs uppercase tracking-wide">
               <tr>
                 <th className="px-4 py-3">Producto</th>
-                <th className="px-4 py-3 text-right">Cantidad</th>
-                <th className="px-4 py-3 text-right">Precio unit.</th>
-                <th className="px-4 py-3 text-right">Subtotal</th>
+                <th className="whitespace-nowrap px-4 py-3 text-right">Cant.</th>
+                <th className="whitespace-nowrap px-4 py-3 text-right">Precio unit.</th>
+                <th className="whitespace-nowrap px-4 py-3 text-right">Subtotal</th>
               </tr>
             </thead>
             <tbody className="divide-border divide-y">
@@ -184,73 +223,66 @@ export default async function PresupuestoDetallePage({ params }: Props) {
                     <p className="text-heading font-medium">{item.descripcion}</p>
                     {item.precioAjustado ? (
                       <p className="text-muted-foreground text-xs">
-                        Precio normal: {usd(item.precioListaUsd)}
+                        Precio de lista: {usd(item.precioListaUsd)}
                       </p>
                     ) : null}
                   </td>
-                  <td className="text-muted-foreground px-4 py-3 text-right tabular-nums">
+                  <td className="text-muted-foreground whitespace-nowrap px-4 py-3 text-right tabular-nums">
                     {item.cantidad}
                   </td>
-                  <td className="text-muted-foreground px-4 py-3 text-right tabular-nums">
+                  <td className="text-muted-foreground whitespace-nowrap px-4 py-3 text-right tabular-nums">
                     {usd(item.precioUnitarioUsd)}
                   </td>
-                  <td className="px-4 py-3 text-right">
-                    <p className="text-heading font-medium tabular-nums">{usd(item.subtotalUsd)}</p>
+                  <td className="text-heading whitespace-nowrap px-4 py-3 text-right font-medium tabular-nums">
+                    {usd(item.subtotalUsd)}
                   </td>
                 </tr>
               ))}
             </tbody>
-            <tfoot className="border-border border-t">
-              <tr>
-                <td colSpan={3} className="text-muted-foreground px-4 py-3 text-right text-sm">
-                  Subtotal
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <p className="text-heading tabular-nums">{usd(presupuesto.subtotalUsd)}</p>
-                </td>
-              </tr>
-              {presupuesto.descuentoUsd > 0 ? (
-                <tr>
-                  <td colSpan={3} className="text-muted-foreground px-4 py-3 text-right text-sm">
-                    {presupuesto.descuentoTipo === "porcentaje"
-                      ? `Descuento (${presupuesto.descuentoValor} %)`
-                      : "Descuento"}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <p className="text-success tabular-nums">−{usd(presupuesto.descuentoUsd)}</p>
-                  </td>
-                </tr>
-              ) : null}
-              {presupuesto.ivaUsd > 0 ? (
-                <tr>
-                  <td colSpan={3} className="text-muted-foreground px-4 py-3 text-right text-sm">
-                    IVA
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <p className="text-heading tabular-nums">{usd(presupuesto.ivaUsd)}</p>
-                  </td>
-                </tr>
-              ) : null}
-              <tr>
-                <td colSpan={3} className="px-4 py-3 text-right text-sm font-medium">
-                  Total
-                </td>
-                <td className="px-4 py-3 text-right">
-                  <p className="text-heading font-display text-lg font-bold tabular-nums">
-                    {usd(presupuesto.totalUsd)}
-                  </p>
-                  <p className="text-muted-foreground text-xs tabular-nums">
-                    {bs(presupuesto.totalBs)}
-                  </p>
-                </td>
-              </tr>
-            </tfoot>
           </table>
         </div>
+
+        {/* Totales fuera de la tabla: siempre visibles completos, en
+            cualquier ancho de pantalla. */}
+        <dl className="border-border space-y-2 border-t px-4 py-4 text-sm">
+          <div className="flex items-center justify-between gap-4 sm:ml-auto sm:max-w-sm">
+            <dt className="text-muted-foreground">Subtotal</dt>
+            <dd className="text-heading whitespace-nowrap tabular-nums">
+              {usd(presupuesto.subtotalUsd)}
+            </dd>
+          </div>
+          {presupuesto.descuentoUsd > 0 ? (
+            <div className="flex items-center justify-between gap-4 sm:ml-auto sm:max-w-sm">
+              <dt className="text-muted-foreground">{etiquetaDescuento}</dt>
+              <dd className="text-success whitespace-nowrap tabular-nums">
+                −{usd(presupuesto.descuentoUsd)}
+              </dd>
+            </div>
+          ) : null}
+          {presupuesto.ivaUsd > 0 ? (
+            <div className="flex items-center justify-between gap-4 sm:ml-auto sm:max-w-sm">
+              <dt className="text-muted-foreground">IVA</dt>
+              <dd className="text-heading whitespace-nowrap tabular-nums">
+                {usd(presupuesto.ivaUsd)}
+              </dd>
+            </div>
+          ) : null}
+          <div className="border-border flex items-start justify-between gap-4 border-t pt-2 sm:ml-auto sm:max-w-sm">
+            <dt className="text-heading font-medium">Total</dt>
+            <dd className="text-right">
+              <p className="text-heading font-display whitespace-nowrap text-lg font-bold tabular-nums">
+                {usd(presupuesto.totalUsd)}
+              </p>
+              <p className="text-muted-foreground whitespace-nowrap text-xs tabular-nums">
+                {bs(presupuesto.totalBs)}
+              </p>
+            </dd>
+          </div>
+        </dl>
       </Card>
 
       <Card className="space-y-3 p-5">
-        <h3 className="text-heading font-medium">Compartir y exportar</h3>
+        <h2 className="text-heading text-base font-medium">Compartir y exportar</h2>
         <div className="grid gap-2 sm:grid-cols-3">
           <a
             href={`/minimarket/presupuestos/${presupuesto.id}/pdf`}

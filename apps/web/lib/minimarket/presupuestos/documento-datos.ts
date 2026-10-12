@@ -9,6 +9,7 @@ import type { Database } from "@arkiteq/db";
 import { getPresupuestoDetalle } from "@/lib/minimarket/data/presupuestos";
 import { fmtFechaCorta } from "@/lib/minimarket/date-format";
 import { convertirImagenesAPng } from "@/lib/minimarket/pdf/convertir-imagen";
+import { etiquetaDescuentoPresupuesto } from "./totales";
 
 type Client = SupabaseClient<Database>;
 
@@ -106,10 +107,10 @@ export async function obtenerDatosDocumentoPresupuesto(
     }),
     subtotalUsd: presupuesto.subtotalUsd,
     descuentoUsd: presupuesto.descuentoUsd,
-    descuentoEtiqueta:
-      presupuesto.descuentoTipo === "porcentaje"
-        ? `Descuento (${presupuesto.descuentoValor} %)`
-        : "Descuento",
+    descuentoEtiqueta: etiquetaDescuentoPresupuesto(
+      presupuesto.descuentoTipo,
+      presupuesto.descuentoValor,
+    ),
     ivaUsd: presupuesto.ivaUsd,
     totalUsd: presupuesto.totalUsd,
     totalBs: presupuesto.totalBs,

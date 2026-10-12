@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { calcularDescuentoPresupuesto, calcularTotalesPresupuesto } from "./totales";
+import {
+  calcularDescuentoPresupuesto,
+  calcularTotalesPresupuesto,
+  etiquetaDescuentoPresupuesto,
+} from "./totales";
+
+describe("etiquetaDescuentoPresupuesto", () => {
+  it("muestra el porcentaje con coma decimal venezolana", () => {
+    expect(etiquetaDescuentoPresupuesto("porcentaje", 7.5)).toBe("Descuento (7,5 %)");
+    expect(etiquetaDescuentoPresupuesto("porcentaje", 10)).toBe("Descuento (10 %)");
+  });
+
+  it("el monto fijo no lleva porcentaje", () => {
+    expect(etiquetaDescuentoPresupuesto("monto", 7)).toBe("Descuento");
+  });
+});
 
 const items = [
   { cantidad: 2, precioUnitarioUsd: 10.5 }, // 21.00
