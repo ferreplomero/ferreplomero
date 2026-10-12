@@ -361,53 +361,91 @@ export default async function ReportesPage({
               Sin datos de ventas.
             </p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[640px] text-sm">
-                <thead className="border-border text-muted-foreground border-b text-left text-xs uppercase tracking-wide">
-                  <tr>
-                    <th className="px-3 py-2.5">#</th>
-                    <th className="px-3 py-2.5">Producto</th>
-                    <th className="px-3 py-2.5 text-right">Unid.</th>
-                    <th className="px-3 py-2.5 text-right">Precio unit.</th>
-                    <th className="px-3 py-2.5 text-right">Ingreso</th>
-                    <th className="px-3 py-2.5 text-right">Margen</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-border divide-y">
-                  {masVendidos.map((p, i) => (
-                    <tr
-                      key={p.producto_id ?? p.descripcion}
-                      className="hover:bg-surface-2 transition-colors"
-                    >
-                      <td className="text-muted-foreground px-3 py-2.5 tabular-nums">{i + 1}</td>
-                      <td className="px-3 py-2.5">
-                        <p className="text-heading font-medium">{p.descripcion}</p>
-                        <p className="text-muted-foreground text-xs">SKU: {p.codigo ?? "—"}</p>
-                      </td>
-                      <td className="text-muted-foreground px-3 py-2.5 text-right tabular-nums">
-                        {p.unidades}
-                      </td>
-                      <td className="text-muted-foreground px-3 py-2.5 text-right tabular-nums">
-                        {usd(p.precio_unitario_usd)}
-                      </td>
-                      <td className="text-heading px-3 py-2.5 text-right tabular-nums">
+            <>
+              <ul className="divide-border divide-y lg:hidden">
+                {masVendidos.map((p, i) => (
+                  <li key={p.producto_id ?? p.descripcion} className="space-y-1 px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-heading min-w-0 font-medium">
+                        <span className="text-muted-foreground mr-1.5 tabular-nums">{i + 1}.</span>
+                        {p.descripcion}
+                      </p>
+                      <p className="text-heading shrink-0 whitespace-nowrap font-medium tabular-nums">
                         {usd(p.ingreso_usd)}
-                      </td>
-                      <td className="px-3 py-2.5 text-right tabular-nums">
-                        <p
-                          className={`font-medium ${p.margen_usd < 0 ? "text-danger" : "text-heading"}`}
-                        >
+                      </p>
+                    </div>
+                    <p className="text-muted-foreground text-xs">
+                      <span className="whitespace-nowrap">SKU: {p.codigo ?? "—"}</span>
+                      <span className="whitespace-nowrap tabular-nums">
+                        {" "}
+                        · {p.unidades} × {usd(p.precio_unitario_usd)}
+                      </span>
+                      <span className="whitespace-nowrap tabular-nums">
+                        {" "}
+                        · Margen{" "}
+                        <span className={p.margen_usd < 0 ? "text-danger" : "text-heading"}>
                           {usd(p.margen_usd)}
-                        </p>
-                        <p className="text-muted-foreground text-xs">
-                          {p.margen_pct === null ? "—" : `${p.margen_pct.toFixed(1)}%`}
-                        </p>
-                      </td>
+                        </span>{" "}
+                        (
+                        {p.margen_pct === null
+                          ? "—"
+                          : `${new Intl.NumberFormat("es-VE", { maximumFractionDigits: 1 }).format(p.margen_pct)} %`}
+                        )
+                      </span>
+                    </p>
+                  </li>
+                ))}
+              </ul>
+              <div className="hidden overflow-x-auto lg:block">
+                <table className="w-full text-sm">
+                  <thead className="border-border text-muted-foreground border-b text-left text-xs uppercase tracking-wide">
+                    <tr>
+                      <th className="px-3 py-2.5">#</th>
+                      <th className="px-3 py-2.5">Producto</th>
+                      <th className="px-3 py-2.5 text-right">Unid.</th>
+                      <th className="px-3 py-2.5 text-right">Precio unit.</th>
+                      <th className="px-3 py-2.5 text-right">Ingreso</th>
+                      <th className="px-3 py-2.5 text-right">Margen</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-border divide-y">
+                    {masVendidos.map((p, i) => (
+                      <tr
+                        key={p.producto_id ?? p.descripcion}
+                        className="hover:bg-surface-2 transition-colors"
+                      >
+                        <td className="text-muted-foreground px-3 py-2.5 tabular-nums">{i + 1}</td>
+                        <td className="px-3 py-2.5">
+                          <p className="text-heading font-medium">{p.descripcion}</p>
+                          <p className="text-muted-foreground text-xs">SKU: {p.codigo ?? "—"}</p>
+                        </td>
+                        <td className="text-muted-foreground px-3 py-2.5 text-right tabular-nums">
+                          {p.unidades}
+                        </td>
+                        <td className="text-muted-foreground px-3 py-2.5 text-right tabular-nums">
+                          {usd(p.precio_unitario_usd)}
+                        </td>
+                        <td className="text-heading px-3 py-2.5 text-right tabular-nums">
+                          {usd(p.ingreso_usd)}
+                        </td>
+                        <td className="px-3 py-2.5 text-right tabular-nums">
+                          <p
+                            className={`font-medium ${p.margen_usd < 0 ? "text-danger" : "text-heading"}`}
+                          >
+                            {usd(p.margen_usd)}
+                          </p>
+                          <p className="text-muted-foreground text-xs">
+                            {p.margen_pct === null
+                              ? "—"
+                              : `${new Intl.NumberFormat("es-VE", { maximumFractionDigits: 1 }).format(p.margen_pct)} %`}
+                          </p>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </Card>
 
@@ -476,44 +514,74 @@ export default async function ReportesPage({
             Sin cierres en este período.
           </p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-sm">
-              <thead className="border-border text-muted-foreground border-b text-left text-xs uppercase tracking-wide">
-                <tr>
-                  <th className="px-4 py-3">Fecha</th>
-                  <th className="px-4 py-3 text-right">Ventas</th>
-                  <th className="px-4 py-3 text-right">Total USD</th>
-                  <th className="px-4 py-3 text-right">IGTF</th>
-                  <th className="px-4 py-3 text-right">Fiado</th>
-                  <th className="px-4 py-3">Métodos</th>
-                </tr>
-              </thead>
-              <tbody className="divide-border divide-y">
-                {cierres.map((c) => (
-                  <tr key={c.fecha} className="hover:bg-surface-2 transition-colors">
-                    <td className="text-muted-foreground px-4 py-3 tabular-nums">{c.fecha}</td>
-                    <td className="text-muted-foreground px-4 py-3 text-right tabular-nums">
-                      {c.num_ventas}
-                    </td>
-                    <td className="text-heading px-4 py-3 text-right font-medium tabular-nums">
+          <>
+            <ul className="divide-border divide-y lg:hidden">
+              {cierres.map((c) => (
+                <li key={c.fecha} className="space-y-1 px-4 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-heading font-medium tabular-nums">{c.fecha}</p>
+                      <p className="text-muted-foreground text-xs">
+                        {c.num_ventas} venta{c.num_ventas !== 1 ? "s" : ""}
+                      </p>
+                    </div>
+                    <p className="text-heading shrink-0 whitespace-nowrap font-medium tabular-nums">
                       {usd(c.total_usd)}
-                    </td>
-                    <td className="text-muted-foreground px-4 py-3 text-right tabular-nums">
-                      {usd(c.igtf_usd)}
-                    </td>
-                    <td className="text-muted-foreground px-4 py-3 text-right tabular-nums">
-                      {usd(c.fiado_usd)}
-                    </td>
-                    <td className="text-muted-foreground px-4 py-3 text-xs">
+                    </p>
+                  </div>
+                  <p className="text-muted-foreground text-xs tabular-nums">
+                    <span className="whitespace-nowrap">IGTF {usd(c.igtf_usd)}</span>
+                    <span className="whitespace-nowrap"> · Fiado {usd(c.fiado_usd)}</span>
+                  </p>
+                  {c.metodos.length > 0 ? (
+                    <p className="text-muted-foreground text-xs">
                       {c.metodos
                         .map((m) => `${METODO_LABEL[m.metodo] ?? m.metodo}: ${usd(m.monto)}`)
                         .join(" · ")}
-                    </td>
+                    </p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+            <div className="hidden overflow-x-auto lg:block">
+              <table className="w-full text-sm">
+                <thead className="border-border text-muted-foreground border-b text-left text-xs uppercase tracking-wide">
+                  <tr>
+                    <th className="px-4 py-3">Fecha</th>
+                    <th className="px-4 py-3 text-right">Ventas</th>
+                    <th className="px-4 py-3 text-right">Total USD</th>
+                    <th className="px-4 py-3 text-right">IGTF</th>
+                    <th className="px-4 py-3 text-right">Fiado</th>
+                    <th className="px-4 py-3">Métodos</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-border divide-y">
+                  {cierres.map((c) => (
+                    <tr key={c.fecha} className="hover:bg-surface-2 transition-colors">
+                      <td className="text-muted-foreground px-4 py-3 tabular-nums">{c.fecha}</td>
+                      <td className="text-muted-foreground px-4 py-3 text-right tabular-nums">
+                        {c.num_ventas}
+                      </td>
+                      <td className="text-heading px-4 py-3 text-right font-medium tabular-nums">
+                        {usd(c.total_usd)}
+                      </td>
+                      <td className="text-muted-foreground px-4 py-3 text-right tabular-nums">
+                        {usd(c.igtf_usd)}
+                      </td>
+                      <td className="text-muted-foreground px-4 py-3 text-right tabular-nums">
+                        {usd(c.fiado_usd)}
+                      </td>
+                      <td className="text-muted-foreground px-4 py-3 text-xs">
+                        {c.metodos
+                          .map((m) => `${METODO_LABEL[m.metodo] ?? m.metodo}: ${usd(m.monto)}`)
+                          .join(" · ")}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </Card>
 
@@ -609,8 +677,79 @@ export default async function ReportesPage({
                 ))}
               </div>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[760px] text-sm">
+            <ul className="divide-border divide-y lg:hidden">
+              {invVisibles.length === 0 ? (
+                <li className="text-muted-foreground px-4 py-8 text-center text-sm">
+                  Ningún producto coincide con este filtro.
+                </li>
+              ) : null}
+              {invVisibles.map((p) => (
+                <li
+                  key={p.id}
+                  className={`space-y-1 px-4 py-3 ${p.bajo_minimo ? "bg-red-50/40" : ""}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-heading font-medium">{p.nombre}</p>
+                      <p className="text-muted-foreground text-xs">
+                        {p.codigo ? <span className="whitespace-nowrap">{p.codigo} · </span> : null}
+                        {p.categoria ?? "Sin categoría"}
+                      </p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p
+                        className={`whitespace-nowrap font-medium tabular-nums ${p.bajo_minimo ? "text-danger" : "text-heading"}`}
+                      >
+                        {p.stock_actual}
+                        {p.stock_minimo !== null ? (
+                          <span className="text-muted-foreground text-xs font-normal">
+                            {" "}
+                            / mín {p.stock_minimo}
+                          </span>
+                        ) : null}
+                      </p>
+                      {p.bajo_minimo ? (
+                        <span className="whitespace-nowrap rounded-full bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-700">
+                          bajo mín.
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <p className="text-muted-foreground text-xs tabular-nums">
+                    <span className="whitespace-nowrap">
+                      Costo {p.costo_usd > 0 ? usd(p.costo_usd) : "—"}
+                    </span>
+                    <span className="whitespace-nowrap">
+                      {" "}
+                      · Precio {p.precio_usd > 0 ? usd(p.precio_usd) : "—"}
+                    </span>
+                  </p>
+                  <p className="text-muted-foreground text-xs tabular-nums">
+                    <span className="whitespace-nowrap">
+                      Val. costo {p.costo_usd > 0 ? usd(p.valor_costo_total) : "—"}
+                    </span>
+                    <span className="whitespace-nowrap">
+                      {" "}
+                      · Val. venta {p.precio_usd > 0 ? usd(p.valor_venta_total) : "—"}
+                    </span>
+                  </p>
+                </li>
+              ))}
+              <li className="bg-surface-2/50 space-y-1 px-4 py-3 text-xs">
+                <p className="text-muted-foreground font-medium uppercase tracking-wide">
+                  Totales del inventario ({inventario.totalProductos} productos)
+                </p>
+                <p className="text-heading font-bold tabular-nums">
+                  <span className="whitespace-nowrap">Costo {usd(inventario.valorCostoUsd)}</span>
+                  <span className="whitespace-nowrap">
+                    {" "}
+                    · Venta {usd(inventario.valorVentaUsd)}
+                  </span>
+                </p>
+              </li>
+            </ul>
+            <div className="hidden overflow-x-auto lg:block">
+              <table className="w-full text-sm">
                 <thead className="border-border text-muted-foreground border-b text-left text-xs uppercase tracking-wide">
                   <tr>
                     <th className="px-4 py-2.5">Producto</th>
@@ -748,8 +887,30 @@ export default async function ReportesPage({
           <div className="border-border border-b px-4 py-3">
             <p className="text-heading text-sm font-medium">Ventas por cajero — {periodoLabel}</p>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[560px] text-sm">
+          <ul className="divide-border divide-y lg:hidden">
+            {porCajero.map((c) => (
+              <li key={c.cajero_id ?? "sin-cajero"} className="space-y-1 px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="text-heading min-w-0 font-medium">{c.cajero_nombre}</p>
+                  <p className="text-heading shrink-0 whitespace-nowrap font-medium tabular-nums">
+                    {usd(c.total_usd)}
+                  </p>
+                </div>
+                <p className="text-muted-foreground text-xs tabular-nums">
+                  <span className="whitespace-nowrap">
+                    {c.num_ventas} venta{c.num_ventas !== 1 ? "s" : ""}
+                  </span>
+                  <span className="whitespace-nowrap"> · IGTF {usd(c.igtf_usd)}</span>
+                  <span className="whitespace-nowrap">
+                    {" "}
+                    · Ticket prom. {usd(c.ticket_promedio_usd)}
+                  </span>
+                </p>
+              </li>
+            ))}
+          </ul>
+          <div className="hidden overflow-x-auto lg:block">
+            <table className="w-full text-sm">
               <thead className="border-border text-muted-foreground border-b text-left text-xs uppercase tracking-wide">
                 <tr>
                   <th className="px-4 py-2.5">Cajero</th>
@@ -795,8 +956,40 @@ export default async function ReportesPage({
               Con stock disponible pero pocas o ninguna venta en el período seleccionado
             </p>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[520px] text-sm">
+          <ul className="divide-border divide-y lg:hidden">
+            {bajaRotacion.map((p) => (
+              <li key={p.id} className="space-y-1 px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-heading font-medium">{p.nombre}</p>
+                    {p.codigo ? (
+                      <p className="text-muted-foreground whitespace-nowrap text-xs">{p.codigo}</p>
+                    ) : null}
+                  </div>
+                  <p className="text-heading shrink-0 whitespace-nowrap font-medium tabular-nums">
+                    Stock {p.stock_actual}
+                  </p>
+                </div>
+                <p className="text-muted-foreground text-xs tabular-nums">
+                  <span className="whitespace-nowrap">
+                    {p.unidades_vendidas} vendida{p.unidades_vendidas !== 1 ? "s" : ""}
+                  </span>
+                  {" · "}
+                  {p.dias_sin_venta !== null ? (
+                    <span
+                      className={`whitespace-nowrap ${p.dias_sin_venta > 30 ? "font-semibold text-amber-600" : ""}`}
+                    >
+                      {p.dias_sin_venta} días sin venta
+                    </span>
+                  ) : (
+                    <span>Sin ventas</span>
+                  )}
+                </p>
+              </li>
+            ))}
+          </ul>
+          <div className="hidden overflow-x-auto lg:block">
+            <table className="w-full text-sm">
               <thead className="border-border text-muted-foreground border-b text-left text-xs uppercase tracking-wide">
                 <tr>
                   <th className="px-4 py-2.5">Producto</th>

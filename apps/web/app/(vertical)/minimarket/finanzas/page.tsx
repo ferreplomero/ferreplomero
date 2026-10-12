@@ -434,98 +434,154 @@ export default async function FinanzasPage({
               </p>
             </div>
             {ventas.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[760px] text-sm">
-                  <thead className="border-border text-muted-foreground border-b text-left text-xs uppercase tracking-wide">
-                    <tr>
-                      <th className="px-4 py-3">Número</th>
-                      <th className="px-4 py-3">Fecha / hora</th>
-                      <th className="px-4 py-3">Cliente</th>
-                      <th className="px-4 py-3 text-right">Total USD / Bs</th>
-                      {mostrarIva && <th className="px-4 py-3 text-right">IVA registrado</th>}
-                      {mostrarIgtf && <th className="px-4 py-3 text-right">IGTF cobrado</th>}
-                      <th className="px-4 py-3">Métodos</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-border divide-y">
-                    {ventas.map((v) => (
-                      <tr
-                        key={v.id}
-                        className="hover:bg-surface-2 group cursor-pointer transition-colors"
+              <>
+                <ul className="divide-border divide-y lg:hidden">
+                  {ventas.map((v) => (
+                    <li key={v.id}>
+                      <Link
+                        href={`/minimarket/ventas/${v.id}`}
+                        className="hover:bg-surface-2 block space-y-1.5 px-4 py-3 transition-colors"
                       >
-                        <td className="px-4 py-3">
-                          <Link
-                            href={`/minimarket/ventas/${v.id}`}
-                            className="text-accent-600 font-mono text-xs font-semibold hover:underline"
-                          >
-                            {v.numero ?? "—"}
-                          </Link>
-                        </td>
-                        <td className="text-muted-foreground px-4 py-3 text-xs tabular-nums">
-                          <Link
-                            href={`/minimarket/ventas/${v.id}`}
-                            className="hover:text-heading block"
-                          >
-                            {fmtHora(v.created_at)}
-                          </Link>
-                        </td>
-                        <td className="text-heading px-4 py-3">
-                          <Link
-                            href={`/minimarket/ventas/${v.id}`}
-                            className="block hover:underline"
-                          >
-                            {v.cliente_nombre ?? (
-                              <span className="text-muted-foreground font-normal">
-                                Consumidor final
-                              </span>
-                            )}
-                          </Link>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <Link href={`/minimarket/ventas/${v.id}`} className="block">
-                            <p className="text-heading font-medium tabular-nums">
-                              {usd(v.total_usd)}
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-accent-600 whitespace-nowrap font-mono text-sm font-semibold">
+                              {v.numero ?? "—"}
+                            </p>
+                            <p className="text-heading text-sm">
+                              {v.cliente_nombre ?? (
+                                <span className="text-muted-foreground">Consumidor final</span>
+                              )}
                             </p>
                             <p className="text-muted-foreground text-xs tabular-nums">
+                              {fmtHora(v.created_at)}
+                            </p>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <p className="text-heading whitespace-nowrap font-medium tabular-nums">
+                              {usd(v.total_usd)}
+                            </p>
+                            <p className="text-muted-foreground whitespace-nowrap text-xs tabular-nums">
                               {bs(v.total_bs)}
                             </p>
-                          </Link>
-                        </td>
-                        {mostrarIva && (
-                          <td className="px-4 py-3 text-right">
-                            {v.iva_usd > 0 ? (
-                              <span className="text-heading tabular-nums">{usd(v.iva_usd)}</span>
-                            ) : (
-                              <span className="text-muted-foreground">—</span>
-                            )}
-                          </td>
-                        )}
-                        {mostrarIgtf && (
-                          <td className="px-4 py-3 text-right">
-                            {v.igtf_usd > 0 ? (
-                              <span className="text-heading tabular-nums">{usd(v.igtf_usd)}</span>
-                            ) : (
-                              <span className="text-muted-foreground">—</span>
-                            )}
-                          </td>
-                        )}
-                        <td className="px-4 py-3">
-                          <div className="flex flex-wrap gap-1">
-                            {v.metodos.map((m) => (
-                              <span
-                                key={m}
-                                className={`rounded-full px-2 py-0.5 text-xs font-medium ${METODO_CHIP[m] ?? "bg-surface-2 text-heading"}`}
-                              >
-                                {metodoLabel(m)}
-                              </span>
-                            ))}
                           </div>
-                        </td>
+                        </div>
+                        <div className="text-muted-foreground flex flex-wrap items-center gap-1.5 text-xs">
+                          {v.metodos.map((m) => (
+                            <span
+                              key={m}
+                              className={`whitespace-nowrap rounded-full px-2 py-0.5 font-medium ${METODO_CHIP[m] ?? "bg-surface-2 text-heading"}`}
+                            >
+                              {metodoLabel(m)}
+                            </span>
+                          ))}
+                          {mostrarIva && v.iva_usd > 0 ? (
+                            <span className="whitespace-nowrap tabular-nums">
+                              IVA {usd(v.iva_usd)}
+                            </span>
+                          ) : null}
+                          {mostrarIgtf && v.igtf_usd > 0 ? (
+                            <span className="whitespace-nowrap tabular-nums">
+                              IGTF {usd(v.igtf_usd)}
+                            </span>
+                          ) : null}
+                        </div>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+                <div className="hidden overflow-x-auto lg:block">
+                  <table className="w-full text-sm">
+                    <thead className="border-border text-muted-foreground border-b text-left text-xs uppercase tracking-wide">
+                      <tr>
+                        <th className="px-4 py-3">Número</th>
+                        <th className="px-4 py-3">Fecha / hora</th>
+                        <th className="px-4 py-3">Cliente</th>
+                        <th className="px-4 py-3 text-right">Total USD / Bs</th>
+                        {mostrarIva && <th className="px-4 py-3 text-right">IVA registrado</th>}
+                        {mostrarIgtf && <th className="px-4 py-3 text-right">IGTF cobrado</th>}
+                        <th className="px-4 py-3">Métodos</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-border divide-y">
+                      {ventas.map((v) => (
+                        <tr
+                          key={v.id}
+                          className="hover:bg-surface-2 group cursor-pointer transition-colors"
+                        >
+                          <td className="px-4 py-3">
+                            <Link
+                              href={`/minimarket/ventas/${v.id}`}
+                              className="text-accent-600 font-mono text-xs font-semibold hover:underline"
+                            >
+                              {v.numero ?? "—"}
+                            </Link>
+                          </td>
+                          <td className="text-muted-foreground px-4 py-3 text-xs tabular-nums">
+                            <Link
+                              href={`/minimarket/ventas/${v.id}`}
+                              className="hover:text-heading block"
+                            >
+                              {fmtHora(v.created_at)}
+                            </Link>
+                          </td>
+                          <td className="text-heading px-4 py-3">
+                            <Link
+                              href={`/minimarket/ventas/${v.id}`}
+                              className="block hover:underline"
+                            >
+                              {v.cliente_nombre ?? (
+                                <span className="text-muted-foreground font-normal">
+                                  Consumidor final
+                                </span>
+                              )}
+                            </Link>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <Link href={`/minimarket/ventas/${v.id}`} className="block">
+                              <p className="text-heading font-medium tabular-nums">
+                                {usd(v.total_usd)}
+                              </p>
+                              <p className="text-muted-foreground text-xs tabular-nums">
+                                {bs(v.total_bs)}
+                              </p>
+                            </Link>
+                          </td>
+                          {mostrarIva && (
+                            <td className="px-4 py-3 text-right">
+                              {v.iva_usd > 0 ? (
+                                <span className="text-heading tabular-nums">{usd(v.iva_usd)}</span>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </td>
+                          )}
+                          {mostrarIgtf && (
+                            <td className="px-4 py-3 text-right">
+                              {v.igtf_usd > 0 ? (
+                                <span className="text-heading tabular-nums">{usd(v.igtf_usd)}</span>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </td>
+                          )}
+                          <td className="px-4 py-3">
+                            <div className="flex flex-wrap gap-1">
+                              {v.metodos.map((m) => (
+                                <span
+                                  key={m}
+                                  className={`rounded-full px-2 py-0.5 text-xs font-medium ${METODO_CHIP[m] ?? "bg-surface-2 text-heading"}`}
+                                >
+                                  {metodoLabel(m)}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             ) : (
               <p className="text-muted-foreground p-8 text-center text-sm">
                 No hay ventas en el período seleccionado.
@@ -678,88 +734,142 @@ export default async function FinanzasPage({
               </p>
             </div>
             {compras.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[760px] text-sm">
-                  <thead className="border-border text-muted-foreground border-b text-left text-xs uppercase tracking-wide">
-                    <tr>
-                      <th className="px-4 py-3">Fecha / hora</th>
-                      <th className="px-4 py-3">Proveedor</th>
-                      <th className="px-4 py-3 text-right">Total USD / Bs</th>
-                      {mostrarIva && <th className="px-4 py-3 text-right">IVA pagado</th>}
-                      {mostrarIgtf && <th className="px-4 py-3 text-right">IGTF pagado</th>}
-                      <th className="px-4 py-3">Método</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-border divide-y">
-                    {compras.map((c) => (
-                      <tr
-                        key={c.id}
-                        className="hover:bg-surface-2 group cursor-pointer transition-colors"
+              <>
+                <ul className="divide-border divide-y lg:hidden">
+                  {compras.map((c) => (
+                    <li key={c.id}>
+                      <Link
+                        href={`/minimarket/compras/${c.id}`}
+                        className="hover:bg-surface-2 block space-y-1.5 px-4 py-3 transition-colors"
                       >
-                        <td className="text-muted-foreground px-4 py-3 text-xs tabular-nums">
-                          <Link
-                            href={`/minimarket/compras/${c.id}`}
-                            className="hover:text-heading block"
-                          >
-                            {fmtHora(c.created_at)}
-                          </Link>
-                        </td>
-                        <td className="text-heading px-4 py-3">
-                          <Link
-                            href={`/minimarket/compras/${c.id}`}
-                            className="block hover:underline"
-                          >
-                            {c.proveedor_nombre ?? (
-                              <span className="text-muted-foreground font-normal">
-                                Sin proveedor
-                              </span>
-                            )}
-                          </Link>
-                        </td>
-                        <td className="px-4 py-3 text-right">
-                          <Link href={`/minimarket/compras/${c.id}`} className="block">
-                            <p className="text-heading font-medium tabular-nums">
-                              {usd(c.total_usd)}
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="text-heading text-sm font-medium">
+                              {c.proveedor_nombre ?? (
+                                <span className="text-muted-foreground font-normal">
+                                  Sin proveedor
+                                </span>
+                              )}
                             </p>
                             <p className="text-muted-foreground text-xs tabular-nums">
+                              {fmtHora(c.created_at)}
+                            </p>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <p className="text-heading whitespace-nowrap font-medium tabular-nums">
+                              {usd(c.total_usd)}
+                            </p>
+                            <p className="text-muted-foreground whitespace-nowrap text-xs tabular-nums">
                               {bs(c.total_bs)}
                             </p>
-                          </Link>
-                        </td>
-                        {mostrarIva && (
-                          <td className="px-4 py-3 text-right">
-                            {c.iva_usd > 0 ? (
-                              <span className="text-heading tabular-nums">{usd(c.iva_usd)}</span>
-                            ) : (
-                              <span className="text-muted-foreground">—</span>
-                            )}
-                          </td>
-                        )}
-                        {mostrarIgtf && (
-                          <td className="px-4 py-3 text-right">
-                            {c.igtf_usd > 0 ? (
-                              <span className="text-heading tabular-nums">{usd(c.igtf_usd)}</span>
-                            ) : (
-                              <span className="text-muted-foreground">—</span>
-                            )}
-                          </td>
-                        )}
-                        <td className="px-4 py-3">
+                          </div>
+                        </div>
+                        <div className="text-muted-foreground flex flex-wrap items-center gap-1.5 text-xs">
                           {c.metodo_pago ? (
                             <span
-                              className={`rounded-full px-2 py-0.5 text-xs font-medium ${METODO_CHIP[c.metodo_pago] ?? "bg-surface-2 text-heading"}`}
+                              className={`whitespace-nowrap rounded-full px-2 py-0.5 font-medium ${METODO_CHIP[c.metodo_pago] ?? "bg-surface-2 text-heading"}`}
                             >
                               {metodoLabel(c.metodo_pago)}
                             </span>
-                          ) : (
-                            <span className="text-muted-foreground text-xs">—</span>
-                          )}
-                        </td>
+                          ) : null}
+                          {mostrarIva && c.iva_usd > 0 ? (
+                            <span className="whitespace-nowrap tabular-nums">
+                              IVA {usd(c.iva_usd)}
+                            </span>
+                          ) : null}
+                          {mostrarIgtf && c.igtf_usd > 0 ? (
+                            <span className="whitespace-nowrap tabular-nums">
+                              IGTF {usd(c.igtf_usd)}
+                            </span>
+                          ) : null}
+                        </div>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+                <div className="hidden overflow-x-auto lg:block">
+                  <table className="w-full text-sm">
+                    <thead className="border-border text-muted-foreground border-b text-left text-xs uppercase tracking-wide">
+                      <tr>
+                        <th className="px-4 py-3">Fecha / hora</th>
+                        <th className="px-4 py-3">Proveedor</th>
+                        <th className="px-4 py-3 text-right">Total USD / Bs</th>
+                        {mostrarIva && <th className="px-4 py-3 text-right">IVA pagado</th>}
+                        {mostrarIgtf && <th className="px-4 py-3 text-right">IGTF pagado</th>}
+                        <th className="px-4 py-3">Método</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-border divide-y">
+                      {compras.map((c) => (
+                        <tr
+                          key={c.id}
+                          className="hover:bg-surface-2 group cursor-pointer transition-colors"
+                        >
+                          <td className="text-muted-foreground px-4 py-3 text-xs tabular-nums">
+                            <Link
+                              href={`/minimarket/compras/${c.id}`}
+                              className="hover:text-heading block"
+                            >
+                              {fmtHora(c.created_at)}
+                            </Link>
+                          </td>
+                          <td className="text-heading px-4 py-3">
+                            <Link
+                              href={`/minimarket/compras/${c.id}`}
+                              className="block hover:underline"
+                            >
+                              {c.proveedor_nombre ?? (
+                                <span className="text-muted-foreground font-normal">
+                                  Sin proveedor
+                                </span>
+                              )}
+                            </Link>
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <Link href={`/minimarket/compras/${c.id}`} className="block">
+                              <p className="text-heading font-medium tabular-nums">
+                                {usd(c.total_usd)}
+                              </p>
+                              <p className="text-muted-foreground text-xs tabular-nums">
+                                {bs(c.total_bs)}
+                              </p>
+                            </Link>
+                          </td>
+                          {mostrarIva && (
+                            <td className="px-4 py-3 text-right">
+                              {c.iva_usd > 0 ? (
+                                <span className="text-heading tabular-nums">{usd(c.iva_usd)}</span>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </td>
+                          )}
+                          {mostrarIgtf && (
+                            <td className="px-4 py-3 text-right">
+                              {c.igtf_usd > 0 ? (
+                                <span className="text-heading tabular-nums">{usd(c.igtf_usd)}</span>
+                              ) : (
+                                <span className="text-muted-foreground">—</span>
+                              )}
+                            </td>
+                          )}
+                          <td className="px-4 py-3">
+                            {c.metodo_pago ? (
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-xs font-medium ${METODO_CHIP[c.metodo_pago] ?? "bg-surface-2 text-heading"}`}
+                              >
+                                {metodoLabel(c.metodo_pago)}
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground text-xs">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             ) : (
               <p className="text-muted-foreground p-8 text-center text-sm">
                 No hay compras recibidas en el período seleccionado.
@@ -875,47 +985,77 @@ export default async function FinanzasPage({
               </p>
             </div>
             {gastos.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px] text-sm">
-                  <thead className="border-border text-muted-foreground border-b text-left text-xs uppercase tracking-wide">
-                    <tr>
-                      <th className="px-4 py-3">Gasto</th>
-                      <th className="px-4 py-3">Categoría</th>
-                      <th className="px-4 py-3">Fecha</th>
-                      <th className="px-4 py-3 text-right">Monto</th>
-                      <th className="px-4 py-3">Origen</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-border divide-y">
-                    {gastos.map((g) => (
-                      <tr key={g.id} className="hover:bg-surface-2 transition-colors">
-                        <td className="text-heading px-4 py-3">
+              <>
+                <ul className="divide-border divide-y lg:hidden">
+                  {gastos.map((g) => (
+                    <li key={g.id} className="space-y-1.5 px-4 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
                           <Link
                             href={`/minimarket/reportes/gastos/${g.id}/editar`}
-                            className="hover:underline"
+                            className="text-heading text-sm font-medium hover:underline"
                           >
                             {g.descripcion}
                           </Link>
-                        </td>
-                        <td className="text-muted-foreground px-4 py-3">{g.categoria}</td>
-                        <td className="text-muted-foreground px-4 py-3 text-xs tabular-nums">
-                          {fmtFechaCorta(g.fecha, "UTC")}
-                        </td>
-                        <td className="text-heading px-4 py-3 text-right font-medium tabular-nums">
+                          <p className="text-muted-foreground text-xs">
+                            {g.categoria} ·{" "}
+                            <span className="tabular-nums">{fmtFechaCorta(g.fecha, "UTC")}</span>
+                          </p>
+                        </div>
+                        <p className="text-heading shrink-0 whitespace-nowrap font-medium tabular-nums">
                           {usd(g.monto_usd)}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-xs font-medium ${METODO_CHIP[g.metodo_pago ?? ""] ?? "bg-surface-2 text-heading"}`}
-                          >
-                            {metodoLabel(g.metodo_pago)}
-                          </span>
-                        </td>
+                        </p>
+                      </div>
+                      <span
+                        className={`inline-block whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ${METODO_CHIP[g.metodo_pago ?? ""] ?? "bg-surface-2 text-heading"}`}
+                      >
+                        {metodoLabel(g.metodo_pago)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <div className="hidden overflow-x-auto lg:block">
+                  <table className="w-full text-sm">
+                    <thead className="border-border text-muted-foreground border-b text-left text-xs uppercase tracking-wide">
+                      <tr>
+                        <th className="px-4 py-3">Gasto</th>
+                        <th className="px-4 py-3">Categoría</th>
+                        <th className="px-4 py-3">Fecha</th>
+                        <th className="px-4 py-3 text-right">Monto</th>
+                        <th className="px-4 py-3">Origen</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-border divide-y">
+                      {gastos.map((g) => (
+                        <tr key={g.id} className="hover:bg-surface-2 transition-colors">
+                          <td className="text-heading px-4 py-3">
+                            <Link
+                              href={`/minimarket/reportes/gastos/${g.id}/editar`}
+                              className="hover:underline"
+                            >
+                              {g.descripcion}
+                            </Link>
+                          </td>
+                          <td className="text-muted-foreground px-4 py-3">{g.categoria}</td>
+                          <td className="text-muted-foreground px-4 py-3 text-xs tabular-nums">
+                            {fmtFechaCorta(g.fecha, "UTC")}
+                          </td>
+                          <td className="text-heading px-4 py-3 text-right font-medium tabular-nums">
+                            {usd(g.monto_usd)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-xs font-medium ${METODO_CHIP[g.metodo_pago ?? ""] ?? "bg-surface-2 text-heading"}`}
+                            >
+                              {metodoLabel(g.metodo_pago)}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
             ) : (
               <p className="text-muted-foreground p-8 text-center text-sm">
                 No hay gastos registrados en el período seleccionado.
