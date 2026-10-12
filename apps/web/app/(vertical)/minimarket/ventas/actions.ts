@@ -1017,6 +1017,29 @@ export async function registrarVenta(input: VentaInput): Promise<VentaResult> {
       );
     }
 
+    // Enlaza el presupuesto reservado con esta venta AQUÍ, en el servidor, en
+    // la misma petición que la creó. Antes solo lo hacía el navegador con una
+    // llamada aparte (`marcarPresupuestoConvertido`) disparada sin esperar justo
+    // antes de navegar al recibo, y esa llamada se perdía: el presupuesto
+    // quedaba "convertido" sin `venta_id` y mostraba el aviso de "posible
+    // corte de conexión". La llamada del navegador se mantiene como respaldo
+    // (es tolerante: no pisa un enlace ya hecho). Si este update falla, la
+    // venta sigue intacta — solo se registra en el log.
+    if (presupuestoVenta) {
+      const { error: enlaceError } = await supabase
+        .from("mm_presupuestos")
+        .update({ venta_id: venta.id, updated_at: new Date().toISOString() })
+        .eq("id", presupuestoVenta.id)
+        .eq("tenant_id", tenantId)
+        .eq("estado", "convertido")
+        .is("venta_id", null);
+      if (enlaceError) {
+        console.error("[registrarVenta] no se pudo enlazar el presupuesto:", enlaceError);
+      }
+      revalidatePath("/minimarket/presupuestos");
+      revalidatePath(`/minimarket/presupuestos/${presupuestoVenta.id}`);
+    }
+
     revalidatePath("/minimarket/ventas");
     revalidatePath("/minimarket");
 
