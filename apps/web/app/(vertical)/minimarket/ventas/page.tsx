@@ -308,7 +308,7 @@ export default async function VentasHistorialPage({
                   const badge = estadoBadge(v);
                   return (
                     <tr key={v.id} className="hover:bg-surface-2 transition-colors">
-                      <td className="text-muted-foreground px-4 py-3 font-mono text-xs">
+                      <td className="text-muted-foreground whitespace-nowrap px-4 py-3 font-mono text-xs">
                         {v.numero ?? "—"}
                       </td>
                       <td className="text-muted-foreground px-4 py-3 text-xs tabular-nums">

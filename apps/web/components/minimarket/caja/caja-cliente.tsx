@@ -195,7 +195,9 @@ export function CajaCliente({
                           TIPO_LABEL[m.tipo]
                         )}
                       </td>
-                      <td className="text-muted-foreground px-4 py-2.5">{m.motivo ?? "—"}</td>
+                      <td className="text-muted-foreground min-w-[11rem] px-4 py-2.5">
+                        {m.motivo ?? "—"}
+                      </td>
                       <td
                         className={`px-4 py-2.5 text-right tabular-nums ${suma ? "text-success" : "text-warning"}`}
                       >

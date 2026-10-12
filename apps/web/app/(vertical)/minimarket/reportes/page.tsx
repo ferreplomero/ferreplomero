@@ -638,7 +638,9 @@ export default async function ReportesPage({
                       <td className="px-4 py-2.5">
                         <span className="text-heading font-medium">{p.nombre}</span>
                         {p.codigo ? (
-                          <span className="text-muted-foreground ml-1.5 text-xs">{p.codigo}</span>
+                          <span className="text-muted-foreground ml-1.5 whitespace-nowrap text-xs">
+                            {p.codigo}
+                          </span>
                         ) : null}
                         {p.bajo_minimo ? (
                           <span className="ml-1.5 rounded-full bg-red-100 px-1.5 py-0.5 text-xs font-medium text-red-700">
@@ -809,7 +811,9 @@ export default async function ReportesPage({
                     <td className="px-4 py-2.5">
                       <span className="text-heading font-medium">{p.nombre}</span>
                       {p.codigo ? (
-                        <span className="text-muted-foreground ml-1.5 text-xs">{p.codigo}</span>
+                        <span className="text-muted-foreground ml-1.5 whitespace-nowrap text-xs">
+                          {p.codigo}
+                        </span>
                       ) : null}
                     </td>
                     <td className="text-heading px-4 py-2.5 text-right font-medium tabular-nums">
