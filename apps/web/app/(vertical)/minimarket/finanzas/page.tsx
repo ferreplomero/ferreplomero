@@ -602,25 +602,29 @@ export default async function FinanzasPage({
                 <table className="w-full text-sm">
                   <thead className="border-border text-muted-foreground border-b text-left text-xs uppercase tracking-wide">
                     <tr>
-                      <th className="px-5 py-3">Método</th>
-                      <th className="px-5 py-3 text-right">Total USD</th>
-                      <th className="px-5 py-3 text-right">Total Bs</th>
-                      <th className="px-5 py-3 text-right"># Pagos</th>
+                      <th className="px-4 py-3 sm:px-5">Método</th>
+                      <th className="whitespace-nowrap px-4 py-3 text-right sm:px-5">Total USD</th>
+                      <th className="hidden whitespace-nowrap px-5 py-3 text-right md:table-cell">
+                        Total Bs
+                      </th>
+                      <th className="whitespace-nowrap px-4 py-3 text-right sm:px-5"># Pagos</th>
                     </tr>
                   </thead>
                   <tbody className="divide-border divide-y">
                     {porMetodo.map((m) => (
                       <tr key={m.metodo} className="hover:bg-surface-2 transition-colors">
-                        <td className="text-heading px-5 py-3 font-medium">
+                        <td className="text-heading px-4 py-3 font-medium sm:px-5">
                           {metodoLabel(m.metodo)}
                         </td>
-                        <td className="text-heading px-5 py-3 text-right tabular-nums">
+                        <td className="text-heading whitespace-nowrap px-4 py-3 text-right tabular-nums sm:px-5">
                           {usd(m.totalUsd)}
+                          {/* En móvil el total en Bs va debajo del USD (su columna se oculta). */}
+                          <p className="text-muted-foreground text-xs md:hidden">{bs(m.totalBs)}</p>
                         </td>
-                        <td className="text-muted-foreground px-5 py-3 text-right tabular-nums">
+                        <td className="text-muted-foreground hidden whitespace-nowrap px-5 py-3 text-right tabular-nums md:table-cell">
                           {bs(m.totalBs)}
                         </td>
-                        <td className="text-muted-foreground px-5 py-3 text-right tabular-nums">
+                        <td className="text-muted-foreground px-4 py-3 text-right tabular-nums sm:px-5">
                           {m.numPagos}
                         </td>
                       </tr>
