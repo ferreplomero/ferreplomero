@@ -335,6 +335,11 @@ export default async function TableroPage({
     titulo: p.descripcion,
     subtitulo: `${p.unidades} unidad${p.unidades !== 1 ? "es" : ""}`,
     valor: usd(p.ingreso_usd),
+    // Bs a la tasa congelada de cada venta (no la de hoy).
+    valorSecundario: new Intl.NumberFormat(country.locale, {
+      style: "currency",
+      currency: "VES",
+    }).format(p.ingreso_bs),
   }));
 
   const stockBajo = inventario.items.filter((i) => i.bajo_minimo).slice(0, 5);

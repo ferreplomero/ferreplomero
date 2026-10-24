@@ -37,6 +37,11 @@ export interface ProductoMasVendido {
   margen_usd: number;
   /** margen_usd / Σ (precio_usd × cantidad) × 100; null si esa base es 0. */
   margen_pct: number | null;
+  /** Σ total_usd × tasa congelada de CADA venta (`mm_ventas.tasa_usada`):
+   * los Bs que realmente se facturaron, no la conversión a la tasa de hoy. */
+  ingreso_bs: number;
+  /** Precio unitario en Bs a la tasa de cada venta (promedio ponderado por unidades). */
+  precio_unitario_bs: number;
 }
 
 export interface VentaCategoria {
@@ -276,7 +281,7 @@ export async function getProductosMasVendidos(
   const { data } = await client
     .from("mm_ventas_items")
     .select(
-      "producto_id, descripcion, cantidad, precio_usd, total_usd, venta:mm_ventas(fecha, estado)",
+      "producto_id, descripcion, cantidad, precio_usd, total_usd, venta:mm_ventas(fecha, estado, tasa_usada)",
     )
     .eq("tenant_id", tenantId)
     .gte("created_at", desdeIso)
@@ -288,7 +293,7 @@ export async function getProductosMasVendidos(
         cantidad: number;
         precio_usd: number;
         total_usd: number;
-        venta: { fecha: string; estado: string } | null;
+        venta: { fecha: string; estado: string; tasa_usada: number } | null;
       }[]
     >();
 
@@ -301,6 +306,9 @@ export async function getProductosMasVendidos(
       producto_id: string | null;
       /** Σ precio_usd × cantidad (base sin impuestos para precio promedio y margen). */
       base_usd: number;
+      /** Mismas sumas en Bs, cada línea a la tasa congelada de su venta. */
+      ingreso_bs: number;
+      base_bs: number;
     }
   >();
 
@@ -313,10 +321,15 @@ export async function getProductosMasVendidos(
       ingreso_usd: 0,
       producto_id: item.producto_id,
       base_usd: 0,
+      ingreso_bs: 0,
+      base_bs: 0,
     };
+    const tasaVenta = Number(item.venta.tasa_usada ?? 0);
     existing.unidades += Number(item.cantidad);
     existing.ingreso_usd += Number(item.total_usd);
     existing.base_usd += Number(item.precio_usd) * Number(item.cantidad);
+    existing.ingreso_bs += Number(item.total_usd) * tasaVenta;
+    existing.base_bs += Number(item.precio_usd) * Number(item.cantidad) * tasaVenta;
     byProducto.set(key, existing);
   }
 
@@ -349,6 +362,8 @@ export async function getProductosMasVendidos(
       costo_unitario_usd: costo,
       margen_usd: margen,
       margen_pct: p.base_usd > 0 ? (margen / p.base_usd) * 100 : null,
+      ingreso_bs: Math.round(p.ingreso_bs * 100) / 100,
+      precio_unitario_bs: p.unidades > 0 ? Math.round((p.base_bs / p.unidades) * 100) / 100 : 0,
     };
   });
 }

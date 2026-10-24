@@ -700,6 +700,8 @@ export interface VentaDetalle extends DocumentoFiscal {
   id: string;
   estado: "completada" | "anulada";
   descuento_usd: number;
+  /** Parte de `descuento_usd` por pago en efectivo USD (0123). */
+  descuento_divisas_usd: number;
   cajero_nombre: string | null;
   created_at: string;
   cliente: { id: string; nombre: string; cedula: string | null } | null;
@@ -751,7 +753,7 @@ export async function getVentaDetalle(
   const { data: venta } = await client
     .from("mm_ventas")
     .select(
-      "id, estado, cliente_id, usuario_id, tipo_documento, numero_documento, fecha, created_at, tasa_usada, subtotal_usd, descuento_usd, igtf_usd, total_usd, total_bs",
+      "id, estado, cliente_id, usuario_id, tipo_documento, numero_documento, fecha, created_at, tasa_usada, subtotal_usd, descuento_usd, descuento_divisas_usd, igtf_usd, total_usd, total_bs",
     )
     .eq("tenant_id", tenantId)
     .eq("id", ventaId)
@@ -858,6 +860,7 @@ export async function getVentaDetalle(
     id: venta.id,
     estado: venta.estado,
     descuento_usd: Number(venta.descuento_usd ?? 0),
+    descuento_divisas_usd: Number(venta.descuento_divisas_usd ?? 0),
     cajero_nombre: perfilRes.data?.full_name ?? null,
     created_at: venta.created_at,
     cliente: clienteRes.data
@@ -967,7 +970,7 @@ export async function getVentaParaRecibo(
   const { data: venta } = await client
     .from("mm_ventas")
     .select(
-      "tipo_documento, numero_documento, fecha, tasa_usada, subtotal_usd, descuento_usd, igtf_usd, total_usd, total_bs, cliente_id, estado",
+      "tipo_documento, numero_documento, fecha, tasa_usada, subtotal_usd, descuento_usd, descuento_divisas_usd, igtf_usd, total_usd, total_bs, cliente_id, estado",
     )
     .eq("tenant_id", tenantId)
     .eq("id", ventaId)

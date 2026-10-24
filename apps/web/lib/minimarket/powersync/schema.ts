@@ -235,6 +235,7 @@ const mm_ventas = new Table({
   tasa_usada: column.real,
   subtotal_usd: column.real,
   descuento_usd: column.real,
+  descuento_divisas_usd: column.real,
   igtf_usd: column.real,
   total_usd: column.real,
   total_bs: column.real,

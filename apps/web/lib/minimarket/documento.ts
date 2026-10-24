@@ -97,6 +97,9 @@ export interface DocumentoFiscal {
    * el recibo muestra "Subtotal" (antes del descuento), "Descuento" y el resto,
    * para que el cliente vea de dónde sale el total. */
   descuentoUsd?: number;
+  /** Parte de `descuentoUsd` que es por pago en efectivo USD (0123): el
+   * documento la muestra en su propia línea, "Descuento por pago en divisas". */
+  descuentoDivisasUsd?: number;
   igtfUsd: number;
   /** IVA cobrado en la venta, derivado (total − IGTF − subtotal). 0 si el
    * negocio no cobra IVA o si todo lo vendido estaba exento. */
@@ -125,6 +128,7 @@ export function construirRecibo(
     | "tasa_usada"
     | "subtotal_usd"
     | "descuento_usd"
+    | "descuento_divisas_usd"
     | "igtf_usd"
     | "total_usd"
     | "total_bs"
@@ -164,6 +168,7 @@ export function construirRecibo(
     })),
     subtotalUsd: Number(venta.subtotal_usd),
     descuentoUsd: Number(venta.descuento_usd ?? 0),
+    descuentoDivisasUsd: Number(venta.descuento_divisas_usd ?? 0),
     igtfUsd: Number(venta.igtf_usd),
     // Derivado (mismo criterio que `ivaRegistradoUsd` en Finanzas): la venta
     // no guarda su propio `iva_usd`, así que se reconstruye a partir de lo

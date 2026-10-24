@@ -73,6 +73,7 @@ describe("registrarVentaLocal", () => {
       50,
       3,
       0,
+      0, // descuento_divisas_usd
       0,
       3,
       150,
@@ -82,6 +83,17 @@ describe("registrarVentaLocal", () => {
       expect.any(String),
       expect.any(String),
     ]);
+  });
+
+  it("guarda el descuento por pago en divisas, nunca mayor que el descuento total", async () => {
+    const { db, ejecutadas } = mockDb();
+    await registrarVentaLocal(db, { ...baseInput(), descuentoUsd: 1.5, descuentoDivisasUsd: 1 });
+    expect(tabla(ejecutadas, "mm_ventas")[0]?.params[8]).toBe(1.5);
+    expect(tabla(ejecutadas, "mm_ventas")[0]?.params[9]).toBe(1);
+
+    const otro = mockDb();
+    await registrarVentaLocal(otro.db, { ...baseInput(), descuentoUsd: 1, descuentoDivisasUsd: 4 });
+    expect(tabla(otro.ejecutadas, "mm_ventas")[0]?.params[9]).toBe(1);
   });
 
   it("inserta un renglón y un movimiento de salida de inventario por cada producto", async () => {

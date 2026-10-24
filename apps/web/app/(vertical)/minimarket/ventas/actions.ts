@@ -97,6 +97,9 @@ export interface VentaInput {
   items: VentaItemInput[];
   pagos: PagoInput[];
   descuento_usd?: number;
+  /** Parte de `descuento_usd` que es por pago en efectivo USD (0123). Solo
+   * informativa (recibo/detalle): los totales salen de `descuento_usd`. */
+  descuento_divisas_usd?: number;
   sucursal_id?: string;
   cliente_id?: string | null;
   /** Tasa elegida por el cajero para ESTA venta, si difiere de la tasa del día. */
@@ -186,6 +189,7 @@ const ventaSchema = z
         "Solo puede haber un pago de tipo fiado por venta.",
       ),
     descuento_usd: z.coerce.number().nonnegative().optional().default(0),
+    descuento_divisas_usd: z.coerce.number().nonnegative().optional().default(0),
     presupuesto_id: z.string().uuid().optional(),
     sucursal_id: z.string().uuid().optional(),
     cliente_id: z.string().uuid().nullable().optional(),
@@ -605,6 +609,19 @@ export async function registrarVenta(input: VentaInput): Promise<VentaResult> {
     const subtotalBruto = redondear(items.reduce((s, l) => s + l.total_usd, 0));
     const descuento = redondear(Math.min(v.descuento_usd, subtotalBruto));
     const subtotalNeto = redondear(subtotalBruto - descuento);
+    // Descuento por pago en divisas: es una PARTE del descuento total (nunca
+    // lo suma aparte) y solo vale si la venta realmente se paga en efectivo USD.
+    const descuentoDivisas = redondear(v.descuento_divisas_usd);
+    if (descuentoDivisas > 0) {
+      if (!v.pagos.some((p) => p.metodo === "efectivo_usd")) {
+        return {
+          error: "El descuento por pago en divisas solo aplica si se cobra en efectivo USD.",
+        };
+      }
+      if (descuentoDivisas > descuento + 0.001) {
+        return { error: "El descuento por pago en divisas no cuadra con el descuento total." };
+      }
+    }
 
     // IGTF: aplica a la porción pagada en divisa (efectivo_usd, zelle) si está
     // activo, escalado a la proporción del carrito cuyas líneas realmente
@@ -728,6 +745,7 @@ export async function registrarVenta(input: VentaInput): Promise<VentaResult> {
         tasa_usada: tasaUsada,
         subtotal_usd: subtotalNeto,
         descuento_usd: descuento,
+        descuento_divisas_usd: Math.min(descuentoDivisas, descuento),
         igtf_usd: igtf,
         total_usd: totalUsd,
         total_bs: totalBs,

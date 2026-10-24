@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  calcularDescuentoDivisas,
   calcularExcedenteBs,
   calcularMontoSaldo,
   computeCobro,
@@ -929,5 +930,116 @@ describe("computeCobro — IGTF por producto (mezcla de líneas con/sin IGTF en 
     });
     expect(r.igtf).toBeCloseTo(0.6, 2); // 3% de los $20 pagados, como siempre
     expect(r.totalUsd).toBeCloseTo(20.6, 2);
+  });
+});
+
+describe("calcularDescuentoDivisas — descuento por pago en efectivo USD", () => {
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  /** Subtotal + IVA (antes de IGTF), igual que computeCobro. */
+  const totalAntesIgtf = (
+    lineas: { totalUsd: number; impuestoId: string }[],
+    descuento: number,
+    ivaPct: number,
+  ) => {
+    const bruto = lineas.reduce((s, l) => s + l.totalUsd, 0);
+    const neto = r2(bruto - descuento);
+    return r2(neto + r2((subtotalNetoGravado(lineas, descuento) * ivaPct) / 100));
+  };
+
+  it("porcentaje: 10 % de USD 40,00 = USD 4,00", () => {
+    expect(
+      calcularDescuentoDivisas({
+        tipo: "porcentaje",
+        valor: "10",
+        subtotalNeto: 40,
+        subtotalGravado: 15,
+        ivaActivo: true,
+        ivaPct: 16,
+      }),
+    ).toBe(4);
+  });
+
+  it("porcentaje: el total antes de IGTF baja exactamente ese %", () => {
+    const lineas = [
+      { totalUsd: 15, impuestoId: "iva" },
+      { totalUsd: 25, impuestoId: "exento" },
+    ];
+    const d = calcularDescuentoDivisas({
+      tipo: "porcentaje",
+      valor: "10",
+      subtotalNeto: 40,
+      subtotalGravado: subtotalNetoGravado(lineas, 0),
+      ivaActivo: true,
+      ivaPct: 16,
+    });
+    expect(totalAntesIgtf(lineas, 0, 16)).toBe(42.4);
+    expect(totalAntesIgtf(lineas, d, 16)).toBe(38.16); // 90 % de 42,40
+  });
+
+  it("monto fijo con todo gravado: el total a pagar baja exactamente USD 2,00", () => {
+    const lineas = [{ totalUsd: 15, impuestoId: "iva" }];
+    const d = calcularDescuentoDivisas({
+      tipo: "monto",
+      valor: "2",
+      subtotalNeto: 15,
+      subtotalGravado: 15,
+      ivaActivo: true,
+      ivaPct: 16,
+    });
+    expect(d).toBe(1.72);
+    expect(totalAntesIgtf(lineas, 0, 16)).toBe(17.4);
+    expect(totalAntesIgtf(lineas, d, 16)).toBe(15.4);
+  });
+
+  it("monto fijo con carrito mixto (gravado + exento): baja USD 2,00", () => {
+    const lineas = [
+      { totalUsd: 15, impuestoId: "iva" },
+      { totalUsd: 25, impuestoId: "exento" },
+    ];
+    const d = calcularDescuentoDivisas({
+      tipo: "monto",
+      valor: "2,00",
+      subtotalNeto: 40,
+      subtotalGravado: 15,
+      ivaActivo: true,
+      ivaPct: 16,
+    });
+    expect(d).toBe(1.89);
+    expect(r2(totalAntesIgtf(lineas, 0, 16) - totalAntesIgtf(lineas, d, 16))).toBe(2);
+  });
+
+  it("monto fijo con todo exento o sin IVA activo: el descuento es el monto tal cual", () => {
+    const base = { tipo: "monto" as const, valor: "2", subtotalNeto: 25, ivaPct: 16 };
+    expect(calcularDescuentoDivisas({ ...base, subtotalGravado: 0, ivaActivo: true })).toBe(2);
+    expect(calcularDescuentoDivisas({ ...base, subtotalGravado: 25, ivaActivo: false })).toBe(2);
+  });
+
+  it("topes: nunca negativo ni mayor que el subtotal; vacío o inválido = 0", () => {
+    const base = { subtotalNeto: 10, subtotalGravado: 0, ivaActivo: false, ivaPct: 16 };
+    expect(calcularDescuentoDivisas({ ...base, tipo: "monto", valor: "50" })).toBe(10);
+    expect(calcularDescuentoDivisas({ ...base, tipo: "porcentaje", valor: "150" })).toBe(10);
+    expect(calcularDescuentoDivisas({ ...base, tipo: "porcentaje", valor: "" })).toBe(0);
+    expect(calcularDescuentoDivisas({ ...base, tipo: "monto", valor: "-3" })).toBe(0);
+    expect(calcularDescuentoDivisas({ ...base, tipo: "monto", valor: "abc" })).toBe(0);
+  });
+});
+
+describe("recalcularPagosPorTasa — incluirDivisas (cambio de total por descuento en divisas)", () => {
+  const pagos = [{ key: "u", metodo: "efectivo_usd" as const, monto: "17.40", autoSaldo: true }];
+
+  it("sin la bandera, una fila en USD no se toca (comportamiento de siempre)", () => {
+    expect(recalcularPagosPorTasa(pagos, 13.28, TASA, false, true, 16)).toBe(pagos);
+  });
+
+  it("con la bandera, el efectivo USD puesto como saldo se reajusta al nuevo total", () => {
+    const r = recalcularPagosPorTasa(pagos, 13.28, TASA, false, true, 16, 13.28, 13.28, true);
+    expect(r[0]?.monto).toBe("15.40");
+  });
+
+  it("con la bandera, un monto tecleado a mano (billete recibido) no se toca", () => {
+    const aMano = [{ key: "u", metodo: "efectivo_usd" as const, monto: "20", autoSaldo: false }];
+    expect(recalcularPagosPorTasa(aMano, 13.28, TASA, false, true, 16, 13.28, 13.28, true)).toBe(
+      aMano,
+    );
   });
 });

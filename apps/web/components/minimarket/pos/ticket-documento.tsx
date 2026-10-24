@@ -106,7 +106,15 @@ export function TicketDocumento({
       {(doc.descuentoUsd ?? 0) > 0 ? (
         <>
           <Fila izq="Subtotal" der={m(doc.subtotalUsd + (doc.descuentoUsd ?? 0))} />
-          <Fila izq="Descuento" der={`-${m(doc.descuentoUsd ?? 0)}`} />
+          {(doc.descuentoUsd ?? 0) - (doc.descuentoDivisasUsd ?? 0) > 0.001 ? (
+            <Fila
+              izq="Descuento"
+              der={`-${m((doc.descuentoUsd ?? 0) - (doc.descuentoDivisasUsd ?? 0))}`}
+            />
+          ) : null}
+          {(doc.descuentoDivisasUsd ?? 0) > 0 ? (
+            <Fila izq="Desc. pago en divisas" der={`-${m(doc.descuentoDivisasUsd ?? 0)}`} />
+          ) : null}
         </>
       ) : (
         <Fila izq="Subtotal" der={m(doc.subtotalUsd)} />

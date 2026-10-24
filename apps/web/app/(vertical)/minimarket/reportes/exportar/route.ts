@@ -146,7 +146,7 @@ export async function GET(request: NextRequest) {
       negocio,
       subtitulos: [
         `Período: ${periodo} · ${generado}`,
-        "Precio unit.: precio al que se vendió (promedio ponderado si varió). Margen: (precio vendido − costo actual) × unidades, mismo criterio que la utilidad estimada.",
+        "Precio unit.: precio al que se vendió (promedio ponderado si varió). Bs: a la tasa congelada de cada venta. Margen: (precio vendido − costo actual) × unidades, mismo criterio que la utilidad estimada.",
       ],
       filas: productos,
       columnas: [
@@ -159,7 +159,14 @@ export async function GET(request: NextRequest) {
           tipo: "usd",
           valor: (p) => r2(p.precio_unitario_usd),
         },
+        {
+          titulo: "Precio unit. Bs",
+          ancho: 15,
+          tipo: "bs",
+          valor: (p) => p.precio_unitario_bs,
+        },
         { titulo: "Ingreso USD", ancho: 14, tipo: "usd", valor: (p) => r2(p.ingreso_usd) },
+        { titulo: "Ingreso Bs", ancho: 17, tipo: "bs", valor: (p) => p.ingreso_bs },
         { titulo: "Costo unit. USD", ancho: 15, tipo: "usd", valor: (p) => p.costo_unitario_usd },
         { titulo: "Margen USD", ancho: 14, tipo: "usd", valor: (p) => r2(p.margen_usd) },
         {
@@ -174,7 +181,9 @@ export async function GET(request: NextRequest) {
         null,
         productos.reduce((a, p) => a + p.unidades, 0),
         null,
+        null,
         suma(productos.map((p) => p.ingreso_usd)),
+        suma(productos.map((p) => p.ingreso_bs)),
         null,
         Math.round(margenTotal * 100) / 100,
         baseTotal > 0 ? margenTotal / baseTotal : null,
@@ -312,6 +321,10 @@ export async function GET(request: NextRequest) {
     const { rango } = resolverRangoReporte({ desde, hasta }, tz);
     const usdFmt = new Intl.NumberFormat("es-VE", { style: "currency", currency: "USD" });
     const fmt = (v: number) => usdFmt.format(v);
+    const bsFmt = new Intl.NumberFormat("es-VE", { style: "currency", currency: "VES" });
+    // USD arriba y, debajo, los Bs a la tasa congelada de cada venta.
+    const usdYBs = (u: number, b: number) =>
+      `<span class="right">${fmt(u)}<br><span class="sub">${bsFmt.format(b)}</span></span>`;
 
     const [resumen, ventasDia, porMetodo, masVendidos, porCajero] = await Promise.all([
       getResumenPeriodo(supabase, tenantId, rango, tz),
@@ -363,6 +376,7 @@ export async function GET(request: NextRequest) {
   td{padding:4px 8px;border:1px solid #e8e8e8;vertical-align:top}
   tr:nth-child(even) td{background:#fafafa}
   .right{text-align:right}
+  .sub{color:#666;font-size:10px;white-space:nowrap}
   @media print{@page{size:A4;margin:12mm}body{padding:0}}
 </style>
 </head>
@@ -392,10 +406,10 @@ export async function GET(request: NextRequest) {
 
 <h2>Top 10 productos más vendidos</h2>
 <table>
-  ${thead(["#", "SKU", "Producto", "Unidades", "Precio unit.", "Ingreso USD", "Margen USD", "Margen %"])}
-  ${masVendidos.map((p, i) => row(String(i + 1), escapeHtml(p.codigo ?? "—"), escapeHtml(p.descripcion), `<span class="right">${p.unidades}</span>`, `<span class="right">${fmt(p.precio_unitario_usd)}</span>`, `<span class="right">${fmt(p.ingreso_usd)}</span>`, `<span class="right">${fmt(p.margen_usd)}</span>`, `<span class="right">${p.margen_pct === null ? "—" : p.margen_pct.toFixed(1) + "%"}</span>`)).join("")}
+  ${thead(["#", "SKU", "Producto", "Unidades", "Precio unit.", "Ingreso", "Margen USD", "Margen %"])}
+  ${masVendidos.map((p, i) => row(String(i + 1), escapeHtml(p.codigo ?? "—"), escapeHtml(p.descripcion), `<span class="right">${p.unidades}</span>`, usdYBs(p.precio_unitario_usd, p.precio_unitario_bs), usdYBs(p.ingreso_usd, p.ingreso_bs), `<span class="right">${fmt(p.margen_usd)}</span>`, `<span class="right">${p.margen_pct === null ? "—" : p.margen_pct.toFixed(1) + "%"}</span>`)).join("")}
 </table>
-<p class="meta">Precio unit.: precio al que se vendió (promedio ponderado si varió en el período). Margen: (precio vendido − costo actual del producto) × unidades — mismo criterio que la utilidad estimada.</p>
+<p class="meta">Precio unit.: precio al que se vendió (promedio ponderado si varió en el período). Bs: a la tasa congelada de cada venta. Margen: (precio vendido − costo actual del producto) × unidades — mismo criterio que la utilidad estimada.</p>
 
 ${
   porCajero.length > 0

@@ -58,6 +58,7 @@ import {
 import { METODOS_PAGO } from "@/lib/minimarket/constants";
 import { formatMaskedAmount, parseMaskedInput } from "@/lib/minimarket/currency-mask";
 import {
+  calcularDescuentoDivisas,
   calcularExcedenteBs,
   calcularMontoSaldo,
   computeCobro,
@@ -453,6 +454,12 @@ export function PosCliente({
   // banderas se le pasan.
   const [igtfOn, setIgtfOn] = React.useState(igtfActivo);
   const [ivaOn, setIvaOn] = React.useState(ivaActivo);
+  // Descuento por pago en divisas (efectivo USD) — solo dentro del cobro; se
+  // reinicia cada vez que se abre el diálogo (ver `abrirCobro`).
+  const [descDivisasTipo, setDescDivisasTipo] = React.useState<"porcentaje" | "monto">(
+    "porcentaje",
+  );
+  const [descDivisasValor, setDescDivisasValor] = React.useState("");
   // Tasa de este cobro: arranca igual a la tasa preseleccionada, pero el cajero
   // puede elegir otra de las 3 puntualmente para esta venta (ej. cobrar a tasa
   // Euro/digital en vez de la BCV configurada). Se resetea a la preseleccionada
@@ -731,21 +738,60 @@ export function PosCliente({
     return Number.isFinite(p) && p >= 0 ? Math.min(p, 100) : 0;
   }, [descPct]);
 
-  const descuentoUsd = descMontoNum;
+  // Descuento del CARRITO (el de siempre) y lo que queda tras él: es lo que
+  // muestra el panel del carrito y lo que se guarda en "En espera".
+  const descuentoCarritoUsd = descMontoNum;
+  const subtotalNetoCarrito = Math.max(
+    0,
+    Math.round((subtotalBruto - descuentoCarritoUsd) * 100) / 100,
+  );
+  const lineasGravables = lineas.map((l) => ({
+    totalUsd: precioUnitarioLinea(l) * l.cantidad,
+    impuestoId: impuestoIdEfectivoLinea(l),
+  }));
+  const subtotalGravadoCarrito = subtotalNetoGravado(lineasGravables, descuentoCarritoUsd);
+  // Descuento por pago en divisas: solo con el cobro abierto y una fila de
+  // Efectivo USD. Se calcula sobre lo que queda tras el descuento del carrito
+  // y se SUMA a él en `descuentoUsd` — de ahí en adelante todo (IVA, IGTF,
+  // total, servidor) sale de las mismas funciones de siempre.
+  const hayPagoEfectivoUsd = cobrarOpen && pagos.some((p) => p.metodo === "efectivo_usd");
+  const descuentoDivisasUsd = hayPagoEfectivoUsd
+    ? calcularDescuentoDivisas({
+        tipo: descDivisasTipo,
+        valor: descDivisasValor,
+        subtotalNeto: subtotalNetoCarrito,
+        subtotalGravado: subtotalGravadoCarrito,
+        ivaActivo: ivaOn,
+        ivaPct,
+      })
+    : 0;
+  const descuentoUsd = Math.round((descuentoCarritoUsd + descuentoDivisasUsd) * 100) / 100;
   const subtotalNeto = Math.max(0, Math.round((subtotalBruto - descuentoUsd) * 100) / 100);
-  const subtotalNetoBs = tasa ? Math.round(subtotalNeto * tasa * 100) / 100 : 0;
+  // Referencia del carrito (sin cobrar aún): sin IVA y con IVA. Con IVA usa la
+  // base gravada real (los exentos no suman) y el % del negocio aunque el IVA
+  // esté desactivado — es solo informativo, no cambia ningún cálculo del cobro.
+  const ivaReferenciaUsd =
+    ivaPct > 0 ? Math.round(((subtotalGravadoCarrito * ivaPct) / 100) * 100) / 100 : 0;
+  const totalConIvaCarrito = Math.round((subtotalNetoCarrito + ivaReferenciaUsd) * 100) / 100;
   // Base real del IVA: solo las líneas GRAVADAS (no exentas) del carrito, con
   // el estado EFECTIVO de cada línea (el override puntual del toggle de esta
   // venta, si lo hay — si no, el estado guardado del producto). Un producto
   // exento (o desactivado puntualmente) nunca debe sumar IVA, ni solo ni
   // mezclado con productos gravados en la misma venta.
-  const subtotalGravado = subtotalNetoGravado(
-    lineas.map((l) => ({
-      totalUsd: precioUnitarioLinea(l) * l.cantidad,
-      impuestoId: impuestoIdEfectivoLinea(l),
-    })),
-    descuentoUsd,
-  );
+  const subtotalGravado = subtotalNetoGravado(lineasGravables, descuentoUsd);
+  // Cuánto baja el total (subtotal + IVA, antes de IGTF) por el descuento en
+  // divisas — lo que se le muestra al cajero en la sección del descuento.
+  const ivaDe = (base: number) =>
+    ivaOn && ivaPct > 0 ? Math.round(((base * ivaPct) / 100) * 100) / 100 : 0;
+  const rebajaTotalDivisas =
+    descuentoDivisasUsd > 0
+      ? Math.round(
+          (subtotalNetoCarrito +
+            ivaDe(subtotalGravadoCarrito) -
+            (subtotalNeto + ivaDe(subtotalGravado))) *
+            100,
+        ) / 100
+      : 0;
   // Análogo para IGTF: solo las líneas que realmente lo causan (estado
   // efectivo, con override puntual si lo hay). Cuando TODAS las líneas
   // causan IGTF (el caso de hoy) el resultado es exactamente `subtotalNeto` —
@@ -1201,6 +1247,8 @@ export function PosCliente({
   function abrirCobro() {
     setError(null);
     setTasaCobroTipo(fuentePreferida);
+    setDescDivisasTipo("porcentaje");
+    setDescDivisasValor("");
     // El monto inicial debe calcularse EN LA MONEDA de `metodoPorDefecto` (Bs,
     // USD, o con gross-up de IGTF si ese método lo causa) — nunca asumir Bs a
     // fuego: si "Efectivo Bs" está desactivado, el método por defecto puede
@@ -1471,8 +1519,16 @@ export function PosCliente({
   // vivo) seguía de largo — el "falta por cubrir" quedaba descuadrado. Las
   // filas con un monto tecleado a mano (autoSaldo=false) nunca se tocan aquí
   // — ver `pos-calc.ts::recalcularPagosPorTasa`. Ver CLAUDE.md regla 12-14.
+  //
+  // Si lo que cambió es el descuento por pago en divisas, también se
+  // reajustan las filas en USD que representan "el saldo" (el efectivo USD
+  // pre-llenado): el total bajó y el cliente paga menos. Un monto en USD
+  // tecleado a mano (el billete que entregó) sigue sin tocarse.
+  const descDivisasPrevRef = React.useRef(0);
   React.useEffect(() => {
     if (!tasaCobro) return;
+    const cambioDescuentoDivisas = descDivisasPrevRef.current !== descuentoDivisasUsd;
+    descDivisasPrevRef.current = descuentoDivisasUsd;
     setPagos((prev) =>
       recalcularPagosPorTasa(
         prev,
@@ -1483,9 +1539,19 @@ export function PosCliente({
         ivaPct,
         subtotalGravado,
         subtotalSujetoIgtf,
+        cambioDescuentoDivisas,
       ),
     );
-  }, [tasaCobro, subtotalNeto, igtfOn, ivaOn, ivaPct, subtotalGravado, subtotalSujetoIgtf]);
+  }, [
+    tasaCobro,
+    subtotalNeto,
+    igtfOn,
+    ivaOn,
+    ivaPct,
+    subtotalGravado,
+    subtotalSujetoIgtf,
+    descuentoDivisasUsd,
+  ]);
 
   // ── Ventas en espera / borrador ──────────────────────────────────────────
   // Carga en el estado del POS el carrito/pagos/cliente/tasa/nota de una fila
@@ -1614,7 +1680,7 @@ export function PosCliente({
           descuentoPct: descPct,
           descuentoMonto: descMonto,
           tasaTipo: tasaCobroTipo,
-          subtotalUsd: subtotalNeto,
+          subtotalUsd: subtotalNetoCarrito,
           estado,
         });
         return true;
@@ -1634,7 +1700,7 @@ export function PosCliente({
       descPct,
       descMonto,
       tasaCobroTipo,
-      subtotalNeto,
+      subtotalNetoCarrito,
       tenantId,
       usuarioId,
     ],
@@ -1935,7 +2001,7 @@ export function PosCliente({
       descuentoPct: descPct,
       descuentoMonto: descMonto,
       tasaTipo: tasaCobroTipo,
-      subtotalUsd: subtotalNeto,
+      subtotalUsd: subtotalNetoCarrito,
       estado: "en_espera",
       guardadoEn: new Date().toISOString(),
     };
@@ -2081,6 +2147,19 @@ export function PosCliente({
       return;
     }
     if (lineas.length === 0) return;
+    if (
+      descuentoDivisasUsd > 0 &&
+      !pagos.some((p) => {
+        if (p.metodo !== "efectivo_usd") return false;
+        const num = parseFloat(p.monto.replace(",", "."));
+        return Number.isFinite(num) && num > 0;
+      })
+    ) {
+      setError(
+        "El descuento por pago en divisas requiere un monto en Efectivo USD. Escribe cuánto paga en divisas o quita el descuento.",
+      );
+      return;
+    }
     // Convertir un presupuesto exige revalidar permisos/estado en el servidor
     // (ver `marcarPresupuestoConvertido`) — sin conexión no hay forma de
     // hacerlo, así que se bloquea en vez de dejarlo pendiente de sincronizar
@@ -2207,6 +2286,7 @@ export function PosCliente({
           })),
           pagos: pagosEnvio,
           descuento_usd: descuentoUsd,
+          descuento_divisas_usd: descuentoDivisasUsd,
           // Venta que viene de un presupuesto: el servidor cobra los precios
           // pactados leyéndolos del presupuesto en la BD (ver `registrarVenta`).
           presupuesto_id: presupuestoIdEnCurso ?? undefined,
@@ -2321,6 +2401,7 @@ export function PosCliente({
         tasa: tasaCobro,
         subtotalUsd: subtotalNeto,
         descuentoUsd,
+        descuentoDivisasUsd,
         igtfUsd: calcPagos.igtf,
         totalUsd: calcPagos.totalUsd,
         totalBs: calcPagos.totalBs,
@@ -2874,20 +2955,54 @@ export function PosCliente({
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Subtotal</span>
               <span className="text-heading font-display text-lg font-semibold tabular-nums">
-                {money(subtotalNeto, "USD")}
+                {money(subtotalNetoCarrito, "USD")}
               </span>
             </div>
-            {descuentoUsd > 0 ? (
+            {descuentoCarritoUsd > 0 ? (
               <div className="flex justify-between text-xs">
                 <span className="text-muted-foreground">
                   Descuento ({numeroLocal(descPctNum, 1)} %)
                 </span>
-                <span className="text-success tabular-nums">−{money(descuentoUsd, "USD")}</span>
+                <span className="text-success tabular-nums">
+                  −{money(descuentoCarritoUsd, "USD")}
+                </span>
               </div>
             ) : null}
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Total Bs (aprox.)</span>
-              <span className="tabular-nums">{tasa ? money(subtotalNetoBs, "VES") : "—"}</span>
+            {/* Referencia antes de cobrar: cuánto sería sin IVA y con IVA. */}
+            <div className="bg-surface-2 mt-2 space-y-1.5 rounded-md px-3 py-2 text-sm">
+              <dl className="space-y-1.5">
+                <div className="flex items-start justify-between gap-3">
+                  <dt className="text-muted-foreground">Sin IVA</dt>
+                  <dd className="text-right tabular-nums">
+                    <span className="text-heading block whitespace-nowrap font-medium">
+                      {money(subtotalNetoCarrito, "USD")}
+                    </span>
+                    <span className="text-muted-foreground block whitespace-nowrap text-xs">
+                      {tasa
+                        ? money(Math.round(subtotalNetoCarrito * tasa * 100) / 100, "VES")
+                        : "—"}
+                    </span>
+                  </dd>
+                </div>
+                {ivaPct > 0 ? (
+                  <div className="flex items-start justify-between gap-3">
+                    <dt className="text-muted-foreground">Con IVA ({numeroLocal(ivaPct, 1)} %)</dt>
+                    <dd className="text-right tabular-nums">
+                      <span className="text-heading block whitespace-nowrap font-medium">
+                        {money(totalConIvaCarrito, "USD")}
+                      </span>
+                      <span className="text-muted-foreground block whitespace-nowrap text-xs">
+                        {tasa
+                          ? money(Math.round(totalConIvaCarrito * tasa * 100) / 100, "VES")
+                          : "—"}
+                      </span>
+                    </dd>
+                  </div>
+                ) : null}
+              </dl>
+              <p className="text-muted-foreground text-xs">
+                Referencia. El IGTF, si aplica, se suma al cobrar.
+              </p>
             </div>
           </div>
 
@@ -3552,6 +3667,91 @@ export function PosCliente({
                     </button>
                   ) : null}
 
+                  {/* Descuento por pago en divisas: solo si se cobra (parte) en
+                  efectivo USD. Se aplica a toda la venta, sobre lo que queda
+                  tras el descuento del carrito; ver `calcularDescuentoDivisas`. */}
+                  {hayPagoEfectivoUsd ? (
+                    <div className="border-success/40 bg-success/5 space-y-2 rounded-lg border p-3">
+                      <div className="flex items-center gap-2">
+                        <Tag className="text-success size-4 shrink-0" aria-hidden />
+                        <p className="text-heading text-sm font-medium">
+                          Descuento por pago en divisas
+                        </p>
+                      </div>
+                      <p className="text-muted-foreground text-xs">
+                        Opcional. Se aplica a toda la venta porque el cliente paga en efectivo USD.
+                      </p>
+                      <div className="flex gap-2">
+                        <div
+                          role="radiogroup"
+                          aria-label="Tipo de descuento por divisas"
+                          className="border-border bg-surface inline-flex shrink-0 rounded-md border p-0.5"
+                        >
+                          {(
+                            [
+                              { valor: "porcentaje", etiqueta: "%" },
+                              { valor: "monto", etiqueta: "USD" },
+                            ] as const
+                          ).map((op) => (
+                            <button
+                              key={op.valor}
+                              type="button"
+                              role="radio"
+                              aria-checked={descDivisasTipo === op.valor}
+                              onClick={() => setDescDivisasTipo(op.valor)}
+                              className={cn(
+                                "rounded px-3 py-1.5 text-sm font-medium transition-colors",
+                                descDivisasTipo === op.valor
+                                  ? "bg-accent-500 text-white"
+                                  : "text-muted-foreground hover:text-heading",
+                              )}
+                            >
+                              {op.etiqueta}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="relative min-w-0 flex-1">
+                          <span className="text-muted-foreground pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs">
+                            {descDivisasTipo === "porcentaje" ? "%" : "$"}
+                          </span>
+                          <Input
+                            type="number"
+                            inputMode="decimal"
+                            step="0.01"
+                            min="0"
+                            max={descDivisasTipo === "porcentaje" ? "100" : undefined}
+                            value={descDivisasValor}
+                            onChange={(e) => setDescDivisasValor(e.target.value)}
+                            placeholder={descDivisasTipo === "porcentaje" ? "Ej. 10" : "Ej. 2.00"}
+                            className="pl-7 text-sm"
+                            aria-label={
+                              descDivisasTipo === "porcentaje"
+                                ? "Descuento por divisas en porcentaje"
+                                : "Descuento por divisas en dólares, a rebajar del total"
+                            }
+                          />
+                        </div>
+                      </div>
+                      {descuentoDivisasUsd > 0 ? (
+                        <p className="text-success text-xs font-medium tabular-nums">
+                          El total baja −{money(rebajaTotalDivisas, "USD")}
+                          {tasaCobro
+                            ? ` · −${money(Math.round(rebajaTotalDivisas * tasaCobro * 100) / 100, "VES")}`
+                            : ""}
+                          {Math.abs(rebajaTotalDivisas - descuentoDivisasUsd) > 0.001
+                            ? ` (${money(descuentoDivisasUsd, "USD")} sin IVA)`
+                            : ""}
+                        </p>
+                      ) : (
+                        <p className="text-muted-foreground text-xs">
+                          {descDivisasTipo === "porcentaje"
+                            ? "Escribe el porcentaje a descontar del total."
+                            : "Escribe cuántos dólares rebajar del total a pagar."}
+                        </p>
+                      )}
+                    </div>
+                  ) : null}
+
                   {/* Acción destacada: usar el saldo a favor del cliente (un toque). Solo
                 puede haber si ya hay un cliente seleccionado con saldo — nunca aparece
                 deshabilitado, simplemente no se muestra si no aplica. */}
@@ -3816,11 +4016,19 @@ export function PosCliente({
                     <span className="text-muted-foreground">Subtotal bruto</span>
                     <span className="tabular-nums">{money(subtotalBruto, "USD")}</span>
                   </div>
-                  {descuentoUsd > 0 ? (
+                  {descuentoCarritoUsd > 0 ? (
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Descuento</span>
                       <span className="text-success tabular-nums">
-                        −{money(descuentoUsd, "USD")}
+                        −{money(descuentoCarritoUsd, "USD")}
+                      </span>
+                    </div>
+                  ) : null}
+                  {descuentoDivisasUsd > 0 ? (
+                    <div className="flex justify-between gap-3">
+                      <span className="text-muted-foreground">Descuento por pago en divisas</span>
+                      <span className="text-success whitespace-nowrap tabular-nums">
+                        −{money(descuentoDivisasUsd, "USD")}
                       </span>
                     </div>
                   ) : null}
@@ -4321,7 +4529,7 @@ export function PosCliente({
               {lineas.reduce((s, l) => s + l.cantidad, 0)} artículo(s)
             </p>
             <p className="text-heading font-display text-lg font-bold tabular-nums">
-              {money(subtotalNeto, "USD")}
+              {money(subtotalNetoCarrito, "USD")}
             </p>
           </div>
           <Button

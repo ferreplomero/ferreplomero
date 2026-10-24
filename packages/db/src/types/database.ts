@@ -1798,6 +1798,7 @@ export interface Database {
           tasa_usada: number;
           subtotal_usd: number;
           descuento_usd: number;
+          descuento_divisas_usd: number;
           igtf_usd: number;
           total_usd: number;
           total_bs: number;
@@ -1825,6 +1826,7 @@ export interface Database {
           tasa_usada: number;
           subtotal_usd?: number;
           descuento_usd?: number;
+          descuento_divisas_usd?: number;
           igtf_usd?: number;
           total_usd?: number;
           total_bs?: number;

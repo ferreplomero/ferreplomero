@@ -209,10 +209,22 @@ export default async function VentaDetallePage({ params }: Props) {
                 <span className="text-muted-foreground">Subtotal bruto</span>
                 <span className="tabular-nums">{usd(venta.subtotalUsd + venta.descuento_usd)}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Descuento</span>
-                <span className="text-success tabular-nums">−{usd(venta.descuento_usd)}</span>
-              </div>
+              {venta.descuento_usd - venta.descuento_divisas_usd > 0.001 ? (
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Descuento</span>
+                  <span className="text-success tabular-nums">
+                    −{usd(venta.descuento_usd - venta.descuento_divisas_usd)}
+                  </span>
+                </div>
+              ) : null}
+              {venta.descuento_divisas_usd > 0 ? (
+                <div className="flex justify-between gap-3">
+                  <span className="text-muted-foreground">Descuento por pago en divisas</span>
+                  <span className="text-success whitespace-nowrap tabular-nums">
+                    −{usd(venta.descuento_divisas_usd)}
+                  </span>
+                </div>
+              ) : null}
             </>
           ) : null}
           <div className="flex justify-between">

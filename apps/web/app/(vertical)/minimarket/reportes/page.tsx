@@ -353,7 +353,8 @@ export default async function ReportesPage({
           <div className="border-border border-b px-4 py-3">
             <p className="text-heading text-sm font-medium">Top 10 — más vendidos</p>
             <p className="text-muted-foreground text-xs">
-              Precio al que se vendió cada unidad · margen con el costo actual del producto
+              Precio al que se vendió cada unidad · Bs a la tasa de cada venta · margen con el costo
+              actual del producto
             </p>
           </div>
           {masVendidos.length === 0 ? (
@@ -370,15 +371,20 @@ export default async function ReportesPage({
                         <span className="text-muted-foreground mr-1.5 tabular-nums">{i + 1}.</span>
                         {p.descripcion}
                       </p>
-                      <p className="text-heading shrink-0 whitespace-nowrap font-medium tabular-nums">
-                        {usd(p.ingreso_usd)}
-                      </p>
+                      <div className="shrink-0 text-right">
+                        <p className="text-heading whitespace-nowrap font-medium tabular-nums">
+                          {usd(p.ingreso_usd)}
+                        </p>
+                        <p className="text-muted-foreground whitespace-nowrap text-xs tabular-nums">
+                          {bs(p.ingreso_bs)}
+                        </p>
+                      </div>
                     </div>
                     <p className="text-muted-foreground text-xs">
                       <span className="whitespace-nowrap">SKU: {p.codigo ?? "—"}</span>
                       <span className="whitespace-nowrap tabular-nums">
                         {" "}
-                        · {p.unidades} × {usd(p.precio_unitario_usd)}
+                        · {p.unidades} × {usd(p.precio_unitario_usd)} ({bs(p.precio_unitario_bs)})
                       </span>
                       <span className="whitespace-nowrap tabular-nums">
                         {" "}
@@ -422,11 +428,13 @@ export default async function ReportesPage({
                         <td className="text-muted-foreground px-3 py-2.5 text-right tabular-nums">
                           {p.unidades}
                         </td>
-                        <td className="text-muted-foreground px-3 py-2.5 text-right tabular-nums">
-                          {usd(p.precio_unitario_usd)}
+                        <td className="text-muted-foreground whitespace-nowrap px-3 py-2.5 text-right tabular-nums">
+                          <p>{usd(p.precio_unitario_usd)}</p>
+                          <p className="text-xs">{bs(p.precio_unitario_bs)}</p>
                         </td>
-                        <td className="text-heading px-3 py-2.5 text-right tabular-nums">
-                          {usd(p.ingreso_usd)}
+                        <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums">
+                          <p className="text-heading">{usd(p.ingreso_usd)}</p>
+                          <p className="text-muted-foreground text-xs">{bs(p.ingreso_bs)}</p>
                         </td>
                         <td className="px-3 py-2.5 text-right tabular-nums">
                           <p

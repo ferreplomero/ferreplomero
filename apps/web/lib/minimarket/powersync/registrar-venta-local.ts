@@ -51,6 +51,8 @@ export interface VentaLocalInput {
   /** Subtotal neto (post-descuento, pre-impuestos), igual a `subtotalNeto` del POS. */
   subtotalUsd: number;
   descuentoUsd: number;
+  /** Parte de `descuentoUsd` que es por pago en efectivo USD (0 si no hay). */
+  descuentoDivisasUsd?: number;
   igtfUsd: number;
   totalUsd: number;
   totalBs: number;
@@ -87,9 +89,9 @@ export async function registrarVentaLocal(
     await tx.execute(
       `insert into mm_ventas
          (id, tenant_id, sucursal_id, usuario_id, cliente_id, fecha, tasa_usada,
-          subtotal_usd, descuento_usd, igtf_usd, total_usd, total_bs,
+          subtotal_usd, descuento_usd, descuento_divisas_usd, igtf_usd, total_usd, total_bs,
           tipo_documento, numero_documento, estado, created_at, updated_at)
-       values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       values (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         ventaId,
         input.tenantId,
@@ -100,6 +102,7 @@ export async function registrarVentaLocal(
         input.tasa,
         input.subtotalUsd,
         input.descuentoUsd,
+        Math.min(input.descuentoDivisasUsd ?? 0, input.descuentoUsd),
         input.igtfUsd,
         input.totalUsd,
         input.totalBs,

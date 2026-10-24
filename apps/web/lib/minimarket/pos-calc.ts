@@ -162,6 +162,51 @@ export function subtotalNetoSujetoIgtf(lineas: LineaIgtfInput[], descuentoUsd: n
   return Math.max(0, round2(brutoSujeto - descuentoSujeto));
 }
 
+export type TipoDescuentoDivisas = "porcentaje" | "monto";
+
+export interface DescuentoDivisasInput {
+  tipo: TipoDescuentoDivisas;
+  /** Texto crudo del campo (% o USD; acepta coma decimal o vacío). */
+  valor: string;
+  /** Subtotal neto del carrito (ya con SU descuento, sin impuestos) — la base
+   * sobre la que se aplica el descuento por divisas. */
+  subtotalNeto: number;
+  /** Parte gravada de ese subtotal (ver `subtotalNetoGravado`). */
+  subtotalGravado: number;
+  ivaActivo: boolean;
+  ivaPct: number;
+}
+
+/**
+ * Descuento por pago en divisas (efectivo USD), en USD, a restar del
+ * subtotal neto ANTES de impuestos — así el IVA se calcula sobre la base ya
+ * rebajada (como manda la ley) y el resto del cobro sigue pasando por
+ * `computeCobro` sin cambios.
+ *
+ *  - Porcentaje: `subtotalNeto × pct`. Como el IVA es proporcional, el total
+ *    antes de IGTF baja exactamente ese mismo porcentaje.
+ *  - Monto fijo: el cajero escribe cuánto rebaja del TOTAL A PAGAR (subtotal
+ *    + IVA). El descuento sobre la base es `X / (1 + iva · gravado/subtotal)`:
+ *    al repartirse proporcionalmente (`subtotalNetoGravado`) la base gravada
+ *    baja en `d · gravado/subtotal` y el IVA en ese monto × iva, de modo que
+ *    subtotal + IVA bajan X (±0,01 por redondeo a centavos).
+ *
+ * El IGTF se recalcula después sobre los pagos reales, como siempre.
+ * Nunca negativo ni mayor que el subtotal neto.
+ */
+export function calcularDescuentoDivisas(input: DescuentoDivisasInput): number {
+  const valor = parseFloat(input.valor.replace(",", "."));
+  const base = Math.max(0, input.subtotalNeto);
+  if (!Number.isFinite(valor) || valor <= 0 || base <= 0) return 0;
+  if (input.tipo === "porcentaje") {
+    return round2(base * (Math.min(valor, 100) / 100));
+  }
+  const tasaIva = input.ivaActivo && input.ivaPct > 0 ? input.ivaPct / 100 : 0;
+  const proporcionGravada = Math.min(1, Math.max(0, input.subtotalGravado) / base);
+  const d = valor / (1 + tasaIva * proporcionGravada);
+  return Math.min(base, round2(d));
+}
+
 /** Tolerancia de redondeo: por debajo de esto, el total se considera cubierto. */
 export const TOLERANCIA_USD = 0.02;
 
@@ -449,8 +494,19 @@ export function recalcularPagosPorTasa<T extends PagoRowConSaldo>(
   subtotalGravado: number = subtotalNeto,
   // Base sujeta a IGTF real (ver `subtotalNetoSujetoIgtf`) — default = subtotalNeto.
   subtotalSujetoIgtf: number = subtotalNeto,
+  // true también reajusta las filas en divisa (efectivo USD, Zelle) que
+  // representan "el saldo": se usa cuando lo que cambió es el TOTAL de la
+  // venta (descuento por pago en divisas), no la tasa. Default false = el
+  // comportamiento de siempre (al cambiar la tasa un monto en USD no cambia).
+  incluirDivisas = false,
 ): T[] {
-  const aRecalcular = pagos.filter((p) => p.autoSaldo && METODOS_BS.includes(p.metodo));
+  const aRecalcular = pagos.filter(
+    (p) =>
+      p.autoSaldo &&
+      p.metodo !== "fiado" &&
+      p.metodo !== "credito_cliente" &&
+      (METODOS_BS.includes(p.metodo) || (incluirDivisas && esMonedaDivisa(p.metodo))),
+  );
   if (aRecalcular.length === 0) return pagos;
 
   let resultado = pagos;
