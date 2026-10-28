@@ -16,6 +16,8 @@ import { parseMetodosPago } from "@/lib/minimarket/metodos-pago";
 import { getSesionAbierta } from "@/lib/minimarket/data/caja";
 import { getSucursalActiva } from "@/lib/minimarket/sucursal-acceso";
 import { listCuentasBancarias } from "@/lib/minimarket/data/bancos";
+import { esAdminNegocio } from "@/lib/minimarket/permisos";
+import { esEfectivo } from "@/lib/minimarket/pos-calc";
 import { CompraAcciones } from "./compra-acciones";
 import { RegistrarPagoCompra } from "./registrar-pago-compra";
 
@@ -66,19 +68,21 @@ export default async function CompraDetallePage({ params }: Props) {
   const country = getCountryConfig(session.activeTenant?.country);
   const { activa: sucursalActiva } = await getSucursalActiva(supabase, tenantId, session.user.id);
 
-  const [{ compra, tz }, tasa, configMetodosRes, sesion, cuentasBancarias] = await Promise.all([
-    cargarCompraDetalle(tenantId, id),
-    getTasaVigente(supabase, tenantId),
-    supabase
-      .from("mm_config_negocio")
-      .select("metodos_pago")
-      .eq("tenant_id", tenantId)
-      .maybeSingle(),
-    sucursalActiva
-      ? getSesionAbierta(supabase, tenantId, sucursalActiva.id)
-      : Promise.resolve(null),
-    listCuentasBancarias(supabase, tenantId),
-  ]);
+  const [{ compra, tz }, tasa, configMetodosRes, sesion, cuentasBancarias, esAdmin] =
+    await Promise.all([
+      cargarCompraDetalle(tenantId, id),
+      getTasaVigente(supabase, tenantId),
+      supabase
+        .from("mm_config_negocio")
+        .select("metodos_pago")
+        .eq("tenant_id", tenantId)
+        .maybeSingle(),
+      sucursalActiva
+        ? getSesionAbierta(supabase, tenantId, sucursalActiva.id)
+        : Promise.resolve(null),
+      listCuentasBancarias(supabase, tenantId),
+      esAdminNegocio(supabase, tenantId, session.user.id),
+    ]);
 
   if (!compra) notFound();
 
@@ -96,6 +100,14 @@ export default async function CompraDetallePage({ params }: Props) {
   const metodosPago = parseMetodosPago(configMetodosRes.data?.metodos_pago);
   const pendienteDePago = compra.metodo_pago === "credito_proveedor" && !compra.pagada;
   const totalPagado = Number(compra.total_usd) + Number(compra.iva_usd) + Number(compra.igtf_usd);
+  // Texto del diálogo de anulación: qué dinero vuelve y a dónde.
+  const dineroADevolver = pendienteDePago
+    ? "No hay dinero que devolver: la compra es a crédito y aún no se le pagó al proveedor."
+    : compra.metodo_pago === "credito_proveedor"
+      ? `Vuelven ${usd(totalPagado)} a la caja o cuenta con la que se le pagó al proveedor.`
+      : compra.metodo_pago && esEfectivo(compra.metodo_pago)
+        ? `Vuelven ${usd(totalPagado)} en efectivo a la caja abierta (si la caja de esa compra ya cerró, entra como ingreso en la de hoy).`
+        : `Vuelven ${usd(totalPagado)} a la cuenta bancaria con la que se pagó, con los mismos bolívares que salieron.`;
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -121,7 +133,12 @@ export default async function CompraDetallePage({ params }: Props) {
               ) : null}
             </div>
           </div>
-          <CompraAcciones compraId={compra.id} estado={compra.estado} />
+          <CompraAcciones
+            compraId={compra.id}
+            estado={compra.estado}
+            puedeAnularRecibida={esAdmin}
+            dineroADevolver={dineroADevolver}
+          />
         </div>
       </header>
 

@@ -373,6 +373,7 @@ async function getMovimientosDocumento(
     .eq("tenant_id", tenantId)
     .eq("metodo_pago", "credito_proveedor")
     .eq("pagada", true)
+    .neq("estado", "anulada")
     .not("fecha_pago", "is", null)
     .gte("fecha_pago", desdeIso)
     .lt("fecha_pago", hastaIso)

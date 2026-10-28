@@ -166,6 +166,23 @@ export async function esAdminPlataforma(
 }
 
 /**
+ * true si el usuario administra el negocio: dueño/administrador de
+ * PLATAFORMA (`esAdminPlataforma`) o con un rol operativo activo "dueno" /
+ * "administrador" (mismo criterio que `todasLasSucursales`). Para acciones
+ * reservadas a administradores sin importar los permisos por módulo, como
+ * anular una compra ya recibida.
+ */
+export async function esAdminNegocio(
+  supabase: Client,
+  tenantId: string,
+  profileId: string,
+): Promise<boolean> {
+  if (await esAdminPlataforma(supabase, tenantId, profileId)) return true;
+  const ctx = await resolverContextoPermisos(supabase, tenantId, profileId);
+  return ctx?.todasLasSucursales === true;
+}
+
+/**
  * ¿El contexto de permisos dado puede entrar a esta ruta? `esAdmin` (ya
  * resuelto por el caller, ver `esAdminPlataforma`) solo importa cuando
  * `ctx` es `null` Y el módulo de la ruta es sensible (Personal/

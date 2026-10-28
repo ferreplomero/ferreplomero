@@ -1259,6 +1259,9 @@ export interface Database {
           cuenta_bancaria_id: string | null;
           pagada: boolean;
           fecha_pago: string | null;
+          costos_aplicados: Json | null;
+          anulada_at: string | null;
+          anulada_por: string | null;
           created_at: string;
           updated_at: string;
           deleted_at: string | null;
@@ -1279,6 +1282,9 @@ export interface Database {
           cuenta_bancaria_id?: string | null;
           pagada?: boolean;
           fecha_pago?: string | null;
+          costos_aplicados?: Json | null;
+          anulada_at?: string | null;
+          anulada_por?: string | null;
           created_at?: string;
           updated_at?: string;
           deleted_at?: string | null;
@@ -1295,6 +1301,9 @@ export interface Database {
           cuenta_bancaria_id?: string | null;
           pagada?: boolean;
           fecha_pago?: string | null;
+          costos_aplicados?: Json | null;
+          anulada_at?: string | null;
+          anulada_por?: string | null;
           updated_at?: string;
           deleted_at?: string | null;
         };

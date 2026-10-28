@@ -6,8 +6,15 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSessionContext } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getCompraConItems } from "@/lib/minimarket/data/compras";
-import type { Database, MmMetodoPago } from "@arkiteq/db";
-import { requirePermisoAccion } from "@/lib/minimarket/permisos";
+import type { Database, Json, MmMetodoPago } from "@arkiteq/db";
+import { esAdminNegocio, requirePermisoAccion } from "@/lib/minimarket/permisos";
+import {
+  costosARestaurar,
+  faltantesStockParaAnular,
+  parsearCostosAplicados,
+  salidasParaAnular,
+  type CostoAplicado,
+} from "@/lib/minimarket/compras-anulacion";
 import { sucursalesPermitidas } from "@/lib/minimarket/sucursal-acceso";
 import {
   IGTF_RATE,
@@ -304,6 +311,7 @@ async function aplicarRecepcion(
 
   const ahora = new Date().toISOString();
   const actualizaciones: { producto_id: string; nuevoCosto: number; nuevoPrecio: number }[] = [];
+  const costosAplicados = new Map<string, CostoAplicado>();
   for (const item of items) {
     if (!item.actualizar_costo) continue;
     const actual = actualPorProducto.get(item.producto_id);
@@ -341,6 +349,16 @@ async function aplicarRecepcion(
       nuevoCosto,
       nuevoPrecio,
     });
+    // Lo que esta compra cambió en el producto, para poder restaurarlo si se
+    // anula (ver `anularCompra`). Mismo producto en varias líneas: el anterior
+    // es el releído arriba (igual para todas) y el nuevo, el de la última.
+    costosAplicados.set(item.producto_id, {
+      producto_id: item.producto_id,
+      costo_anterior: actual.costo,
+      precio_anterior: actual.precio,
+      costo_nuevo: nuevoCosto,
+      precio_nuevo: nuevoPrecio,
+    });
   }
 
   if (actualizaciones.length > 0) {
@@ -363,6 +381,15 @@ async function aplicarRecepcion(
       ),
     ]);
   }
+
+  // Auxiliar: si falla, la compra igual quedó recibida — al anularla se
+  // tratará como una compra vieja sin el dato (costos a revisar a mano).
+  const { error: costosErr } = await supabase
+    .from("mm_compras")
+    .update({ costos_aplicados: [...costosAplicados.values()] as unknown as Json })
+    .eq("id", compraId)
+    .eq("tenant_id", tenantId);
+  if (costosErr) console.error("No se pudieron guardar los costos aplicados", costosErr.message);
 }
 
 // ---------------------------------------------------------------------------
@@ -866,8 +893,19 @@ export async function confirmarRecepcion(compraId: string): Promise<CompraResult
   return { ok: true, compraId };
 }
 
-/** Anula una compra en borrador (sin stock ya asentado). */
-export async function anularCompra(compraId: string): Promise<CompraResult> {
+export interface AnularCompraResult extends CompraResult {
+  /** Cosas a revisar a mano tras anular (costos cambiados después, reintegro fallido...). */
+  avisos?: string[];
+  /** Lo que se revirtió, en frases cortas para mostrarlo. */
+  resumen?: string[];
+}
+
+/**
+ * Anula una compra. En borrador (sin stock ni costos asentados) basta el
+ * permiso `compras.eliminar`. Ya recibida, además solo un administrador del
+ * negocio (`esAdminNegocio`) y se revierte todo: ver `anularCompraRecibida`.
+ */
+export async function anularCompra(compraId: string): Promise<AnularCompraResult> {
   const session = await getSessionContext();
   const tenantId = session?.activeTenant?.id;
   if (!session || !tenantId) return { error: "Sesión no válida." };
@@ -884,14 +922,23 @@ export async function anularCompra(compraId: string): Promise<CompraResult> {
 
   const { data: c } = await supabase
     .from("mm_compras")
-    .select("estado")
+    .select("estado, sucursal_id, costos_aplicados")
     .eq("id", compraId)
     .eq("tenant_id", tenantId)
     .maybeSingle();
 
   if (!c) return { error: "Compra no encontrada." };
   if (c.estado === "recibida") {
-    return { error: "No se puede anular una compra ya recibida. El stock ya fue asentado." };
+    if (!(await esAdminNegocio(supabase, tenantId, session.user.id))) {
+      return { error: "Solo un administrador puede anular una compra recibida." };
+    }
+    try {
+      return await anularCompraRecibida(supabase, tenantId, session.user.id, compraId, c);
+    } catch (e) {
+      return {
+        error: `No se pudo anular la compra: ${e instanceof Error ? e.message : "error"}`,
+      };
+    }
   }
   if (c.estado === "anulada") return { error: "Esta compra ya está anulada." };
 
@@ -953,6 +1000,277 @@ export async function anularCompra(compraId: string): Promise<CompraResult> {
   revalidatePath(COMPRAS_PATH);
   revalidatePath(`${COMPRAS_PATH}/${compraId}`);
   return { ok: true, compraId };
+}
+
+/**
+ * Anula una compra YA RECIBIDA revirtiendo lo que hizo al recibirse:
+ * 1. Valida TODO antes de tocar nada: que el stock que entró siga ahí (si ya
+ *    se vendió parte, se bloquea con la lista), que haya una caja abierta
+ *    donde reintegrar el efectivo y que las cuentas bancarias sigan existiendo.
+ * 2. Marca la compra anulada (condicional a `recibida`: dos pestañas no la
+ *    anulan dos veces) y saca el stock con salidas "Anulación de compra".
+ * 3. Restaura costo/precio de los productos que nadie cambió después
+ *    (`costos_aplicados`); los demás quedan como aviso.
+ * 4. Devuelve el dinero con asientos NUEVOS (nunca borra el egreso original):
+ *    ingreso en Caja (la sesión original si sigue abierta; si cerró, la caja
+ *    abierta hoy de la sucursal, sin tocar el arqueo cerrado) y en Bancos con
+ *    los mismos USD/Bs que salieron (tasa congelada).
+ */
+async function anularCompraRecibida(
+  supabase: SupabaseClient<Database>,
+  tenantId: string,
+  userId: string,
+  compraId: string,
+  compra: { sucursal_id: string; costos_aplicados: Json | null },
+): Promise<AnularCompraResult> {
+  // --- 1. Validaciones (sin escribir nada) ---------------------------------
+  const { data: movs, error: movsErr } = await supabase
+    .from("mm_movimientos_inventario")
+    .select("producto_id, sucursal_id, tipo, cantidad")
+    .eq("tenant_id", tenantId)
+    .eq("referencia", compraId);
+  if (movsErr) throw new Error(`No se pudo leer el stock de la compra: ${movsErr.message}`);
+  const salidas = salidasParaAnular(
+    (movs ?? []).map((m) => ({ ...m, cantidad: Number(m.cantidad) })),
+  );
+
+  const costosAplicados = parsearCostosAplicados(compra.costos_aplicados);
+  const productoIds = [
+    ...new Set([
+      ...salidas.map((s) => s.producto_id),
+      ...(costosAplicados ?? []).map((c) => c.producto_id),
+    ]),
+  ];
+
+  const [{ data: stockRows, error: stockErr }, { data: productos, error: prodErr }] =
+    await Promise.all([
+      supabase
+        .from("mm_v_stock")
+        .select("producto_id, sucursal_id, stock_actual")
+        .eq("tenant_id", tenantId)
+        .in("producto_id", productoIds),
+      supabase
+        .from("mm_productos")
+        .select("id, nombre, costo_usd, precio_usd")
+        .eq("tenant_id", tenantId)
+        .in("id", productoIds),
+    ]);
+  if (stockErr) throw new Error(`No se pudo leer el stock actual: ${stockErr.message}`);
+  if (prodErr) throw new Error(`No se pudieron leer los productos: ${prodErr.message}`);
+
+  const nombreProducto = new Map((productos ?? []).map((p) => [p.id, p.nombre]));
+  const faltantes = faltantesStockParaAnular(
+    salidas,
+    (stockRows ?? []).flatMap((r) =>
+      r.producto_id && r.sucursal_id
+        ? [
+            {
+              producto_id: r.producto_id,
+              sucursal_id: r.sucursal_id,
+              stock_actual: Number(r.stock_actual ?? 0),
+            },
+          ]
+        : [],
+    ),
+  );
+  if (faltantes.length > 0) {
+    const { data: sucs } = await supabase
+      .from("mm_sucursales")
+      .select("id, nombre")
+      .eq("tenant_id", tenantId)
+      .in("id", [...new Set(faltantes.map((f) => f.sucursal_id))]);
+    const nombreSuc = new Map((sucs ?? []).map((x) => [x.id, x.nombre]));
+    const detalle = faltantes
+      .map(
+        (f) =>
+          `${nombreProducto.get(f.producto_id) ?? "Producto"}: entraron ${f.cantidad}, quedan ` +
+          `${f.disponible} en ${nombreSuc.get(f.sucursal_id) ?? "la sucursal"}`,
+      )
+      .join("; ");
+    return {
+      error:
+        `No se puede anular: parte de la mercancía ya salió del inventario (${detalle}). ` +
+        "Ajusta el stock o registra la devolución por otra vía.",
+    };
+  }
+
+  const impactoCaja = await getImpactoCajaGasto(supabase, tenantId, compraId);
+  const reintegroCaja = impactoCaja.neto.filter((n) => n.monto > 0);
+  let sesionReintegro: string | null = null;
+  if (reintegroCaja.length > 0) {
+    sesionReintegro =
+      impactoCaja.sesionId && impactoCaja.sesionAbierta
+        ? impactoCaja.sesionId
+        : ((await getSesionAbierta(supabase, tenantId, compra.sucursal_id))?.id ?? null);
+    if (!sesionReintegro) {
+      return {
+        error:
+          "Esta compra se pagó en efectivo y su caja ya cerró. Abre la caja para recibir el " +
+          "reintegro en efectivo y vuelve a intentarlo.",
+      };
+    }
+  }
+
+  const impactoCuenta = (await getImpactoCuentaPorReferencia(supabase, tenantId, compraId)).filter(
+    (n) => n.netoUsd > 0.001 || n.netoBs > 0.001,
+  );
+  if (impactoCuenta.length > 0) {
+    const { data: cuentas, error: cuentasErr } = await supabase
+      .from("mm_cuentas_bancarias")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .is("deleted_at", null)
+      .in(
+        "id",
+        impactoCuenta.map((n) => n.cuentaId),
+      );
+    if (cuentasErr) throw new Error(`No se pudieron leer las cuentas: ${cuentasErr.message}`);
+    if ((cuentas ?? []).length < impactoCuenta.length) {
+      return {
+        error:
+          "La cuenta bancaria con la que se pagó esta compra ya no existe. Restáurala para " +
+          "poder devolverle el dinero.",
+      };
+    }
+  }
+
+  // --- 2. Anular y sacar el stock -----------------------------------------
+  const ahora = new Date().toISOString();
+  const { data: anulada, error: updErr } = await supabase
+    .from("mm_compras")
+    .update({ estado: "anulada", anulada_at: ahora, anulada_por: userId, updated_at: ahora })
+    .eq("id", compraId)
+    .eq("tenant_id", tenantId)
+    .eq("estado", "recibida")
+    .select("id");
+  if (updErr) return { error: "No se pudo anular la compra." };
+  if (!anulada || anulada.length === 0) return { error: "Esta compra ya fue anulada." };
+
+  if (salidas.length > 0) {
+    const { error: salErr } = await supabase.from("mm_movimientos_inventario").insert(
+      salidas.map((s) => ({
+        tenant_id: tenantId,
+        producto_id: s.producto_id,
+        sucursal_id: s.sucursal_id,
+        tipo: "salida" as const,
+        cantidad: s.cantidad,
+        motivo: "Anulación de compra",
+        referencia: compraId,
+        usuario_id: userId,
+      })),
+    );
+    if (salErr) {
+      await supabase
+        .from("mm_compras")
+        .update({ estado: "recibida", anulada_at: null, anulada_por: null, updated_at: ahora })
+        .eq("id", compraId)
+        .eq("tenant_id", tenantId);
+      return { error: `No se pudo sacar el stock de la compra: ${salErr.message}` };
+    }
+  }
+
+  const avisos: string[] = [];
+  const resumen: string[] = [];
+  if (salidas.length > 0) {
+    const unidades = Math.round(salidas.reduce((a, s) => a + s.cantidad, 0) * 1000) / 1000;
+    resumen.push(
+      `Salieron del inventario ${unidades} unidad(es) de ${salidas.length} producto(s).`,
+    );
+  }
+
+  // --- 3. Costo/precio -------------------------------------------------------
+  if (costosAplicados === null) {
+    avisos.push(
+      "Esta compra es anterior al registro de costos: revisa a mano el costo y precio de sus productos.",
+    );
+  } else if (costosAplicados.length > 0) {
+    const { restaurables, aRevisar } = costosARestaurar(
+      costosAplicados,
+      (productos ?? []).map((p) => ({
+        id: p.id,
+        costo_usd: Number(p.costo_usd),
+        precio_usd: Number(p.precio_usd),
+      })),
+    );
+    const restaurados: CostoAplicado[] = [];
+    const revisar = aRevisar.map((c) => nombreProducto.get(c.producto_id) ?? "Producto");
+    for (const r of restaurables) {
+      const { error } = await supabase
+        .from("mm_productos")
+        .update({ costo_usd: r.costo_anterior, precio_usd: r.precio_anterior, updated_at: ahora })
+        .eq("id", r.producto_id)
+        .eq("tenant_id", tenantId);
+      if (error) revisar.push(nombreProducto.get(r.producto_id) ?? "Producto");
+      else restaurados.push(r);
+    }
+    if (restaurados.length > 0) {
+      await supabase.from("mm_precios").insert(
+        restaurados.map((r) => ({
+          tenant_id: tenantId,
+          producto_id: r.producto_id,
+          precio_usd: r.precio_anterior,
+          vigente_desde: ahora,
+          usuario_id: userId,
+        })),
+      );
+      resumen.push(`Se restauró el costo y precio de ${restaurados.length} producto(s).`);
+    }
+    if (revisar.length > 0) {
+      avisos.push(
+        `Revisa a mano el costo y precio de: ${revisar.join(", ")} (cambiaron después de esta ` +
+          "compra o no se pudieron restaurar).",
+      );
+    }
+  }
+
+  // --- 4. Dinero -------------------------------------------------------------
+  if (sesionReintegro) {
+    for (const n of reintegroCaja) {
+      const { error } = await insertarMovimientoCaja(supabase, {
+        tenantId,
+        sesionId: sesionReintegro,
+        tipo: "ingreso",
+        monto: n.monto,
+        moneda: n.moneda,
+        motivo: "Reintegro por anulación de compra",
+        referencia: compraId,
+        usuarioId: userId,
+      });
+      const monto = `${n.moneda === "USD" ? "$" : "Bs "}${n.monto.toFixed(2)}`;
+      if (error)
+        avisos.push(`No se pudo registrar el reintegro de ${monto} en Caja: anótalo a mano.`);
+      else resumen.push(`Entraron ${monto} a la caja abierta.`);
+    }
+    revalidatePath(CAJA_PATH);
+  }
+
+  for (const n of impactoCuenta) {
+    const { error } = await insertarMovimientoCuenta(supabase, {
+      tenantId,
+      cuentaId: n.cuentaId,
+      tipo: "ingreso",
+      montoUsd: Math.max(0, n.netoUsd),
+      montoBs: Math.max(0, n.netoBs),
+      motivo: "Reintegro por anulación de compra",
+      referencia: compraId,
+      usuarioId: userId,
+    });
+    const monto = `$${n.netoUsd.toFixed(2)} (Bs ${n.netoBs.toFixed(2)})`;
+    if (error)
+      avisos.push(`No se pudo registrar el reintegro de ${monto} en Bancos: anótalo a mano.`);
+    else resumen.push(`Volvieron ${monto} a la cuenta bancaria.`);
+  }
+  if (impactoCuenta.length > 0) revalidatePath(BANCOS_PATH);
+
+  if (reintegroCaja.length === 0 && impactoCuenta.length === 0) {
+    resumen.push("No había dinero que devolver (compra a crédito sin pagar).");
+  }
+
+  revalidatePath(COMPRAS_PATH);
+  revalidatePath(`${COMPRAS_PATH}/${compraId}`);
+  revalidatePath(`${COMPRAS_PATH}/por-pagar`);
+  revalidatePath("/minimarket/inventario");
+  return { ok: true, compraId, avisos, resumen };
 }
 
 export interface PagarCompraResult {
