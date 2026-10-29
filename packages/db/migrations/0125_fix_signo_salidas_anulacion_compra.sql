@@ -15,5 +15,5 @@ where m.tipo = 'salida'
   and m.cantidad > 0
   and m.motivo like 'Anulaci_n de compra'
   and m.referencia in (
-    select c.id::text from public.mm_compras c where c.estado = 'anulada'
+    select c.id from public.mm_compras c where c.estado = 'anulada'
   );
