@@ -31,22 +31,21 @@ export interface FaltanteStock extends SalidaAnulacion {
 const EPS = 0.001;
 
 /**
- * Neto que esta compra dejó en inventario por (producto, sucursal): sus
- * entradas menos cualquier salida ya hecha con la misma referencia. Es lo que
- * la anulación debe sacar.
+ * Neto que esta compra dejó en inventario por (producto, sucursal): la suma
+ * de sus movimientos con la misma referencia. `cantidad` ya es un delta con
+ * SIGNO (entrada positiva, salida negativa — así lo suma `mm_v_stock`), por
+ * eso se suma tal cual, sin mirar `tipo`. Es lo que la anulación debe sacar.
  */
 export function salidasParaAnular(movimientos: MovimientoCompra[]): SalidaAnulacion[] {
   const neto = new Map<string, SalidaAnulacion>();
   for (const m of movimientos) {
-    const signo = m.tipo === "entrada" ? 1 : m.tipo === "salida" ? -1 : 0;
-    if (signo === 0) continue;
     const clave = `${m.producto_id}|${m.sucursal_id}`;
     const actual = neto.get(clave) ?? {
       producto_id: m.producto_id,
       sucursal_id: m.sucursal_id,
       cantidad: 0,
     };
-    actual.cantidad += signo * Number(m.cantidad);
+    actual.cantidad += Number(m.cantidad);
     neto.set(clave, actual);
   }
   return [...neto.values()]

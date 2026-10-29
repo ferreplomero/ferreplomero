@@ -1153,7 +1153,9 @@ async function anularCompraRecibida(
         producto_id: s.producto_id,
         sucursal_id: s.sucursal_id,
         tipo: "salida" as const,
-        cantidad: s.cantidad,
+        // Delta con signo: `mm_v_stock` suma `cantidad` tal cual, así que una
+        // salida va en NEGATIVO (igual que ventas y transferencias).
+        cantidad: -s.cantidad,
         motivo: "Anulación de compra",
         referencia: compraId,
         usuario_id: userId,

@@ -21,9 +21,20 @@ describe("salidasParaAnular", () => {
       salidasParaAnular([
         { producto_id: "a", sucursal_id: "s1", tipo: "entrada", cantidad: 4 },
         { producto_id: "a", sucursal_id: "s2", tipo: "entrada", cantidad: 6 },
-        { producto_id: "a", sucursal_id: "s2", tipo: "salida", cantidad: 6 },
+        { producto_id: "a", sucursal_id: "s2", tipo: "salida", cantidad: -6 },
       ]),
     ).toEqual([{ producto_id: "a", sucursal_id: "s1", cantidad: 4 }]);
+  });
+});
+
+describe("salidasParaAnular — delta con signo (como mm_v_stock)", () => {
+  it("una salida se guarda en negativo: entrada 60 + salida -60 no deja nada por sacar", () => {
+    expect(
+      salidasParaAnular([
+        { producto_id: "a", sucursal_id: "s1", tipo: "entrada", cantidad: 60 },
+        { producto_id: "a", sucursal_id: "s1", tipo: "salida", cantidad: -60 },
+      ]),
+    ).toEqual([]);
   });
 });
 
