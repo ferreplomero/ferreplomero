@@ -9,7 +9,9 @@ import {
   getVentasPorMetodo,
   getProductosMasVendidos,
   getVentasPorCajero,
+  getDetalleVentas,
 } from "@/lib/minimarket/data/reportes";
+import { fetchAllRows } from "@/lib/minimarket/data/pagination";
 import { getTimezoneNegocio } from "@/lib/minimarket/timezone";
 import { fmtFechaHora, rangoLocalAUtc } from "@/lib/minimarket/date-format";
 import { agregarHoja, respuestaXlsx } from "@/lib/minimarket/reportes/excel-plantilla";
@@ -58,33 +60,38 @@ export async function GET(request: NextRequest) {
     const { desdeIso, hastaIso } = rangoLocalAUtc(rango, tz);
     const periodo = rango.desde === rango.hasta ? rango.desde : `${rango.desde} al ${rango.hasta}`;
 
-    const [{ data: ventasData }, productos, { data: sucursales }] = await Promise.all([
-      supabase
-        .from("mm_ventas")
-        .select(
-          "id, fecha, numero_documento, total_usd, subtotal_usd, descuento_usd, igtf_usd, total_bs, tasa_usada, cliente_id, sucursal_id",
-        )
-        .eq("tenant_id", tenantId)
-        .eq("estado", "completada")
-        .is("deleted_at", null)
-        .gte("fecha", desdeIso)
-        .lt("fecha", hastaIso)
-        .order("fecha", { ascending: true }),
+    const [ventas, productos, detalle, { data: sucursales }] = await Promise.all([
+      // Paginado: sin esto PostgREST corta en 1000 ventas en silencio.
+      fetchAllRows((from, to) =>
+        supabase
+          .from("mm_ventas")
+          .select(
+            "id, fecha, numero_documento, total_usd, subtotal_usd, descuento_usd, igtf_usd, total_bs, tasa_usada, cliente_id, sucursal_id",
+          )
+          .eq("tenant_id", tenantId)
+          .eq("estado", "completada")
+          .is("deleted_at", null)
+          .gte("fecha", desdeIso)
+          .lt("fecha", hastaIso)
+          .order("fecha", { ascending: true })
+          .order("id", { ascending: true })
+          .range(from, to),
+      ),
       getProductosMasVendidos(supabase, tenantId, rango, tz, TODOS_LOS_PRODUCTOS),
+      getDetalleVentas(supabase, tenantId, rango, tz),
       supabase.from("mm_sucursales").select("id, nombre").eq("tenant_id", tenantId),
     ]);
-    const ventas = ventasData ?? [];
 
     const clienteIds = [...new Set(ventas.flatMap((v) => (v.cliente_id ? [v.cliente_id] : [])))];
-    const { data: clientes } =
-      clienteIds.length > 0
-        ? await supabase
-            .from("mm_clientes")
-            .select("id, nombre")
-            .in("id", clienteIds)
-            .eq("tenant_id", tenantId)
-        : { data: [] };
-    const clienteMap = new Map((clientes ?? []).map((c) => [c.id, c.nombre]));
+    const clienteMap = new Map<string, string>();
+    for (let i = 0; i < clienteIds.length; i += 200) {
+      const { data: clientes } = await supabase
+        .from("mm_clientes")
+        .select("id, nombre")
+        .in("id", clienteIds.slice(i, i + 200))
+        .eq("tenant_id", tenantId);
+      for (const c of clientes ?? []) clienteMap.set(c.id, c.nombre);
+    }
     const sucursalMap = new Map((sucursales ?? []).map((x) => [x.id, x.nombre]));
 
     const suma = (xs: number[]) => Math.round(xs.reduce((a, b) => a + b, 0) * 100) / 100;
@@ -187,6 +194,44 @@ export async function GET(request: NextRequest) {
         null,
         Math.round(margenTotal * 100) / 100,
         baseTotal > 0 ? margenTotal / baseTotal : null,
+      ],
+    });
+
+    agregarHoja(wb, {
+      nombre: "Detalle de ventas",
+      titulo: "Detalle de ventas (producto por producto)",
+      negocio,
+      subtitulos: [
+        `Período: ${periodo} · ${generado}`,
+        `${new Set(detalle.map((l) => l.venta_id)).size} ventas · ${detalle.length} líneas · Bs a la tasa congelada de cada venta`,
+      ],
+      filas: detalle,
+      columnas: [
+        {
+          titulo: "Fecha y hora",
+          ancho: 20,
+          tipo: "texto",
+          valor: (l) => fmtFechaHora(l.fecha, tz),
+        },
+        { titulo: "N.º", ancho: 12, tipo: "texto", valor: (l) => l.numero_documento ?? "" },
+        { titulo: "SKU", ancho: 14, tipo: "texto", valor: (l) => l.codigo ?? "" },
+        { titulo: "Producto", ancho: 34, tipo: "texto", valor: (l) => l.descripcion },
+        { titulo: "Cantidad", ancho: 11, tipo: "cantidad", valor: (l) => l.cantidad },
+        { titulo: "Precio unit. USD", ancho: 15, tipo: "usd", valor: (l) => r2(l.precio_usd) },
+        { titulo: "Total USD", ancho: 14, tipo: "usd", valor: (l) => r2(l.total_usd) },
+        { titulo: "Tasa (Bs/USD)", ancho: 13, tipo: "tasa", valor: (l) => l.tasa_usada },
+        { titulo: "Total Bs", ancho: 17, tipo: "bs", valor: (l) => l.total_bs },
+      ],
+      totales: [
+        "TOTALES",
+        null,
+        null,
+        null,
+        detalle.reduce((a, l) => a + l.cantidad, 0),
+        null,
+        suma(detalle.map((l) => l.total_usd)),
+        null,
+        suma(detalle.map((l) => l.total_bs)),
       ],
     });
 
@@ -330,7 +375,7 @@ export async function GET(request: NextRequest) {
       getResumenPeriodo(supabase, tenantId, rango, tz),
       getVentasPorDia(supabase, tenantId, rango, tz),
       getVentasPorMetodo(supabase, tenantId, rango, tz),
-      getProductosMasVendidos(supabase, tenantId, rango, tz, 10),
+      getProductosMasVendidos(supabase, tenantId, rango, tz, TODOS_LOS_PRODUCTOS),
       getVentasPorCajero(supabase, tenantId, rango, tz),
     ]);
 
@@ -404,7 +449,7 @@ export async function GET(request: NextRequest) {
   ${porMetodo.map((m) => row(METODO_LABEL[m.metodo] ?? m.metodo, String(m.num_pagos), `<span class="right">${m.moneda === "VES" ? "Bs. " + m.monto_total.toFixed(2) : fmt(m.monto_total)}</span>`)).join("")}
 </table>
 
-<h2>Top 10 productos más vendidos</h2>
+<h2>Productos vendidos (${masVendidos.length})</h2>
 <table>
   ${thead(["#", "SKU", "Producto", "Unidades", "Precio unit.", "Ingreso", "Margen USD", "Margen %"])}
   ${masVendidos.map((p, i) => row(String(i + 1), escapeHtml(p.codigo ?? "—"), escapeHtml(p.descripcion), `<span class="right">${p.unidades}</span>`, usdYBs(p.precio_unitario_usd, p.precio_unitario_bs), usdYBs(p.ingreso_usd, p.ingreso_bs), `<span class="right">${fmt(p.margen_usd)}</span>`, `<span class="right">${p.margen_pct === null ? "—" : p.margen_pct.toFixed(1) + "%"}</span>`)).join("")}

@@ -21,6 +21,7 @@ import {
   getVentasPorDia,
   getVentasPorMetodo,
   getProductosMasVendidos,
+  getDetalleVentas,
   getCierresDiarios,
   getInventarioReporte,
   getProductosBajaRotacion,
@@ -29,7 +30,7 @@ import {
 import { getResumenCartera } from "@/lib/minimarket/data/clientes";
 import { listCompras } from "@/lib/minimarket/data/compras";
 import { getTimezoneNegocio } from "@/lib/minimarket/timezone";
-import { hoyEnTz } from "@/lib/minimarket/date-format";
+import { fmtFechaHora, hoyEnTz } from "@/lib/minimarket/date-format";
 import { corteInventario, resolverRangoReporte } from "@/lib/minimarket/reportes/rango";
 import { ReportesTabs } from "./reportes-tabs";
 
@@ -38,6 +39,10 @@ export const metadata: Metadata = { title: "Reportes" };
 /** Filas por página del detalle de inventario en el resumen (la lista
  * completa se descarga en Excel). */
 const INVENTARIO_POR_PAGINA = 10;
+/** Filas por página de "Productos vendidos" y del detalle línea por línea
+ * (se listan TODOS los del período; el Excel trae la lista entera). */
+const VENDIDOS_POR_PAGINA = 20;
+const DETALLE_POR_PAGINA = 25;
 
 type FiltroInventario = "todos" | "bajo" | "stock";
 
@@ -61,6 +66,8 @@ export default async function ReportesPage({
     hasta?: string;
     inv?: string;
     inv_filtro?: string;
+    pv?: string;
+    dv?: string;
   }>;
 }) {
   const sp = await searchParams;
@@ -94,11 +101,12 @@ export default async function ReportesPage({
     inventario,
     bajaRotacion,
     porCajero,
+    detalleVentas,
   ] = await Promise.all([
     getResumenPeriodo(supabase, tenantId, rango, tz),
     getVentasPorDia(supabase, tenantId, rango, tz),
     getVentasPorMetodo(supabase, tenantId, rango, tz),
-    getProductosMasVendidos(supabase, tenantId, rango, tz, 10),
+    getProductosMasVendidos(supabase, tenantId, rango, tz, Number.POSITIVE_INFINITY),
     getCierresDiarios(supabase, tenantId, rango, tz),
     getResumenCartera(supabase, tenantId),
     listCompras(supabase, tenantId, { estado: "borrador" }),
@@ -106,6 +114,7 @@ export default async function ReportesPage({
     getInventarioReporte(supabase, tenantId, { corteIso }),
     getProductosBajaRotacion(supabase, tenantId, rango, tz, 15),
     getVentasPorCajero(supabase, tenantId, rango, tz),
+    getDetalleVentas(supabase, tenantId, rango, tz),
   ]);
 
   const tasaValor = tasa?.valor ?? 1;
@@ -139,14 +148,45 @@ export default async function ReportesPage({
     (invPagina - 1) * INVENTARIO_POR_PAGINA,
     invPagina * INVENTARIO_POR_PAGINA,
   );
-  const urlInventario = (cambios: { inv?: number; inv_filtro?: FiltroInventario }) => {
+  // Productos vendidos (todos, por unidades) y detalle línea por línea (el más
+  // reciente primero), ambos paginados en la vista.
+  const paginar = <T,>(xs: T[], porPagina: number, param: string | undefined) => {
+    const paginas = Math.max(1, Math.ceil(xs.length / porPagina));
+    const pagina = Math.min(paginas, Math.max(1, Number.parseInt(param ?? "1", 10) || 1));
+    return {
+      paginas,
+      pagina,
+      visibles: xs.slice((pagina - 1) * porPagina, pagina * porPagina),
+      desde: (pagina - 1) * porPagina,
+    };
+  };
+  const pv = paginar(masVendidos, VENDIDOS_POR_PAGINA, sp.pv);
+  const detalleReciente = [...detalleVentas].reverse();
+  const dv = paginar(detalleReciente, DETALLE_POR_PAGINA, sp.dv);
+  const numVentasDetalle = new Set(detalleVentas.map((l) => l.venta_id)).size;
+  const totalUnidadesVendidas = masVendidos.reduce((s, p) => s + p.unidades, 0);
+  const totalIngresoUsd = masVendidos.reduce((s, p) => s + p.ingreso_usd, 0);
+  const totalIngresoBs = masVendidos.reduce((s, p) => s + p.ingreso_bs, 0);
+  const totalMargenUsd = masVendidos.reduce((s, p) => s + p.margen_usd, 0);
+
+  /** URL de la página conservando rango, filtros y páginas de cada sección. */
+  const urlCon = (
+    cambios: { inv?: number; inv_filtro?: FiltroInventario; pv?: number; dv?: number },
+    ancla: string,
+  ) => {
     const q = new URLSearchParams(qRango);
     const filtro = cambios.inv_filtro ?? invFiltro;
     if (filtro !== "todos") q.set("inv_filtro", filtro);
-    const pagina = cambios.inv ?? invPagina;
-    if (pagina > 1) q.set("inv", String(pagina));
-    return `/minimarket/reportes?${q.toString()}#inventario`;
+    const paginas = {
+      inv: cambios.inv ?? invPagina,
+      pv: cambios.pv ?? pv.pagina,
+      dv: cambios.dv ?? dv.pagina,
+    };
+    for (const [k, v] of Object.entries(paginas)) if (v > 1) q.set(k, String(v));
+    return `/minimarket/reportes?${q.toString()}#${ancla}`;
   };
+  const urlInventario = (cambios: { inv?: number; inv_filtro?: FiltroInventario }) =>
+    urlCon(cambios, "inventario");
   const filtrosInventario: { key: FiltroInventario; label: string; n: number }[] = [
     { key: "todos", label: "Todos", n: inventario.items.length },
     { key: "bajo", label: "Bajo mínimo", n: inventario.productosBajoMinimo },
@@ -348,13 +388,22 @@ export default async function ReportesPage({
           )}
         </Card>
 
-        {/* Productos más vendidos — ancho completo: lleva SKU, precio unitario y margen */}
-        <Card className="overflow-hidden p-0 lg:col-span-2">
+        {/* Productos vendidos — TODOS los del período, ordenados por unidades */}
+        <Card id="vendidos" className="scroll-mt-20 overflow-hidden p-0 lg:col-span-2">
           <div className="border-border border-b px-4 py-3">
-            <p className="text-heading text-sm font-medium">Top 10 — más vendidos</p>
+            <p className="text-heading text-sm font-medium">
+              Productos vendidos — {periodoLabel}
+              {masVendidos.length > 0 ? (
+                <span className="text-muted-foreground font-normal">
+                  {" "}
+                  · {masVendidos.length} producto{masVendidos.length !== 1 ? "s" : ""} ·{" "}
+                  {totalUnidadesVendidas} unid.
+                </span>
+              ) : null}
+            </p>
             <p className="text-muted-foreground text-xs">
-              Precio al que se vendió cada unidad · Bs a la tasa de cada venta · margen con el costo
-              actual del producto
+              Ordenados por unidades · precio al que se vendió cada unidad · Bs a la tasa de cada
+              venta · margen con el costo actual del producto
             </p>
           </div>
           {masVendidos.length === 0 ? (
@@ -364,11 +413,13 @@ export default async function ReportesPage({
           ) : (
             <>
               <ul className="divide-border divide-y lg:hidden">
-                {masVendidos.map((p, i) => (
+                {pv.visibles.map((p, i) => (
                   <li key={p.producto_id ?? p.descripcion} className="space-y-1 px-4 py-3">
                     <div className="flex items-start justify-between gap-3">
                       <p className="text-heading min-w-0 font-medium">
-                        <span className="text-muted-foreground mr-1.5 tabular-nums">{i + 1}.</span>
+                        <span className="text-muted-foreground mr-1.5 tabular-nums">
+                          {pv.desde + i + 1}.
+                        </span>
                         {p.descripcion}
                       </p>
                       <div className="shrink-0 text-right">
@@ -415,12 +466,14 @@ export default async function ReportesPage({
                     </tr>
                   </thead>
                   <tbody className="divide-border divide-y">
-                    {masVendidos.map((p, i) => (
+                    {pv.visibles.map((p, i) => (
                       <tr
                         key={p.producto_id ?? p.descripcion}
                         className="hover:bg-surface-2 transition-colors"
                       >
-                        <td className="text-muted-foreground px-3 py-2.5 tabular-nums">{i + 1}</td>
+                        <td className="text-muted-foreground px-3 py-2.5 tabular-nums">
+                          {pv.desde + i + 1}
+                        </td>
                         <td className="px-3 py-2.5">
                           <p className="text-heading font-medium">{p.descripcion}</p>
                           <p className="text-muted-foreground text-xs">SKU: {p.codigo ?? "—"}</p>
@@ -451,8 +504,161 @@ export default async function ReportesPage({
                       </tr>
                     ))}
                   </tbody>
+                  <tfoot className="border-border bg-surface-2/50 border-t">
+                    <tr>
+                      <td
+                        colSpan={2}
+                        className="text-muted-foreground px-3 py-2.5 text-xs font-medium uppercase tracking-wide"
+                      >
+                        Totales del período ({masVendidos.length} productos)
+                      </td>
+                      <td className="text-heading px-3 py-2.5 text-right text-xs font-bold tabular-nums">
+                        {totalUnidadesVendidas}
+                      </td>
+                      <td />
+                      <td className="whitespace-nowrap px-3 py-2.5 text-right text-xs tabular-nums">
+                        <p className="text-heading font-bold">{usd(totalIngresoUsd)}</p>
+                        <p className="text-muted-foreground">{bs(totalIngresoBs)}</p>
+                      </td>
+                      <td
+                        className={`px-3 py-2.5 text-right text-xs font-bold tabular-nums ${totalMargenUsd < 0 ? "text-danger" : "text-heading"}`}
+                      >
+                        {usd(totalMargenUsd)}
+                      </td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
+              <div className="bg-surface-2/50 border-border space-y-0.5 border-t px-4 py-3 text-xs lg:hidden">
+                <p className="text-muted-foreground font-medium uppercase tracking-wide">
+                  Totales del período ({masVendidos.length} productos)
+                </p>
+                <p className="text-heading font-bold tabular-nums">
+                  <span className="whitespace-nowrap">{totalUnidadesVendidas} unid.</span>
+                  <span className="whitespace-nowrap"> · {usd(totalIngresoUsd)}</span>
+                  <span className="whitespace-nowrap"> · Margen {usd(totalMargenUsd)}</span>
+                </p>
+              </div>
+              <Paginador
+                pagina={pv.pagina}
+                paginas={pv.paginas}
+                desde={pv.desde}
+                visibles={pv.visibles.length}
+                total={masVendidos.length}
+                href={(n) => urlCon({ pv: n }, "vendidos")}
+                excel={`/minimarket/reportes/exportar?tipo=ventas&${qsDescarga}`}
+              />
+            </>
+          )}
+        </Card>
+
+        {/* Detalle de ventas — cada producto de cada venta del período, con SKU */}
+        <Card id="detalle-ventas" className="scroll-mt-20 overflow-hidden p-0 lg:col-span-2">
+          <div className="border-border border-b px-4 py-3">
+            <p className="text-heading text-sm font-medium">
+              Detalle de ventas — {periodoLabel}
+              {detalleVentas.length > 0 ? (
+                <span className="text-muted-foreground font-normal">
+                  {" "}
+                  · {numVentasDetalle} venta{numVentasDetalle !== 1 ? "s" : ""} ·{" "}
+                  {detalleVentas.length} línea{detalleVentas.length !== 1 ? "s" : ""}
+                </span>
+              ) : null}
+            </p>
+            <p className="text-muted-foreground text-xs">
+              Cada producto vendido en cada venta, de la más reciente a la más antigua · Bs a la
+              tasa de esa venta
+            </p>
+          </div>
+          {detalleVentas.length === 0 ? (
+            <p className="text-muted-foreground px-4 py-8 text-center text-sm">
+              Sin ventas en este período.
+            </p>
+          ) : (
+            <>
+              <ul className="divide-border divide-y lg:hidden">
+                {dv.visibles.map((l, i) => (
+                  <li key={`${l.venta_id}:${dv.desde + i}`} className="space-y-1 px-4 py-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <p className="text-heading min-w-0 font-medium">{l.descripcion}</p>
+                      <div className="shrink-0 text-right">
+                        <p className="text-heading whitespace-nowrap font-medium tabular-nums">
+                          {usd(l.total_usd)}
+                        </p>
+                        <p className="text-muted-foreground whitespace-nowrap text-xs tabular-nums">
+                          {bs(l.total_bs)}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-muted-foreground text-xs tabular-nums">
+                      <span className="whitespace-nowrap">SKU: {l.codigo ?? "—"}</span>
+                      <span className="whitespace-nowrap">
+                        {" "}
+                        · {l.cantidad} × {usd(l.precio_usd)}
+                      </span>
+                    </p>
+                    <p className="text-muted-foreground text-xs tabular-nums">
+                      <span className="whitespace-nowrap">{fmtFechaHora(l.fecha, tz)}</span>
+                      {l.numero_documento ? (
+                        <span className="whitespace-nowrap"> · N.º {l.numero_documento}</span>
+                      ) : null}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+              <div className="hidden overflow-x-auto lg:block">
+                <table className="w-full text-sm">
+                  <thead className="border-border text-muted-foreground border-b text-left text-xs uppercase tracking-wide">
+                    <tr>
+                      <th className="px-3 py-2.5">Fecha y hora</th>
+                      <th className="px-3 py-2.5">N.º</th>
+                      <th className="px-3 py-2.5">SKU</th>
+                      <th className="px-3 py-2.5">Producto</th>
+                      <th className="px-3 py-2.5 text-right">Cant.</th>
+                      <th className="px-3 py-2.5 text-right">Precio unit.</th>
+                      <th className="px-3 py-2.5 text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-border divide-y">
+                    {dv.visibles.map((l, i) => (
+                      <tr
+                        key={`${l.venta_id}:${dv.desde + i}`}
+                        className="hover:bg-surface-2 transition-colors"
+                      >
+                        <td className="text-muted-foreground whitespace-nowrap px-3 py-2.5 text-xs tabular-nums">
+                          {fmtFechaHora(l.fecha, tz)}
+                        </td>
+                        <td className="text-muted-foreground whitespace-nowrap px-3 py-2.5 text-xs tabular-nums">
+                          {l.numero_documento ?? "—"}
+                        </td>
+                        <td className="text-muted-foreground whitespace-nowrap px-3 py-2.5 text-xs">
+                          {l.codigo ?? "—"}
+                        </td>
+                        <td className="text-heading px-3 py-2.5 font-medium">{l.descripcion}</td>
+                        <td className="text-muted-foreground px-3 py-2.5 text-right tabular-nums">
+                          {l.cantidad}
+                        </td>
+                        <td className="text-muted-foreground whitespace-nowrap px-3 py-2.5 text-right tabular-nums">
+                          {usd(l.precio_usd)}
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-2.5 text-right tabular-nums">
+                          <p className="text-heading">{usd(l.total_usd)}</p>
+                          <p className="text-muted-foreground text-xs">{bs(l.total_bs)}</p>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <Paginador
+                pagina={dv.pagina}
+                paginas={dv.paginas}
+                desde={dv.desde}
+                visibles={dv.visibles.length}
+                total={detalleVentas.length}
+                href={(n) => urlCon({ dv: n }, "detalle-ventas")}
+                excel={`/minimarket/reportes/exportar?tipo=ventas&${qsDescarga}`}
+              />
             </>
           )}
         </Card>
@@ -1081,6 +1287,59 @@ export default async function ReportesPage({
           </a>
         </div>
       </Card>
+    </div>
+  );
+}
+
+/** Pie de sección paginada: "Mostrando a–b de N" + anterior/siguiente. */
+function Paginador({
+  pagina,
+  paginas,
+  desde,
+  visibles,
+  total,
+  href,
+  excel,
+}: {
+  pagina: number;
+  paginas: number;
+  desde: number;
+  visibles: number;
+  total: number;
+  href: (pagina: number) => string;
+  excel: string;
+}) {
+  return (
+    <div className="border-border flex flex-wrap items-center justify-between gap-2 border-t px-4 py-3 text-xs">
+      <p className="text-muted-foreground">
+        Mostrando {desde + 1}–{desde + visibles} de {total} · también en{" "}
+        <a href={excel} className="text-accent-600 hover:underline">
+          Excel
+        </a>
+      </p>
+      {paginas > 1 ? (
+        <div className="flex items-center gap-1">
+          {pagina > 1 ? (
+            <a
+              href={href(pagina - 1)}
+              className="border-border hover:text-heading rounded-md border px-2.5 py-1 font-medium"
+            >
+              ← Anterior
+            </a>
+          ) : null}
+          <span className="text-muted-foreground px-2 tabular-nums">
+            Página {pagina} de {paginas}
+          </span>
+          {pagina < paginas ? (
+            <a
+              href={href(pagina + 1)}
+              className="border-border hover:text-heading rounded-md border px-2.5 py-1 font-medium"
+            >
+              Siguiente →
+            </a>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

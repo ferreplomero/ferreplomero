@@ -278,24 +278,37 @@ export async function getProductosMasVendidos(
   limit = 10,
 ): Promise<ProductoMasVendido[]> {
   const { desdeIso, hastaIso } = rangoLocalAUtc(rango, tz);
-  const { data } = await client
-    .from("mm_ventas_items")
-    .select(
-      "producto_id, descripcion, cantidad, precio_usd, total_usd, venta:mm_ventas(fecha, estado, tasa_usada)",
-    )
-    .eq("tenant_id", tenantId)
-    .gte("created_at", desdeIso)
-    .lt("created_at", hastaIso)
-    .returns<
-      {
-        producto_id: string | null;
-        descripcion: string;
-        cantidad: number;
-        precio_usd: number;
-        total_usd: number;
-        venta: { fecha: string; estado: string; tasa_usada: number } | null;
-      }[]
-    >();
+  // Paginado: un período largo supera las 1000 líneas y PostgREST cortaría en
+  // silencio (el reporte mostraría menos unidades de las vendidas).
+  const data = await fetchAllRows<{
+    producto_id: string | null;
+    descripcion: string;
+    cantidad: number;
+    precio_usd: number;
+    total_usd: number;
+    venta: { fecha: string; estado: string; tasa_usada: number } | null;
+  }>((from, to) =>
+    client
+      .from("mm_ventas_items")
+      .select(
+        "producto_id, descripcion, cantidad, precio_usd, total_usd, venta:mm_ventas(fecha, estado, tasa_usada)",
+      )
+      .eq("tenant_id", tenantId)
+      .gte("created_at", desdeIso)
+      .lt("created_at", hastaIso)
+      .order("id", { ascending: true })
+      .range(from, to)
+      .returns<
+        {
+          producto_id: string | null;
+          descripcion: string;
+          cantidad: number;
+          precio_usd: number;
+          total_usd: number;
+          venta: { fecha: string; estado: string; tasa_usada: number } | null;
+        }[]
+      >(),
+  );
 
   const byProducto = new Map<
     string,
@@ -312,7 +325,7 @@ export async function getProductosMasVendidos(
     }
   >();
 
-  for (const item of data ?? []) {
+  for (const item of data) {
     if (item.venta?.estado !== "completada") continue;
     const key = item.producto_id ?? item.descripcion;
     const existing = byProducto.get(key) ?? {
@@ -366,6 +379,117 @@ export async function getProductosMasVendidos(
       precio_unitario_bs: p.unidades > 0 ? Math.round((p.base_bs / p.unidades) * 100) / 100 : 0,
     };
   });
+}
+
+/** Una línea vendida (producto dentro de una venta completada del período). */
+export interface LineaVentaDetalle {
+  venta_id: string;
+  fecha: string;
+  numero_documento: string | null;
+  codigo: string | null;
+  descripcion: string;
+  cantidad: number;
+  precio_usd: number;
+  total_usd: number;
+  /** total_usd × tasa congelada de la venta (los Bs que se facturaron). */
+  total_bs: number;
+  tasa_usada: number;
+}
+
+/**
+ * Detalle línea por línea de TODAS las ventas completadas del período (sin
+ * tope), en orden cronológico, con el SKU actual de cada producto.
+ */
+export async function getDetalleVentas(
+  client: Client,
+  tenantId: string,
+  rango: RangoFechas,
+  tz: string,
+): Promise<LineaVentaDetalle[]> {
+  const { desdeIso, hastaIso } = rangoLocalAUtc(rango, tz);
+  const ventas = await fetchAllRows<{
+    id: string;
+    fecha: string;
+    numero_documento: string | null;
+    tasa_usada: number;
+  }>((from, to) =>
+    client
+      .from("mm_ventas")
+      .select("id, fecha, numero_documento, tasa_usada")
+      .eq("tenant_id", tenantId)
+      .eq("estado", "completada")
+      .is("deleted_at", null)
+      .gte("fecha", desdeIso)
+      .lt("fecha", hastaIso)
+      .order("fecha", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, to),
+  );
+  if (ventas.length === 0) return [];
+
+  const items: {
+    id: string;
+    venta_id: string;
+    producto_id: string | null;
+    descripcion: string;
+    cantidad: number;
+    precio_usd: number;
+    total_usd: number;
+  }[] = [];
+  const ventaIds = ventas.map((v) => v.id);
+  for (let i = 0; i < ventaIds.length; i += 200) {
+    const lote = ventaIds.slice(i, i + 200);
+    items.push(
+      ...(await fetchAllRows((from, to) =>
+        client
+          .from("mm_ventas_items")
+          .select("id, venta_id, producto_id, descripcion, cantidad, precio_usd, total_usd")
+          .eq("tenant_id", tenantId)
+          .in("venta_id", lote)
+          .order("id", { ascending: true })
+          .range(from, to),
+      )),
+    );
+  }
+
+  const prodIds = [
+    ...new Set(items.map((i) => i.producto_id).filter((id): id is string => id !== null)),
+  ];
+  const codigoMap = new Map<string, string | null>();
+  for (let i = 0; i < prodIds.length; i += 200) {
+    const { data: prods } = await client
+      .from("mm_productos")
+      .select("id, codigo")
+      .in("id", prodIds.slice(i, i + 200));
+    for (const p of prods ?? []) codigoMap.set(p.id, p.codigo ?? null);
+  }
+
+  const itemsPorVenta = new Map<string, typeof items>();
+  for (const it of items) {
+    const arr = itemsPorVenta.get(it.venta_id) ?? [];
+    arr.push(it);
+    itemsPorVenta.set(it.venta_id, arr);
+  }
+
+  const lineas: LineaVentaDetalle[] = [];
+  for (const v of ventas) {
+    const tasa = Number(v.tasa_usada ?? 0);
+    for (const it of itemsPorVenta.get(v.id) ?? []) {
+      lineas.push({
+        venta_id: v.id,
+        fecha: v.fecha,
+        numero_documento: v.numero_documento,
+        codigo: it.producto_id ? (codigoMap.get(it.producto_id) ?? null) : null,
+        descripcion: it.descripcion,
+        cantidad: Number(it.cantidad),
+        precio_usd: Number(it.precio_usd),
+        total_usd: Number(it.total_usd),
+        total_bs: Math.round(Number(it.total_usd) * tasa * 100) / 100,
+        tasa_usada: tasa,
+      });
+    }
+  }
+  return lineas;
 }
 
 /** Sesiones de caja cerradas en el período (cierre diario). */
