@@ -109,52 +109,111 @@ export function rangoPreset(
   }
 }
 
+/**
+ * Fiados otorgados en el período. Con sucursal, solo los de ventas de esa
+ * sucursal (un fiado sin venta no pertenece a ninguna y solo cuenta en
+ * "Todas"). `mm_fiados.venta_id` no tiene FK declarada, así que no se puede
+ * embeber `mm_ventas`: la sucursal se resuelve con una segunda consulta.
+ */
+async function fiadosDelPeriodo(
+  client: Client,
+  tenantId: string,
+  desdeIso: string,
+  hastaIso: string,
+  sucursalId: string | null,
+): Promise<{ monto_usd: number; created_at: string }[]> {
+  const fiados = await fetchAllRows<{
+    monto_usd: number;
+    created_at: string;
+    venta_id: string | null;
+  }>((from, to) =>
+    client
+      .from("mm_fiados")
+      .select("monto_usd, created_at, venta_id")
+      .eq("tenant_id", tenantId)
+      .gte("created_at", desdeIso)
+      .lt("created_at", hastaIso)
+      .is("deleted_at", null)
+      .order("id", { ascending: true })
+      .range(from, to),
+  );
+  if (!sucursalId) return fiados;
+
+  const ventaIds = [
+    ...new Set(fiados.map((f) => f.venta_id).filter((id): id is string => id !== null)),
+  ];
+  const deLaSucursal = new Set<string>();
+  for (let i = 0; i < ventaIds.length; i += 200) {
+    const { data, error } = await client
+      .from("mm_ventas")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("sucursal_id", sucursalId)
+      .in("id", ventaIds.slice(i, i + 200));
+    if (error) throw new Error(error.message);
+    for (const v of data ?? []) deLaSucursal.add(v.id);
+  }
+  return fiados.filter((f) => f.venta_id !== null && deLaSucursal.has(f.venta_id));
+}
+
 /** Resumen agregado del período. */
 export async function getResumenPeriodo(
   client: Client,
   tenantId: string,
   rango: RangoFechas,
   tz: string,
+  sucursalId: string | null = null,
 ): Promise<ResumenPeriodo> {
   const { desdeIso, hastaIso } = rangoLocalAUtc(rango, tz);
-  const [ventasRes, fiadoRes, itemsCostoRes] = await Promise.all([
-    client
-      .from("mm_ventas")
-      .select("id, total_usd, igtf_usd, subtotal_usd")
-      .eq("tenant_id", tenantId)
-      .eq("estado", "completada")
-      .gte("fecha", desdeIso)
-      .lt("fecha", hastaIso)
-      .is("deleted_at", null),
-    client
-      .from("mm_fiados")
-      .select("monto_usd")
-      .eq("tenant_id", tenantId)
-      .gte("created_at", desdeIso)
-      .lt("created_at", hastaIso)
-      .is("deleted_at", null),
-    client
-      .from("mm_ventas_items")
-      .select("cantidad, precio_usd, total_usd, producto_id, venta_id")
-      .eq("tenant_id", tenantId)
-      .gte("created_at", desdeIso)
-      .lt("created_at", hastaIso),
+  // Paginado: con más de 1000 ventas/líneas PostgREST cortaba en silencio y
+  // los totales del período salían más bajos que los reales.
+  const [ventas, fiados, itemsCosto] = await Promise.all([
+    fetchAllRows<{ id: string; total_usd: number; igtf_usd: number; subtotal_usd: number }>(
+      (from, to) => {
+        let q = client
+          .from("mm_ventas")
+          .select("id, total_usd, igtf_usd, subtotal_usd")
+          .eq("tenant_id", tenantId)
+          .eq("estado", "completada")
+          .gte("fecha", desdeIso)
+          .lt("fecha", hastaIso)
+          .is("deleted_at", null);
+        if (sucursalId) q = q.eq("sucursal_id", sucursalId);
+        return q.order("id", { ascending: true }).range(from, to);
+      },
+    ),
+    fiadosDelPeriodo(client, tenantId, desdeIso, hastaIso, sucursalId),
+    fetchAllRows<{
+      cantidad: number;
+      precio_usd: number;
+      total_usd: number;
+      producto_id: string | null;
+      venta_id: string;
+    }>((from, to) =>
+      client
+        .from("mm_ventas_items")
+        .select("cantidad, precio_usd, total_usd, producto_id, venta_id")
+        .eq("tenant_id", tenantId)
+        .gte("created_at", desdeIso)
+        .lt("created_at", hastaIso)
+        .order("id", { ascending: true })
+        .range(from, to),
+    ),
   ]);
 
-  const ventas = ventasRes.data ?? [];
   const totalVentasUsd = ventas.reduce((s, v) => s + Number(v.total_usd), 0);
   const igtfUsd = ventas.reduce((s, v) => s + Number(v.igtf_usd), 0);
   const numVentas = ventas.length;
-  const fiadoOtorgadoUsd = (fiadoRes.data ?? []).reduce((s, f) => s + Number(f.monto_usd), 0);
+  // Con sucursal: solo el fiado de ventas de esa sucursal (un fiado sin venta
+  // no pertenece a ninguna y solo cuenta en "Todas").
+  const fiadoOtorgadoUsd = fiados.reduce((s, f) => s + Number(f.monto_usd), 0);
 
   // Solo ítems de ventas COMPLETADAS: `mm_ventas_items` no se borra al anular
   // una venta (`anularVenta` solo cambia `mm_ventas.estado`), así que sin este
   // filtro los ítems de una venta anulada seguían sumando a la utilidad
   // estimada aunque `totalVentasUsd`/`numVentas` (arriba) ya los excluían.
   const ventaIdsCompletadas = new Set(ventas.map((v) => v.id));
-  const itemsDeVentasCompletadas = (itemsCostoRes.data ?? []).filter((i) =>
-    ventaIdsCompletadas.has(i.venta_id),
-  );
+  const itemsDeVentasCompletadas = itemsCosto.filter((i) => ventaIdsCompletadas.has(i.venta_id));
 
   const productosIds = [
     ...new Set(
@@ -163,11 +222,14 @@ export async function getResumenPeriodo(
   ];
   let utilidadEstimadaUsd = 0;
   if (productosIds.length > 0) {
-    const { data: costos } = await client
-      .from("mm_productos")
-      .select("id, costo_usd")
-      .in("id", productosIds);
-    const costoMap = new Map((costos ?? []).map((p) => [p.id, Number(p.costo_usd)]));
+    const costoMap = new Map<string, number>();
+    for (let i = 0; i < productosIds.length; i += 200) {
+      const { data: costos } = await client
+        .from("mm_productos")
+        .select("id, costo_usd")
+        .in("id", productosIds.slice(i, i + 200));
+      for (const p of costos ?? []) costoMap.set(p.id, Number(p.costo_usd));
+    }
     for (const item of itemsDeVentasCompletadas) {
       const costo = item.producto_id ? (costoMap.get(item.producto_id) ?? 0) : 0;
       utilidadEstimadaUsd += (Number(item.precio_usd) - costo) * Number(item.cantidad);
@@ -190,20 +252,29 @@ export async function getVentasPorDia(
   tenantId: string,
   rango: RangoFechas,
   tz: string,
+  sucursalId: string | null = null,
 ): Promise<VentaDia[]> {
   const { desdeIso, hastaIso } = rangoLocalAUtc(rango, tz);
-  const { data } = await client
-    .from("mm_ventas")
-    .select("fecha, total_usd, igtf_usd, subtotal_usd")
-    .eq("tenant_id", tenantId)
-    .eq("estado", "completada")
-    .gte("fecha", desdeIso)
-    .lt("fecha", hastaIso)
-    .is("deleted_at", null)
-    .order("fecha", { ascending: true });
+  const data = await fetchAllRows<{
+    fecha: string;
+    total_usd: number;
+    igtf_usd: number;
+    subtotal_usd: number;
+  }>((from, to) => {
+    let q = client
+      .from("mm_ventas")
+      .select("fecha, total_usd, igtf_usd, subtotal_usd")
+      .eq("tenant_id", tenantId)
+      .eq("estado", "completada")
+      .gte("fecha", desdeIso)
+      .lt("fecha", hastaIso)
+      .is("deleted_at", null);
+    if (sucursalId) q = q.eq("sucursal_id", sucursalId);
+    return q.order("fecha", { ascending: true }).order("id", { ascending: true }).range(from, to);
+  });
 
   const byDate = new Map<string, VentaDia>();
-  for (const v of data ?? []) {
+  for (const v of data) {
     // `fecha` es un timestamptz completo: se agrupa por el día de calendario
     // del NEGOCIO, no por el instante exacto (que sería único por venta).
     const fecha = fechaEnTz(v.fecha, tz);
@@ -224,36 +295,74 @@ export async function getVentasPorDia(
   return [...byDate.values()].sort((a, b) => a.fecha.localeCompare(b.fecha));
 }
 
+/** IDs de las ventas completadas del período (opcionalmente de una sucursal). */
+async function idsVentasCompletadas(
+  client: Client,
+  tenantId: string,
+  rango: RangoFechas,
+  tz: string,
+  sucursalId: string | null,
+): Promise<string[]> {
+  const { desdeIso, hastaIso } = rangoLocalAUtc(rango, tz);
+  const rows = await fetchAllRows<{ id: string }>((from, to) => {
+    let q = client
+      .from("mm_ventas")
+      .select("id")
+      .eq("tenant_id", tenantId)
+      .eq("estado", "completada")
+      .gte("fecha", desdeIso)
+      .lt("fecha", hastaIso)
+      .is("deleted_at", null);
+    if (sucursalId) q = q.eq("sucursal_id", sucursalId);
+    return q.order("id", { ascending: true }).range(from, to);
+  });
+  return rows.map((r) => r.id);
+}
+
+/** Pagos de un conjunto de ventas, en lotes (la URL de `.in()` tiene límite). */
+async function pagosDeVentas(
+  client: Client,
+  tenantId: string,
+  ventaIds: string[],
+): Promise<{ venta_id: string; metodo: string; monto: number; moneda: string | null }[]> {
+  const out: { venta_id: string; metodo: string; monto: number; moneda: string | null }[] = [];
+  for (let i = 0; i < ventaIds.length; i += 200) {
+    const lote = ventaIds.slice(i, i + 200);
+    out.push(
+      ...(await fetchAllRows<{
+        venta_id: string;
+        metodo: string;
+        monto: number;
+        moneda: string | null;
+      }>((from, to) =>
+        client
+          .from("mm_pagos_venta")
+          .select("venta_id, metodo, monto, moneda")
+          .eq("tenant_id", tenantId)
+          .in("venta_id", lote)
+          .order("id", { ascending: true })
+          .range(from, to),
+      )),
+    );
+  }
+  return out;
+}
+
 /** Métodos de pago usados en el período. */
 export async function getVentasPorMetodo(
   client: Client,
   tenantId: string,
   rango: RangoFechas,
   tz: string,
+  sucursalId: string | null = null,
 ): Promise<VentaMetodo[]> {
-  const { desdeIso, hastaIso } = rangoLocalAUtc(rango, tz);
-  const { data: ventaIds } = await client
-    .from("mm_ventas")
-    .select("id")
-    .eq("tenant_id", tenantId)
-    .eq("estado", "completada")
-    .gte("fecha", desdeIso)
-    .lt("fecha", hastaIso)
-    .is("deleted_at", null);
+  const ventaIds = await idsVentasCompletadas(client, tenantId, rango, tz, sucursalId);
+  if (!ventaIds.length) return [];
 
-  if (!ventaIds?.length) return [];
-
-  const { data: pagos } = await client
-    .from("mm_pagos_venta")
-    .select("metodo, monto, moneda")
-    .eq("tenant_id", tenantId)
-    .in(
-      "venta_id",
-      ventaIds.map((v) => v.id),
-    );
+  const pagos = await pagosDeVentas(client, tenantId, ventaIds);
 
   const byMetodo = new Map<string, VentaMetodo>();
-  for (const p of pagos ?? []) {
+  for (const p of pagos) {
     const key = `${p.metodo}:${p.moneda}`;
     const existing = byMetodo.get(key) ?? {
       metodo: p.metodo,
@@ -276,6 +385,7 @@ export async function getProductosMasVendidos(
   rango: RangoFechas,
   tz: string,
   limit = 10,
+  sucursalId: string | null = null,
 ): Promise<ProductoMasVendido[]> {
   const { desdeIso, hastaIso } = rangoLocalAUtc(rango, tz);
   // Paginado: un período largo supera las 1000 líneas y PostgREST cortaría en
@@ -286,12 +396,12 @@ export async function getProductosMasVendidos(
     cantidad: number;
     precio_usd: number;
     total_usd: number;
-    venta: { fecha: string; estado: string; tasa_usada: number } | null;
+    venta: { fecha: string; estado: string; tasa_usada: number; sucursal_id: string } | null;
   }>((from, to) =>
     client
       .from("mm_ventas_items")
       .select(
-        "producto_id, descripcion, cantidad, precio_usd, total_usd, venta:mm_ventas(fecha, estado, tasa_usada)",
+        "producto_id, descripcion, cantidad, precio_usd, total_usd, venta:mm_ventas(fecha, estado, tasa_usada, sucursal_id)",
       )
       .eq("tenant_id", tenantId)
       .gte("created_at", desdeIso)
@@ -305,7 +415,12 @@ export async function getProductosMasVendidos(
           cantidad: number;
           precio_usd: number;
           total_usd: number;
-          venta: { fecha: string; estado: string; tasa_usada: number } | null;
+          venta: {
+            fecha: string;
+            estado: string;
+            tasa_usada: number;
+            sucursal_id: string;
+          } | null;
         }[]
       >(),
   );
@@ -327,6 +442,7 @@ export async function getProductosMasVendidos(
 
   for (const item of data) {
     if (item.venta?.estado !== "completada") continue;
+    if (sucursalId && item.venta.sucursal_id !== sucursalId) continue;
     const key = item.producto_id ?? item.descripcion;
     const existing = byProducto.get(key) ?? {
       descripcion: item.descripcion,
@@ -405,6 +521,7 @@ export async function getDetalleVentas(
   tenantId: string,
   rango: RangoFechas,
   tz: string,
+  sucursalId: string | null = null,
 ): Promise<LineaVentaDetalle[]> {
   const { desdeIso, hastaIso } = rangoLocalAUtc(rango, tz);
   const ventas = await fetchAllRows<{
@@ -412,19 +529,18 @@ export async function getDetalleVentas(
     fecha: string;
     numero_documento: string | null;
     tasa_usada: number;
-  }>((from, to) =>
-    client
+  }>((from, to) => {
+    let q = client
       .from("mm_ventas")
       .select("id, fecha, numero_documento, tasa_usada")
       .eq("tenant_id", tenantId)
       .eq("estado", "completada")
       .is("deleted_at", null)
       .gte("fecha", desdeIso)
-      .lt("fecha", hastaIso)
-      .order("fecha", { ascending: true })
-      .order("id", { ascending: true })
-      .range(from, to),
-  );
+      .lt("fecha", hastaIso);
+    if (sucursalId) q = q.eq("sucursal_id", sucursalId);
+    return q.order("fecha", { ascending: true }).order("id", { ascending: true }).range(from, to);
+  });
   if (ventas.length === 0) return [];
 
   const items: {
@@ -498,36 +614,37 @@ export async function getCierresDiarios(
   tenantId: string,
   rango: RangoFechas,
   tz: string,
+  sucursalId: string | null = null,
 ): Promise<CierreDiario[]> {
   const { desdeIso, hastaIso } = rangoLocalAUtc(rango, tz);
-  const { data: ventas } = await client
-    .from("mm_ventas")
-    .select("id, fecha, total_usd, igtf_usd")
-    .eq("tenant_id", tenantId)
-    .eq("estado", "completada")
-    .gte("fecha", desdeIso)
-    .lt("fecha", hastaIso)
-    .is("deleted_at", null);
+  const ventas = await fetchAllRows<{
+    id: string;
+    fecha: string;
+    total_usd: number;
+    igtf_usd: number;
+  }>((from, to) => {
+    let q = client
+      .from("mm_ventas")
+      .select("id, fecha, total_usd, igtf_usd")
+      .eq("tenant_id", tenantId)
+      .eq("estado", "completada")
+      .gte("fecha", desdeIso)
+      .lt("fecha", hastaIso)
+      .is("deleted_at", null);
+    if (sucursalId) q = q.eq("sucursal_id", sucursalId);
+    return q.order("id", { ascending: true }).range(from, to);
+  });
 
-  const { data: fiados } = await client
-    .from("mm_fiados")
-    .select("monto_usd, created_at")
-    .eq("tenant_id", tenantId)
-    .gte("created_at", desdeIso)
-    .lt("created_at", hastaIso)
-    .is("deleted_at", null);
+  const fiados = await fiadosDelPeriodo(client, tenantId, desdeIso, hastaIso, sucursalId);
 
-  const { data: pagos } = await client
-    .from("mm_pagos_venta")
-    .select("venta_id, metodo, monto")
-    .eq("tenant_id", tenantId)
-    .in(
-      "venta_id",
-      (ventas ?? []).map((v) => v.id),
-    );
+  const pagos = await pagosDeVentas(
+    client,
+    tenantId,
+    ventas.map((v) => v.id),
+  );
 
   const pagosPorVenta = new Map<string, { metodo: string; monto: number }[]>();
-  for (const p of pagos ?? []) {
+  for (const p of pagos) {
     const arr = pagosPorVenta.get(p.venta_id) ?? [];
     arr.push({ metodo: p.metodo, monto: Number(p.monto) });
     pagosPorVenta.set(p.venta_id, arr);
@@ -544,7 +661,7 @@ export async function getCierresDiarios(
     }
   >();
 
-  for (const v of ventas ?? []) {
+  for (const v of ventas) {
     const fecha = fechaEnTz(v.fecha, tz);
     const entry = byFecha.get(fecha) ?? {
       num_ventas: 0,
@@ -562,7 +679,7 @@ export async function getCierresDiarios(
     byFecha.set(fecha, entry);
   }
 
-  for (const f of fiados ?? []) {
+  for (const f of fiados) {
     const dia = fechaEnTz(f.created_at, tz);
     const entry = byFecha.get(dia);
     if (entry) entry.fiado_usd += Number(f.monto_usd);
@@ -617,8 +734,9 @@ export interface ResumenInventarioReporte {
 export async function getInventarioReporte(
   client: Client,
   tenantId: string,
-  opciones: { corteIso?: string } = {},
+  opciones: { corteIso?: string; sucursalId?: string | null } = {},
 ): Promise<ResumenInventarioReporte> {
+  const sucursalId = opciones.sucursalId ?? null;
   // Estas tres tablas se paginan: el catálogo y el stock por sucursal pueden
   // superar largamente las 1000 filas por defecto de PostgREST (carga
   // masiva), que corta ahí en silencio sin `.range()`.
@@ -644,35 +762,37 @@ export async function getInventarioReporte(
         .range(from, to),
     ),
     opciones.corteIso
-      ? fetchAllRows<{ producto_id: string | null; cantidad: number | null }>((from, to) =>
-          client
+      ? fetchAllRows<{ producto_id: string | null; cantidad: number | null }>((from, to) => {
+          let q = client
             .from("mm_movimientos_inventario")
             .select("producto_id, cantidad")
             .eq("tenant_id", tenantId)
-            .lt("created_at", opciones.corteIso as string)
-            .order("id", { ascending: true })
-            .range(from, to),
-        ).then((movs) =>
+            .lt("created_at", opciones.corteIso as string);
+          if (sucursalId) q = q.eq("sucursal_id", sucursalId);
+          return q.order("id", { ascending: true }).range(from, to);
+        }).then((movs) =>
           movs.map((m) => ({ producto_id: m.producto_id, stock_actual: m.cantidad })),
         )
-      : fetchAllRows<{ producto_id: string | null; stock_actual: number | null }>((from, to) =>
-          client
+      : fetchAllRows<{ producto_id: string | null; stock_actual: number | null }>((from, to) => {
+          let q = client
             .from("mm_v_stock")
             .select("producto_id, stock_actual")
-            .eq("tenant_id", tenantId)
+            .eq("tenant_id", tenantId);
+          if (sucursalId) q = q.eq("sucursal_id", sucursalId);
+          return q
             .order("producto_id", { ascending: true })
             .order("sucursal_id", { ascending: true })
-            .range(from, to),
-        ),
-    fetchAllRows<{ producto_id: string; stock_minimo: number }>((from, to) =>
-      client
+            .range(from, to);
+        }),
+    fetchAllRows<{ producto_id: string; stock_minimo: number }>((from, to) => {
+      let q = client
         .from("mm_inventario")
         .select("producto_id, stock_minimo")
         .eq("tenant_id", tenantId)
-        .is("deleted_at", null)
-        .order("id", { ascending: true })
-        .range(from, to),
-    ),
+        .is("deleted_at", null);
+      if (sucursalId) q = q.eq("sucursal_id", sucursalId);
+      return q.order("id", { ascending: true }).range(from, to);
+    }),
     client.from("mm_categorias").select("id, nombre").eq("tenant_id", tenantId),
   ]);
 
@@ -743,6 +863,7 @@ export async function getProductosBajaRotacion(
   rango: RangoFechas,
   tz: string,
   limit = 15,
+  sucursalId: string | null = null,
 ): Promise<ProductoBajaRotacion[]> {
   // Catálogo del tenant — puede superar las 1000 filas por defecto de
   // PostgREST, así que se pagina en vez de un `.select()` plano.
@@ -760,34 +881,45 @@ export async function getProductosBajaRotacion(
 
   if (!productos.length) return [];
 
-  const ids = productos.map((p) => p.id);
   const { desdeIso, hastaIso } = rangoLocalAUtc(rango, tz);
 
-  const [stock, ventasRes] = await Promise.all([
-    fetchAllRows<{ producto_id: string | null; stock_actual: number | null }>((from, to) =>
-      client
+  const [stock, ventasItems] = await Promise.all([
+    fetchAllRows<{ producto_id: string | null; stock_actual: number | null }>((from, to) => {
+      let q = client
         .from("mm_v_stock")
         .select("producto_id, stock_actual")
-        .eq("tenant_id", tenantId)
+        .eq("tenant_id", tenantId);
+      if (sucursalId) q = q.eq("sucursal_id", sucursalId);
+      return q
         .order("producto_id", { ascending: true })
         .order("sucursal_id", { ascending: true })
-        .range(from, to),
+        .range(from, to);
+    }),
+    // Sin `.in(producto_id, …)`: con un catálogo grande la URL se desborda.
+    // Se traen las líneas del período y se filtran aquí.
+    fetchAllRows<{
+      producto_id: string | null;
+      cantidad: number;
+      created_at: string;
+      venta: { estado: string; fecha: string; sucursal_id: string } | null;
+    }>((from, to) =>
+      client
+        .from("mm_ventas_items")
+        .select("producto_id, cantidad, created_at, venta:mm_ventas(estado, fecha, sucursal_id)")
+        .eq("tenant_id", tenantId)
+        .gte("created_at", desdeIso)
+        .lt("created_at", hastaIso)
+        .order("id", { ascending: true })
+        .range(from, to)
+        .returns<
+          {
+            producto_id: string | null;
+            cantidad: number;
+            created_at: string;
+            venta: { estado: string; fecha: string; sucursal_id: string } | null;
+          }[]
+        >(),
     ),
-    client
-      .from("mm_ventas_items")
-      .select("producto_id, cantidad, created_at, venta:mm_ventas(estado, fecha)")
-      .eq("tenant_id", tenantId)
-      .in("producto_id", ids)
-      .gte("created_at", desdeIso)
-      .lt("created_at", hastaIso)
-      .returns<
-        {
-          producto_id: string;
-          cantidad: number;
-          created_at: string;
-          venta: { estado: string; fecha: string } | null;
-        }[]
-      >(),
   ]);
 
   const stockMap = new Map<string, number>();
@@ -797,8 +929,9 @@ export async function getProductosBajaRotacion(
   }
 
   const ventasPorProducto = new Map<string, { unidades: number; ultimaFecha: string }>();
-  for (const item of ventasRes.data ?? []) {
+  for (const item of ventasItems) {
     if (item.venta?.estado !== "completada" || !item.producto_id) continue;
+    if (sucursalId && item.venta.sucursal_id !== sucursalId) continue;
     const existing = ventasPorProducto.get(item.producto_id);
     const fecha = fechaEnTz(item.venta.fecha, tz);
     ventasPorProducto.set(item.producto_id, {
@@ -944,18 +1077,27 @@ export async function getVentasPorCajero(
   tenantId: string,
   rango: RangoFechas,
   tz: string,
+  sucursalId: string | null = null,
 ): Promise<VentaCajero[]> {
   const { desdeIso, hastaIso } = rangoLocalAUtc(rango, tz);
-  const { data: ventas } = await client
-    .from("mm_ventas")
-    .select("usuario_id, total_usd, igtf_usd")
-    .eq("tenant_id", tenantId)
-    .eq("estado", "completada")
-    .is("deleted_at", null)
-    .gte("fecha", desdeIso)
-    .lt("fecha", hastaIso);
+  const ventas = await fetchAllRows<{
+    usuario_id: string | null;
+    total_usd: number;
+    igtf_usd: number;
+  }>((from, to) => {
+    let q = client
+      .from("mm_ventas")
+      .select("usuario_id, total_usd, igtf_usd")
+      .eq("tenant_id", tenantId)
+      .eq("estado", "completada")
+      .is("deleted_at", null)
+      .gte("fecha", desdeIso)
+      .lt("fecha", hastaIso);
+    if (sucursalId) q = q.eq("sucursal_id", sucursalId);
+    return q.order("id", { ascending: true }).range(from, to);
+  });
 
-  if (!ventas?.length) return [];
+  if (!ventas.length) return [];
 
   // Agrupar por usuario antes de buscar nombres (evita N+1)
   const mapa = new Map<string, VentaCajero>();
@@ -996,5 +1138,73 @@ export async function getVentasPorCajero(
       ...c,
       ticket_promedio_usd: c.num_ventas > 0 ? c.total_usd / c.num_ventas : 0,
     }))
+    .sort((a, b) => b.total_usd - a.total_usd);
+}
+
+// ---------------------------------------------------------------------------
+// Ventas por sucursal
+// ---------------------------------------------------------------------------
+
+export interface VentaSucursal {
+  sucursal_id: string;
+  sucursal_nombre: string;
+  num_ventas: number;
+  total_usd: number;
+  igtf_usd: number;
+  ticket_promedio_usd: number;
+}
+
+/** Ventas completadas del período agrupadas por sucursal (incluye las que no vendieron). */
+export async function getVentasPorSucursal(
+  client: Client,
+  tenantId: string,
+  rango: RangoFechas,
+  tz: string,
+  sucursales: { id: string; nombre: string }[],
+): Promise<VentaSucursal[]> {
+  const { desdeIso, hastaIso } = rangoLocalAUtc(rango, tz);
+  const ventas = await fetchAllRows<{ sucursal_id: string; total_usd: number; igtf_usd: number }>(
+    (from, to) =>
+      client
+        .from("mm_ventas")
+        .select("sucursal_id, total_usd, igtf_usd")
+        .eq("tenant_id", tenantId)
+        .eq("estado", "completada")
+        .is("deleted_at", null)
+        .gte("fecha", desdeIso)
+        .lt("fecha", hastaIso)
+        .order("id", { ascending: true })
+        .range(from, to),
+  );
+
+  const mapa = new Map<string, VentaSucursal>(
+    sucursales.map((s) => [
+      s.id,
+      {
+        sucursal_id: s.id,
+        sucursal_nombre: s.nombre,
+        num_ventas: 0,
+        total_usd: 0,
+        igtf_usd: 0,
+        ticket_promedio_usd: 0,
+      },
+    ]),
+  );
+  for (const v of ventas) {
+    const fila = mapa.get(v.sucursal_id) ?? {
+      sucursal_id: v.sucursal_id,
+      sucursal_nombre: "Sucursal eliminada",
+      num_ventas: 0,
+      total_usd: 0,
+      igtf_usd: 0,
+      ticket_promedio_usd: 0,
+    };
+    fila.num_ventas += 1;
+    fila.total_usd += Number(v.total_usd);
+    fila.igtf_usd += Number(v.igtf_usd);
+    mapa.set(v.sucursal_id, fila);
+  }
+  return [...mapa.values()]
+    .map((f) => ({ ...f, ticket_promedio_usd: f.num_ventas > 0 ? f.total_usd / f.num_ventas : 0 }))
     .sort((a, b) => b.total_usd - a.total_usd);
 }

@@ -10,6 +10,7 @@ import {
   getProductosMasVendidos,
   getVentasPorCajero,
   getDetalleVentas,
+  getVentasPorSucursal,
 } from "@/lib/minimarket/data/reportes";
 import { fetchAllRows } from "@/lib/minimarket/data/pagination";
 import { getTimezoneNegocio } from "@/lib/minimarket/timezone";
@@ -28,6 +29,56 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 
 const escapeHtml = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+/** Documento HTML imprimible (se abre y lanza el diálogo de imprimir / guardar PDF). */
+function paginaImprimible(titulo: string, encabezado: string, cuerpo: string): string {
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>${titulo}</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,sans-serif;font-size:11px;color:#111;padding:24px}
+  h1{font-size:18px;margin-bottom:2px}
+  h2{font-size:13px;margin:20px 0 6px;border-bottom:1px solid #ccc;padding-bottom:4px}
+  .meta{color:#555;font-size:10px;margin-bottom:16px}
+  .kpis{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px}
+  .kpi{border:1px solid #ddd;border-radius:4px;padding:8px 14px;min-width:140px}
+  .kpi .label{font-size:9px;color:#666;text-transform:uppercase;letter-spacing:.5px}
+  .kpi .val{font-size:15px;font-weight:700;margin-top:2px}
+  table{width:100%;border-collapse:collapse;margin-bottom:8px}
+  th{background:#f4f4f4;text-align:left;padding:5px 8px;font-size:10px;border:1px solid #ddd}
+  td{padding:4px 8px;border:1px solid #e8e8e8;vertical-align:top}
+  tr:nth-child(even) td{background:#fafafa}
+  tfoot td{background:#f4f4f4;font-weight:700}
+  .right{text-align:right}
+  .sub{color:#666;font-size:10px;white-space:nowrap}
+  .bajo{color:#b91c1c;font-weight:700}
+  @media print{@page{size:A4;margin:12mm}body{padding:0}}
+</style>
+</head>
+<body>
+${encabezado}
+${cuerpo}
+<hr style="border:none;border-top:1px solid #ddd;margin:24px 0 8px">
+<p style="text-align:center;font-size:9px;color:#999">Comprobante interno — no es una factura fiscal</p>
+<script>window.onload=function(){window.print()}</script>
+</body>
+</html>`;
+}
+
+const thead = (cols: string[]) => `<tr>${cols.map((c) => `<th>${c}</th>`).join("")}</tr>`;
+const row = (...cells: string[]) => `<tr>${cells.map((c) => `<td>${c}</td>`).join("")}</tr>`;
+
+function respuestaHtml(html: string, nombre: string) {
+  return new NextResponse(html, {
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Content-Disposition": `inline; filename="${nombre}.html"`,
+    },
+  });
+}
 
 export async function GET(request: NextRequest) {
   const session = await getSessionContext();
@@ -55,15 +106,30 @@ export async function GET(request: NextRequest) {
   };
   const generado = `Generado: ${fmtFechaHora(new Date().toISOString(), tz)}`;
 
+  // Sucursal (opcional): solo se acepta una del propio tenant; sin ella o con
+  // un id ajeno, el reporte es de todas las sucursales.
+  const { data: sucursales } = await supabase
+    .from("mm_sucursales")
+    .select("id, nombre")
+    .eq("tenant_id", tenantId)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: true });
+  const sucursalSel = (sucursales ?? []).find((x) => x.id === searchParams.get("sucursal"));
+  const sucursalId = sucursalSel?.id ?? null;
+  const sucursalLabel = sucursalSel ? `Sucursal: ${sucursalSel.nombre}` : "Todas las sucursales";
+  const sufijoArchivo = sucursalSel
+    ? `_${sucursalSel.nombre.replace(/[^a-zA-Z0-9]+/g, "-").toLowerCase()}`
+    : "";
+
   if (tipo === "ventas") {
     const { rango } = resolverRangoReporte({ desde, hasta }, tz);
     const { desdeIso, hastaIso } = rangoLocalAUtc(rango, tz);
     const periodo = rango.desde === rango.hasta ? rango.desde : `${rango.desde} al ${rango.hasta}`;
 
-    const [ventas, productos, detalle, { data: sucursales }] = await Promise.all([
+    const [ventas, productos, detalle] = await Promise.all([
       // Paginado: sin esto PostgREST corta en 1000 ventas en silencio.
-      fetchAllRows((from, to) =>
-        supabase
+      fetchAllRows((from, to) => {
+        let q = supabase
           .from("mm_ventas")
           .select(
             "id, fecha, numero_documento, total_usd, subtotal_usd, descuento_usd, igtf_usd, total_bs, tasa_usada, cliente_id, sucursal_id",
@@ -72,14 +138,15 @@ export async function GET(request: NextRequest) {
           .eq("estado", "completada")
           .is("deleted_at", null)
           .gte("fecha", desdeIso)
-          .lt("fecha", hastaIso)
+          .lt("fecha", hastaIso);
+        if (sucursalId) q = q.eq("sucursal_id", sucursalId);
+        return q
           .order("fecha", { ascending: true })
           .order("id", { ascending: true })
-          .range(from, to),
-      ),
-      getProductosMasVendidos(supabase, tenantId, rango, tz, TODOS_LOS_PRODUCTOS),
-      getDetalleVentas(supabase, tenantId, rango, tz),
-      supabase.from("mm_sucursales").select("id, nombre").eq("tenant_id", tenantId),
+          .range(from, to);
+      }),
+      getProductosMasVendidos(supabase, tenantId, rango, tz, TODOS_LOS_PRODUCTOS, sucursalId),
+      getDetalleVentas(supabase, tenantId, rango, tz, sucursalId),
     ]);
 
     const clienteIds = [...new Set(ventas.flatMap((v) => (v.cliente_id ? [v.cliente_id] : [])))];
@@ -102,7 +169,10 @@ export async function GET(request: NextRequest) {
       nombre: "Ventas",
       titulo: "Reporte de ventas",
       negocio,
-      subtitulos: [`Período: ${periodo}`, `${ventas.length} ventas completadas · ${generado}`],
+      subtitulos: [
+        `Período: ${periodo} · ${sucursalLabel}`,
+        `${ventas.length} ventas completadas · ${generado}`,
+      ],
       filas: ventas,
       columnas: [
         {
@@ -152,7 +222,7 @@ export async function GET(request: NextRequest) {
       titulo: "Productos vendidos",
       negocio,
       subtitulos: [
-        `Período: ${periodo} · ${generado}`,
+        `Período: ${periodo} · ${sucursalLabel} · ${generado}`,
         "Precio unit.: precio al que se vendió (promedio ponderado si varió). Bs: a la tasa congelada de cada venta. Margen: (precio vendido − costo actual) × unidades, mismo criterio que la utilidad estimada.",
       ],
       filas: productos,
@@ -202,7 +272,7 @@ export async function GET(request: NextRequest) {
       titulo: "Detalle de ventas (producto por producto)",
       negocio,
       subtitulos: [
-        `Período: ${periodo} · ${generado}`,
+        `Período: ${periodo} · ${sucursalLabel} · ${generado}`,
         `${new Set(detalle.map((l) => l.venta_id)).size} ventas · ${detalle.length} líneas · Bs a la tasa congelada de cada venta`,
       ],
       filas: detalle,
@@ -235,13 +305,16 @@ export async function GET(request: NextRequest) {
       ],
     });
 
-    return respuestaXlsx(await wb.xlsx.writeBuffer(), `ventas_${rango.desde}_${rango.hasta}.xlsx`);
+    return respuestaXlsx(
+      await wb.xlsx.writeBuffer(),
+      `ventas_${rango.desde}_${rango.hasta}${sufijoArchivo}.xlsx`,
+    );
   } else if (tipo === "inventario") {
     // Corte al final del día "hasta" del reporte (sin rango o hasta = hoy →
     // stock actual). Tasa para los Bs: la de ESE día.
     const { fechaCorte, corteIso } = corteInventario(hasta ?? "", tz);
     const [inventario, tasaCorte, { data: cfgIva }] = await Promise.all([
-      getInventarioReporte(supabase, tenantId, { corteIso }),
+      getInventarioReporte(supabase, tenantId, { corteIso, sucursalId }),
       getTasaParaFecha(supabase, tenantId, fechaCorte),
       supabase
         .from("mm_config_negocio")
@@ -287,7 +360,7 @@ export async function GET(request: NextRequest) {
       titulo: "Inventario valorizado",
       negocio,
       subtitulos: [
-        `Corte al ${fechaCorte}${corteIso ? " (stock al cierre de ese día)" : " (stock actual)"} · ${inventario.totalProductos} productos · ${inventario.productosBajoMinimo} bajo mínimo`,
+        `${sucursalLabel} · Corte al ${fechaCorte}${corteIso ? " (stock al cierre de ese día)" : " (stock actual)"} · ${inventario.totalProductos} productos · ${inventario.productosBajoMinimo} bajo mínimo`,
         tasa
           ? `Tasa del ${fechaCorte}: Bs ${tasa.toFixed(2)} / USD (${tasaCorte?.fuente === "manual" ? "personalizada" : "oficial"}) · IVA ${ivaPct}% sobre productos gravados${ivaActivo ? "" : " (referencial: el IVA está desactivado en Configuración)"}`
           : `Sin tasa registrada para el ${fechaCorte}: columnas en Bs vacías · IVA ${ivaPct}% sobre productos gravados`,
@@ -361,7 +434,53 @@ export async function GET(request: NextRequest) {
       ],
     });
 
-    return respuestaXlsx(await wb.xlsx.writeBuffer(), `inventario_${fechaCorte}.xlsx`);
+    return respuestaXlsx(
+      await wb.xlsx.writeBuffer(),
+      `inventario_${fechaCorte}${sufijoArchivo}.xlsx`,
+    );
+  } else if (tipo === "inventario-pdf") {
+    const { fechaCorte, corteIso } = corteInventario(hasta ?? "", tz);
+    const inventario = await getInventarioReporte(supabase, tenantId, { corteIso, sucursalId });
+    const usdFmt = new Intl.NumberFormat("es-VE", { style: "currency", currency: "USD" });
+    const fmt = (v: number) => usdFmt.format(v);
+    const der = (t: string) => `<span class="right">${t}</span>`;
+
+    const encabezado = `<h1>${escapeHtml(negocio.nombre)}</h1>
+<p class="meta">Inventario valorizado · ${escapeHtml(sucursalLabel)} · Corte al ${fechaCorte}${corteIso ? " (stock al cierre de ese día)" : " (stock actual)"} · costo y precio actuales · ${generado}</p>`;
+    const cuerpo = `<div class="kpis">
+  <div class="kpi"><div class="label">Productos</div><div class="val">${inventario.totalProductos}</div></div>
+  <div class="kpi"><div class="label">Con stock</div><div class="val">${inventario.totalActivos}</div></div>
+  <div class="kpi"><div class="label">Bajo mínimo</div><div class="val">${inventario.productosBajoMinimo}</div></div>
+  <div class="kpi"><div class="label">Valor a costo</div><div class="val">${fmt(inventario.valorCostoUsd)}</div></div>
+  <div class="kpi"><div class="label">Valor a precio venta</div><div class="val">${fmt(inventario.valorVentaUsd)}</div></div>
+</div>
+
+<h2>Detalle por producto</h2>
+<table>
+  <thead>${thead(["SKU", "Producto", "Categoría", "Stock", "Mín.", "Costo USD", "Precio USD", "Val. costo", "Val. venta"])}</thead>
+  <tbody>
+  ${inventario.items
+    .map((p) =>
+      row(
+        escapeHtml(p.codigo ?? "—"),
+        escapeHtml(p.nombre) + (p.bajo_minimo ? ' <span class="bajo">(bajo mín.)</span>' : ""),
+        escapeHtml(p.categoria ?? "—"),
+        der(String(p.stock_actual)),
+        der(p.stock_minimo === null ? "—" : String(p.stock_minimo)),
+        der(p.costo_usd > 0 ? fmt(p.costo_usd) : "—"),
+        der(p.precio_usd > 0 ? fmt(p.precio_usd) : "—"),
+        der(p.costo_usd > 0 ? fmt(p.valor_costo_total) : "—"),
+        der(p.precio_usd > 0 ? fmt(p.valor_venta_total) : "—"),
+      ),
+    )
+    .join("")}
+  </tbody>
+  <tfoot><tr><td colspan="7">TOTALES (${inventario.totalProductos} productos)</td><td>${der(fmt(inventario.valorCostoUsd))}</td><td>${der(fmt(inventario.valorVentaUsd))}</td></tr></tfoot>
+</table>`;
+    return respuestaHtml(
+      paginaImprimible(`Inventario ${fechaCorte}`, encabezado, cuerpo),
+      `inventario_${fechaCorte}${sufijoArchivo}`,
+    );
   } else if (tipo === "pdf") {
     const { rango } = resolverRangoReporte({ desde, hasta }, tz);
     const usdFmt = new Intl.NumberFormat("es-VE", { style: "currency", currency: "USD" });
@@ -371,13 +490,18 @@ export async function GET(request: NextRequest) {
     const usdYBs = (u: number, b: number) =>
       `<span class="right">${fmt(u)}<br><span class="sub">${bsFmt.format(b)}</span></span>`;
 
-    const [resumen, ventasDia, porMetodo, masVendidos, porCajero] = await Promise.all([
-      getResumenPeriodo(supabase, tenantId, rango, tz),
-      getVentasPorDia(supabase, tenantId, rango, tz),
-      getVentasPorMetodo(supabase, tenantId, rango, tz),
-      getProductosMasVendidos(supabase, tenantId, rango, tz, TODOS_LOS_PRODUCTOS),
-      getVentasPorCajero(supabase, tenantId, rango, tz),
-    ]);
+    const [resumen, ventasDia, porMetodo, masVendidos, porCajero, detalle, porSucursal] =
+      await Promise.all([
+        getResumenPeriodo(supabase, tenantId, rango, tz, sucursalId),
+        getVentasPorDia(supabase, tenantId, rango, tz, sucursalId),
+        getVentasPorMetodo(supabase, tenantId, rango, tz, sucursalId),
+        getProductosMasVendidos(supabase, tenantId, rango, tz, TODOS_LOS_PRODUCTOS, sucursalId),
+        getVentasPorCajero(supabase, tenantId, rango, tz, sucursalId),
+        getDetalleVentas(supabase, tenantId, rango, tz, sucursalId),
+        sucursalId
+          ? Promise.resolve([])
+          : getVentasPorSucursal(supabase, tenantId, rango, tz, sucursales ?? []),
+      ]);
 
     const nombreNegocio = escapeHtml(negocio.nombre);
     const hoy = new Date().toLocaleDateString("es-VE", {
@@ -397,38 +521,9 @@ export async function GET(request: NextRequest) {
       fiado: "Fiado",
     };
 
-    const thead = (cols: string[]) => `<tr>${cols.map((c) => `<th>${c}</th>`).join("")}</tr>`;
-
-    const row = (...cells: string[]) => `<tr>${cells.map((c) => `<td>${c}</td>`).join("")}</tr>`;
-
-    const html = `<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<title>Reporte ${rango.desde} — ${rango.hasta}</title>
-<style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:Arial,sans-serif;font-size:11px;color:#111;padding:24px}
-  h1{font-size:18px;margin-bottom:2px}
-  h2{font-size:13px;margin:20px 0 6px;border-bottom:1px solid #ccc;padding-bottom:4px}
-  .meta{color:#555;font-size:10px;margin-bottom:16px}
-  .kpis{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:8px}
-  .kpi{border:1px solid #ddd;border-radius:4px;padding:8px 14px;min-width:140px}
-  .kpi .label{font-size:9px;color:#666;text-transform:uppercase;letter-spacing:.5px}
-  .kpi .val{font-size:15px;font-weight:700;margin-top:2px}
-  table{width:100%;border-collapse:collapse;margin-bottom:8px}
-  th{background:#f4f4f4;text-align:left;padding:5px 8px;font-size:10px;border:1px solid #ddd}
-  td{padding:4px 8px;border:1px solid #e8e8e8;vertical-align:top}
-  tr:nth-child(even) td{background:#fafafa}
-  .right{text-align:right}
-  .sub{color:#666;font-size:10px;white-space:nowrap}
-  @media print{@page{size:A4;margin:12mm}body{padding:0}}
-</style>
-</head>
-<body>
-<h1>${nombreNegocio}</h1>
-<p class="meta">Reporte de ventas · ${rango.desde === rango.hasta ? rango.desde : `${rango.desde} al ${rango.hasta}`} · Generado: ${hoy}</p>
-
+    const encabezado = `<h1>${nombreNegocio}</h1>
+<p class="meta">Reporte de ventas · ${escapeHtml(sucursalLabel)} · ${rango.desde === rango.hasta ? rango.desde : `${rango.desde} al ${rango.hasta}`} · Generado: ${hoy}</p>`;
+    const cuerpo = `
 <div class="kpis">
   <div class="kpi"><div class="label">Ventas totales</div><div class="val">${fmt(resumen.totalVentasUsd)}</div></div>
   <div class="kpi"><div class="label">Transacciones</div><div class="val">${resumen.numVentas}</div></div>
@@ -436,6 +531,16 @@ export async function GET(request: NextRequest) {
   <div class="kpi"><div class="label">Utilidad estimada</div><div class="val">${fmt(resumen.utilidadEstimadaUsd)}</div></div>
   <div class="kpi"><div class="label">IGTF cobrado</div><div class="val">${fmt(resumen.igtfUsd)}</div></div>
 </div>
+
+${
+  porSucursal.length > 0
+    ? `<h2>Por sucursal</h2>
+<table>
+  ${thead(["Sucursal", "Ventas", "Total USD", "IGTF", "Ticket prom."])}
+  ${porSucursal.map((x) => row(escapeHtml(x.sucursal_nombre), String(x.num_ventas), `<span class="right">${fmt(x.total_usd)}</span>`, `<span class="right">${fmt(x.igtf_usd)}</span>`, `<span class="right">${fmt(x.ticket_promedio_usd)}</span>`)).join("")}
+</table>`
+    : ""
+}
 
 <h2>Ventas por día</h2>
 <table>
@@ -461,24 +566,27 @@ ${
     ? `<h2>Por cajero</h2>
 <table>
   ${thead(["Cajero", "Ventas", "Total USD", "IGTF", "Ticket prom."])}
-  ${porCajero.map((c) => row(c.cajero_nombre, String(c.num_ventas), `<span class="right">${fmt(c.total_usd)}</span>`, `<span class="right">${fmt(c.igtf_usd)}</span>`, `<span class="right">${fmt(c.ticket_promedio_usd)}</span>`)).join("")}
+  ${porCajero.map((c) => row(escapeHtml(c.cajero_nombre), String(c.num_ventas), `<span class="right">${fmt(c.total_usd)}</span>`, `<span class="right">${fmt(c.igtf_usd)}</span>`, `<span class="right">${fmt(c.ticket_promedio_usd)}</span>`)).join("")}
 </table>`
     : ""
 }
 
-<hr style="border:none;border-top:1px solid #ddd;margin:24px 0 8px">
-<p style="text-align:center;font-size:9px;color:#999">Comprobante interno de venta — no es una factura fiscal</p>
-<script>window.onload=function(){window.print()}</script>
-</body>
-</html>`;
+<h2>Detalle de ventas (${new Set(detalle.map((l) => l.venta_id)).size} ventas · ${detalle.length} líneas)</h2>
+<table>
+  <thead>${thead(["Fecha y hora", "N.º", "SKU", "Producto", "Cant.", "Precio unit.", "Total"])}</thead>
+  <tbody>
+  ${detalle.map((l) => row(fmtFechaHora(l.fecha, tz), escapeHtml(l.numero_documento ?? "—"), escapeHtml(l.codigo ?? "—"), escapeHtml(l.descripcion), `<span class="right">${l.cantidad}</span>`, `<span class="right">${fmt(l.precio_usd)}</span>`, usdYBs(l.total_usd, l.total_bs))).join("")}
+  </tbody>
+  <tfoot><tr><td colspan="4">TOTALES</td><td><span class="right">${r2(detalle.reduce((a, l) => a + l.cantidad, 0))}</span></td><td></td><td>${usdYBs(
+    detalle.reduce((a, l) => a + l.total_usd, 0),
+    detalle.reduce((a, l) => a + l.total_bs, 0),
+  )}</td></tr></tfoot>
+</table>`;
 
-    const periodo2 = `${rango.desde}_${rango.hasta}`;
-    return new NextResponse(html, {
-      headers: {
-        "Content-Type": "text/html; charset=utf-8",
-        "Content-Disposition": `inline; filename="reporte_${periodo2}.html"`,
-      },
-    });
+    return respuestaHtml(
+      paginaImprimible(`Reporte ${rango.desde} — ${rango.hasta}`, encabezado, cuerpo),
+      `reporte_${rango.desde}_${rango.hasta}${sufijoArchivo}`,
+    );
   } else {
     return new NextResponse("Tipo no válido", { status: 400 });
   }

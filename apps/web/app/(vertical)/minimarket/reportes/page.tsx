@@ -9,6 +9,7 @@ import {
   FileText,
   Package,
   ShoppingCart,
+  Store,
   TrendingUp,
 } from "lucide-react";
 import { Card } from "@arkiteq/ui";
@@ -26,7 +27,9 @@ import {
   getInventarioReporte,
   getProductosBajaRotacion,
   getVentasPorCajero,
+  getVentasPorSucursal,
 } from "@/lib/minimarket/data/reportes";
+import { listSucursales } from "@/lib/minimarket/data/inventario";
 import { getResumenCartera } from "@/lib/minimarket/data/clientes";
 import { listCompras } from "@/lib/minimarket/data/compras";
 import { getTimezoneNegocio } from "@/lib/minimarket/timezone";
@@ -68,6 +71,7 @@ export default async function ReportesPage({
     inv_filtro?: string;
     pv?: string;
     dv?: string;
+    suc?: string;
   }>;
 }) {
   const sp = await searchParams;
@@ -80,14 +84,30 @@ export default async function ReportesPage({
 
   const supabase = await createClient();
   const country = getCountryConfig(session.activeTenant?.country);
-  const tz = await getTimezoneNegocio(supabase, tenantId);
+  const [tz, sucursales] = await Promise.all([
+    getTimezoneNegocio(supabase, tenantId),
+    listSucursales(supabase, tenantId),
+  ]);
   const { rango, periodo } = resolverRangoReporte(sp, tz);
+  // Sucursal seleccionada: solo una del propio tenant; si no, "Todas".
+  const sucursalSel = sucursales.find((x) => x.id === sp.suc) ?? null;
+  const sucursalId = sucursalSel?.id ?? null;
   // Inventario con corte al final del día "hasta" (si es hoy: stock actual).
   const { fechaCorte, corteIso } = corteInventario(rango.hasta, tz);
   // Parámetros del rango para links y descargas (preset o Desde/Hasta).
-  const qRango: Record<string, string> =
-    periodo === "personalizado" ? { desde: rango.desde, hasta: rango.hasta } : { periodo };
-  const qsDescarga = `desde=${rango.desde}&hasta=${rango.hasta}`;
+  const qRango: Record<string, string> = {
+    ...(periodo === "personalizado" ? { desde: rango.desde, hasta: rango.hasta } : { periodo }),
+    ...(sucursalId ? { suc: sucursalId } : {}),
+  };
+  const qsDescarga = `desde=${rango.desde}&hasta=${rango.hasta}${sucursalId ? `&sucursal=${sucursalId}` : ""}`;
+  /** Link del selector de sucursal: conserva el rango, reinicia las páginas. */
+  const urlSucursal = (id: string | null) => {
+    const q = new URLSearchParams(
+      periodo === "personalizado" ? { desde: rango.desde, hasta: rango.hasta } : { periodo },
+    );
+    if (id) q.set("suc", id);
+    return `/minimarket/reportes?${q.toString()}`;
+  };
 
   const [
     resumen,
@@ -102,19 +122,25 @@ export default async function ReportesPage({
     bajaRotacion,
     porCajero,
     detalleVentas,
+    porSucursal,
   ] = await Promise.all([
-    getResumenPeriodo(supabase, tenantId, rango, tz),
-    getVentasPorDia(supabase, tenantId, rango, tz),
-    getVentasPorMetodo(supabase, tenantId, rango, tz),
-    getProductosMasVendidos(supabase, tenantId, rango, tz, Number.POSITIVE_INFINITY),
-    getCierresDiarios(supabase, tenantId, rango, tz),
+    getResumenPeriodo(supabase, tenantId, rango, tz, sucursalId),
+    getVentasPorDia(supabase, tenantId, rango, tz, sucursalId),
+    getVentasPorMetodo(supabase, tenantId, rango, tz, sucursalId),
+    getProductosMasVendidos(supabase, tenantId, rango, tz, Number.POSITIVE_INFINITY, sucursalId),
+    getCierresDiarios(supabase, tenantId, rango, tz, sucursalId),
     getResumenCartera(supabase, tenantId),
-    listCompras(supabase, tenantId, { estado: "borrador" }),
+    listCompras(supabase, tenantId, { estado: "borrador" }).then((cs) =>
+      sucursalId ? cs.filter((c) => c.sucursal_id === sucursalId) : cs,
+    ),
     getTasaVigente(supabase, tenantId),
-    getInventarioReporte(supabase, tenantId, { corteIso }),
-    getProductosBajaRotacion(supabase, tenantId, rango, tz, 15),
-    getVentasPorCajero(supabase, tenantId, rango, tz),
-    getDetalleVentas(supabase, tenantId, rango, tz),
+    getInventarioReporte(supabase, tenantId, { corteIso, sucursalId }),
+    getProductosBajaRotacion(supabase, tenantId, rango, tz, 15, sucursalId),
+    getVentasPorCajero(supabase, tenantId, rango, tz, sucursalId),
+    getDetalleVentas(supabase, tenantId, rango, tz, sucursalId),
+    sucursalId
+      ? Promise.resolve([])
+      : getVentasPorSucursal(supabase, tenantId, rango, tz, sucursales),
   ]);
 
   const tasaValor = tasa?.valor ?? 1;
@@ -206,7 +232,8 @@ export default async function ReportesPage({
         <div className="space-y-1">
           <h1 className="font-display text-heading text-2xl font-semibold">Reportes</h1>
           <p className="text-muted-foreground">
-            {rango.desde === rango.hasta ? rango.desde : `${rango.desde} — ${rango.hasta}`}
+            {rango.desde === rango.hasta ? rango.desde : `${rango.desde} — ${rango.hasta}`} ·{" "}
+            {sucursalSel ? sucursalSel.nombre : "Todas las sucursales"}
           </p>
         </div>
         <div className="flex flex-col items-start gap-2 sm:items-end">
@@ -214,7 +241,7 @@ export default async function ReportesPage({
             {periodos.map((p) => (
               <a
                 key={p.key}
-                href={`/minimarket/reportes?periodo=${p.key}`}
+                href={`/minimarket/reportes?periodo=${p.key}${sucursalId ? `&suc=${sucursalId}` : ""}`}
                 className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
                   periodo === p.key
                     ? "bg-accent-500 text-white"
@@ -231,6 +258,7 @@ export default async function ReportesPage({
             method="get"
             className="flex flex-wrap items-end gap-2"
           >
+            {sucursalId ? <input type="hidden" name="suc" value={sucursalId} /> : null}
             <label className="text-muted-foreground flex flex-col gap-0.5 text-xs">
               Desde
               <input
@@ -266,6 +294,77 @@ export default async function ReportesPage({
           </form>
         </div>
       </header>
+
+      {/* Selector de sucursal: todo el reporte (y las descargas) se filtra por ella */}
+      {sucursales.length > 0 ? (
+        <nav aria-label="Sucursal" className="flex flex-wrap items-center gap-2">
+          <span className="text-muted-foreground inline-flex items-center gap-1.5 text-xs font-medium">
+            <Store className="size-4" aria-hidden />
+            Sucursal:
+          </span>
+          {[{ id: null as string | null, nombre: "Todas" }, ...sucursales].map((x) => {
+            const activa = x.id === sucursalId;
+            return (
+              <a
+                key={x.id ?? "todas"}
+                href={urlSucursal(x.id)}
+                aria-current={activa ? "page" : undefined}
+                className={`rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+                  activa
+                    ? "bg-accent-500 text-white"
+                    : "border-border text-muted-foreground hover:text-heading border"
+                }`}
+              >
+                {x.nombre}
+              </a>
+            );
+          })}
+        </nav>
+      ) : null}
+
+      {/* Ventas por sucursal (solo con "Todas") */}
+      {porSucursal.length > 0 ? (
+        <Card className="overflow-hidden p-0">
+          <div className="border-border border-b px-4 py-3">
+            <p className="text-heading text-sm font-medium">Ventas por sucursal — {periodoLabel}</p>
+            <p className="text-muted-foreground text-xs">
+              Toca una sucursal para ver todo el reporte solo con sus datos
+            </p>
+          </div>
+          <ul className="divide-border divide-y">
+            {porSucursal.map((x) => (
+              <li key={x.sucursal_id}>
+                <a
+                  href={urlSucursal(x.sucursal_id)}
+                  className="hover:bg-surface-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-3 transition-colors"
+                >
+                  <span className="min-w-0">
+                    <span className="text-heading block font-medium">{x.sucursal_nombre}</span>
+                    <span className="text-muted-foreground text-xs tabular-nums">
+                      <span className="whitespace-nowrap">
+                        {x.num_ventas} venta{x.num_ventas !== 1 ? "s" : ""}
+                      </span>
+                      <span className="whitespace-nowrap"> · IGTF {usd(x.igtf_usd)}</span>
+                      <span className="whitespace-nowrap">
+                        {" "}
+                        · Ticket prom. {usd(x.ticket_promedio_usd)}
+                      </span>
+                    </span>
+                  </span>
+                  <span className="text-right">
+                    <span className="text-heading block whitespace-nowrap font-medium tabular-nums">
+                      {usd(x.total_usd)}
+                    </span>
+                    <span className="text-muted-foreground whitespace-nowrap text-xs tabular-nums">
+                      {pct(x.total_usd, resumen.totalVentasUsd)} del total
+                    </span>
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
 
       {/* Métricas principales */}
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -668,7 +767,12 @@ export default async function ReportesPage({
           <Card className="p-5">
             <div className="mb-3 flex items-center gap-2">
               <CreditCard className="text-muted-foreground size-4" />
-              <p className="text-heading text-sm font-medium">Cuentas por cobrar</p>
+              <p className="text-heading text-sm font-medium">
+                Cuentas por cobrar
+                {sucursalId ? (
+                  <span className="text-muted-foreground font-normal"> (todas las sucursales)</span>
+                ) : null}
+              </p>
             </div>
             <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
@@ -817,7 +921,16 @@ export default async function ReportesPage({
               className="border-border text-muted-foreground hover:text-heading inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
             >
               <Download className="size-3.5" aria-hidden />
-              Exportar Excel
+              Excel
+            </a>
+            <a
+              href={`/minimarket/reportes/exportar?tipo=inventario-pdf&${qsDescarga}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="border-border text-muted-foreground hover:text-heading inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
+            >
+              <FileText className="size-3.5" aria-hidden />
+              PDF
             </a>
           </div>
         </div>
@@ -1257,8 +1370,8 @@ export default async function ReportesPage({
         <div>
           <p className="text-heading text-sm font-medium">Exportar datos</p>
           <p className="text-muted-foreground text-xs">
-            Descarga el período seleccionado en Excel (.xlsx, con columnas y totales) o imprímelo en
-            PDF.
+            {sucursalSel ? `${sucursalSel.nombre} · ` : "Todas las sucursales · "}cada reporte en
+            Excel (.xlsx, con columnas y totales) o en PDF (se abre listo para imprimir o guardar).
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -1270,6 +1383,15 @@ export default async function ReportesPage({
             Ventas Excel
           </a>
           <a
+            href={`/minimarket/reportes/exportar?tipo=pdf&${qsDescarga}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="border-border text-muted-foreground hover:text-heading inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors"
+          >
+            <FileText className="size-4" aria-hidden />
+            Ventas PDF
+          </a>
+          <a
             href={`/minimarket/reportes/exportar?tipo=inventario&${qsDescarga}`}
             className="border-border text-muted-foreground hover:text-heading inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors"
           >
@@ -1277,13 +1399,13 @@ export default async function ReportesPage({
             Inventario Excel
           </a>
           <a
-            href={`/minimarket/reportes/exportar?tipo=pdf&${qsDescarga}`}
+            href={`/minimarket/reportes/exportar?tipo=inventario-pdf&${qsDescarga}`}
             target="_blank"
             rel="noopener noreferrer"
             className="border-border text-muted-foreground hover:text-heading inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-medium transition-colors"
           >
             <FileText className="size-4" aria-hidden />
-            Imprimir / PDF
+            Inventario PDF
           </a>
         </div>
       </Card>
