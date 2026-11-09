@@ -220,10 +220,23 @@ function FilaSucursal({
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
             {esPredeterminada ? (
-              <span className="bg-accent-50 text-accent-700 flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium">
-                <Star className="size-3 fill-current" aria-hidden />
-                Predeterminada
-              </span>
+              <>
+                <span className="bg-accent-50 text-accent-700 flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium">
+                  <Star className="size-3 fill-current" aria-hidden />
+                  Predeterminada
+                </span>
+                {/* `id` vacío = sin predeterminada (la acción lo guarda como null). */}
+                <form action={predetAction}>
+                  <input type="hidden" name="id" value="" />
+                  <button
+                    type="submit"
+                    disabled={predetPending}
+                    className="text-muted-foreground hover:text-heading rounded px-2 py-1 text-xs transition-colors disabled:opacity-50"
+                  >
+                    {predetPending ? "Guardando…" : "Quitar"}
+                  </button>
+                </form>
+              </>
             ) : sucursal.activa ? (
               <form action={predetAction}>
                 <input type="hidden" name="id" value={sucursal.id} />

@@ -83,6 +83,15 @@ export function MetodosPagoForm({ metodos, cuentasBancarias }: Props) {
           <span className="text-heading font-medium">Predeterminado</span> es el que aparece
           preseleccionado al cobrar una venta.
         </p>
+        {predeterminado ? (
+          <button
+            type="button"
+            onClick={() => setPredeterminado("")}
+            className="text-muted-foreground hover:text-heading text-xs underline underline-offset-2"
+          >
+            Quitar predeterminado
+          </button>
+        ) : null}
       </div>
 
       {state.ok ? (
