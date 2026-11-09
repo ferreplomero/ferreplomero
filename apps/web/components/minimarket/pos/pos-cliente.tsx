@@ -4012,38 +4012,69 @@ export function PosCliente({
                       </button>
                     </div>
                   )}
-                  <div className="flex justify-between">
+                  <div className="flex items-start justify-between">
                     <span className="text-muted-foreground">Subtotal bruto</span>
-                    <span className="tabular-nums">{money(subtotalBruto, "USD")}</span>
+                    <span className="text-right tabular-nums">
+                      {money(subtotalBruto, "USD")}
+                      {tasaCobro ? (
+                        <span className="text-muted-foreground block text-xs tabular-nums">
+                          {money(Math.round(subtotalBruto * tasaCobro * 100) / 100, "VES")}
+                        </span>
+                      ) : null}
+                    </span>
                   </div>
                   {descuentoCarritoUsd > 0 ? (
-                    <div className="flex justify-between">
+                    <div className="flex items-start justify-between">
                       <span className="text-muted-foreground">Descuento</span>
-                      <span className="text-success tabular-nums">
+                      <span className="text-success text-right tabular-nums">
                         −{money(descuentoCarritoUsd, "USD")}
+                        {tasaCobro ? (
+                          <span className="text-muted-foreground block text-xs tabular-nums">
+                            −{money(Math.round(descuentoCarritoUsd * tasaCobro * 100) / 100, "VES")}
+                          </span>
+                        ) : null}
                       </span>
                     </div>
                   ) : null}
                   {descuentoDivisasUsd > 0 ? (
-                    <div className="flex justify-between gap-3">
+                    <div className="flex items-start justify-between gap-3">
                       <span className="text-muted-foreground">Descuento por pago en divisas</span>
-                      <span className="text-success whitespace-nowrap tabular-nums">
+                      <span className="text-success whitespace-nowrap text-right tabular-nums">
                         −{money(descuentoDivisasUsd, "USD")}
+                        {tasaCobro ? (
+                          <span className="text-muted-foreground block text-xs tabular-nums">
+                            −{money(Math.round(descuentoDivisasUsd * tasaCobro * 100) / 100, "VES")}
+                          </span>
+                        ) : null}
                       </span>
                     </div>
                   ) : null}
                   {calcPagos.ivaUsd > 0 ? (
-                    <div className="flex justify-between">
+                    <div className="flex items-start justify-between gap-3">
                       <span className="text-muted-foreground">
                         IVA ({ivaPct} %){hayLineaExenta ? " — solo sobre lo gravado" : ""}
                       </span>
-                      <span className="tabular-nums">{money(calcPagos.ivaUsd, "USD")}</span>
+                      <span className="text-right tabular-nums">
+                        {money(calcPagos.ivaUsd, "USD")}
+                        {tasaCobro ? (
+                          <span className="text-muted-foreground block text-xs tabular-nums">
+                            {money(Math.round(calcPagos.ivaUsd * tasaCobro * 100) / 100, "VES")}
+                          </span>
+                        ) : null}
+                      </span>
                     </div>
                   ) : null}
                   {calcPagos.igtf > 0 ? (
-                    <div className="flex justify-between">
+                    <div className="flex items-start justify-between">
                       <span className="text-muted-foreground">IGTF (3 %)</span>
-                      <span className="tabular-nums">{money(calcPagos.igtf, "USD")}</span>
+                      <span className="text-right tabular-nums">
+                        {money(calcPagos.igtf, "USD")}
+                        {tasaCobro ? (
+                          <span className="text-muted-foreground block text-xs tabular-nums">
+                            {money(Math.round(calcPagos.igtf * tasaCobro * 100) / 100, "VES")}
+                          </span>
+                        ) : null}
+                      </span>
                     </div>
                   ) : null}
                   <div className="border-border flex items-start justify-between border-t pt-1.5 font-medium">
