@@ -43,6 +43,8 @@ export default async function ReciboPage({ params }: { params: Promise<{ id: str
           negocioNombre={doc.negocio.nombre}
           totalUsd={doc.totalUsd}
           totalBs={doc.totalBs}
+          pagos={doc.pagos}
+          tasa={doc.tasa}
         />
       ) : null}
 

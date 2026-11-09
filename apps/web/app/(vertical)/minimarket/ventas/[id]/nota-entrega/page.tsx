@@ -67,6 +67,8 @@ export default async function NotaEntregaPage({ params }: { params: Promise<{ id
         negocioNombre={datos.doc.negocio.nombre}
         totalUsd={datos.doc.totalUsd}
         totalBs={datos.doc.totalBs}
+        pagos={datos.doc.pagos}
+        tasa={datos.doc.tasa}
         documento="nota de entrega"
         articulo="la"
       />

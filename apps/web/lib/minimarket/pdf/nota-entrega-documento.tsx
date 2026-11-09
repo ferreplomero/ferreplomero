@@ -1,7 +1,7 @@
 import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 import { LEYENDA_NO_FISCAL_TEXTO } from "@arkiteq/ui";
 import type { NotaEntregaDatos } from "@/lib/minimarket/nota-entrega/datos";
-import { metodoLabel } from "@/lib/minimarket/recibo-formato";
+import { metodoLabel, monedaDelRecibo, round2 } from "@/lib/minimarket/recibo-formato";
 import { fmtBs, fmtUsd, NOTA_ENTREGA_TEXTO } from "./constants";
 
 // Paleta propia de la nota de entrega (distinta del presupuesto) para que el
@@ -119,6 +119,10 @@ export function NotaEntregaDocumento({
   logoPng: Buffer | null;
 }) {
   const { doc } = datos;
+  // Pago nacional → solo Bs con la tasa congelada de la venta; divisas o
+  // mixto → USD principal y Bs de referencia. Solo presentación.
+  const enBs = monedaDelRecibo(doc.pagos) === "VES";
+  const m = (valorUsd: number) => (enBs ? fmtBs(round2(valorUsd * doc.tasa)) : fmtUsd(valorUsd));
   const cantidadFmt = (n: number) =>
     Number.isInteger(n) ? String(n) : n.toLocaleString("es-VE", { maximumFractionDigits: 3 });
   const totalUnidades = doc.lineas.reduce((s, l) => s + l.cantidad, 0);
@@ -207,8 +211,8 @@ export function NotaEntregaDocumento({
               {l.descripcion}
               {l.exenta ? "  (Exento de IVA)" : ""}
             </Text>
-            <Text style={styles.colPrecio}>{fmtUsd(l.precioUsd)}</Text>
-            <Text style={styles.colTotal}>{fmtUsd(l.totalUsd)}</Text>
+            <Text style={styles.colPrecio}>{m(l.precioUsd)}</Text>
+            <Text style={styles.colTotal}>{m(l.totalUsd)}</Text>
           </View>
         ))}
 
@@ -229,28 +233,32 @@ export function NotaEntregaDocumento({
           <View style={styles.totalBox}>
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>Subtotal</Text>
-              <Text style={styles.totalValor}>{fmtUsd(doc.subtotalUsd)}</Text>
+              <Text style={styles.totalValor}>{m(doc.subtotalUsd)}</Text>
             </View>
             {doc.ivaUsd > 0 ? (
               <View style={styles.totalRow}>
                 <Text style={styles.totalLabel}>IVA</Text>
-                <Text style={styles.totalValor}>{fmtUsd(doc.ivaUsd)}</Text>
+                <Text style={styles.totalValor}>{m(doc.ivaUsd)}</Text>
               </View>
             ) : null}
             {doc.igtfUsd > 0 ? (
               <View style={styles.totalRow}>
                 <Text style={styles.totalLabel}>IGTF (3 %)</Text>
-                <Text style={styles.totalValor}>{fmtUsd(doc.igtfUsd)}</Text>
+                <Text style={styles.totalValor}>{m(doc.igtfUsd)}</Text>
               </View>
             ) : null}
             <View style={styles.totalGrandeRow}>
               <Text style={styles.totalValor}>TOTAL</Text>
-              <Text style={styles.totalGrande}>{fmtUsd(doc.totalUsd)}</Text>
+              <Text style={styles.totalGrande}>
+                {enBs ? fmtBs(doc.totalBs) : fmtUsd(doc.totalUsd)}
+              </Text>
             </View>
-            <View style={styles.totalRow}>
-              <Text style={styles.totalLabel}>Total en bolívares</Text>
-              <Text style={styles.totalValor}>{fmtBs(doc.totalBs)}</Text>
-            </View>
+            {!enBs ? (
+              <View style={styles.totalRow}>
+                <Text style={styles.totalLabel}>Total en bolívares</Text>
+                <Text style={styles.totalValor}>{fmtBs(doc.totalBs)}</Text>
+              </View>
+            ) : null}
             <View style={styles.totalRow}>
               <Text style={styles.totalLabel}>Tasa del día de la venta</Text>
               <Text style={styles.totalValor}>Bs {doc.tasa.toFixed(2)} / USD</Text>

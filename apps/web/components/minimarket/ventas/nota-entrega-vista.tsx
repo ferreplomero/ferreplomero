@@ -1,7 +1,13 @@
 import { LeyendaNoFiscal } from "@arkiteq/ui";
 import type { NotaEntregaDatos } from "@/lib/minimarket/nota-entrega/datos";
 import { NOTA_ENTREGA_TEXTO } from "@/lib/minimarket/pdf/constants";
-import { bs, metodoLabel, usd } from "@/lib/minimarket/recibo-formato";
+import {
+  bs,
+  fmtDocumento,
+  metodoLabel,
+  monedaDelRecibo,
+  usd,
+} from "@/lib/minimarket/recibo-formato";
 
 /**
  * Vista en pantalla de la nota de entrega — mismo contenido y paleta (ámbar)
@@ -12,6 +18,10 @@ export function NotaEntregaVista({ datos }: { datos: NotaEntregaDatos }) {
   const { doc } = datos;
   const totalUnidades = doc.lineas.reduce((s, l) => s + l.cantidad, 0);
   const direccionEntrega = doc.cliente?.direccion?.trim() || null;
+  // Pago nacional → solo Bs (tasa congelada de la venta); divisas/mixto → USD
+  // principal y Bs de referencia. Solo presentación.
+  const modo = monedaDelRecibo(doc.pagos);
+  const m = (valorUsd: number) => fmtDocumento(valorUsd, doc.tasa, modo);
 
   return (
     <div className="space-y-4 text-sm">
@@ -109,9 +119,9 @@ export function NotaEntregaVista({ datos }: { datos: NotaEntregaDatos }) {
                     ) : null}
                   </td>
                   <td className="text-muted-foreground px-2 py-1.5 text-right tabular-nums">
-                    {usd(l.precioUsd)}
+                    {m(l.precioUsd)}
                   </td>
-                  <td className="px-2 py-1.5 text-right tabular-nums">{usd(l.totalUsd)}</td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">{m(l.totalUsd)}</td>
                 </tr>
               ))}
             </tbody>
@@ -138,28 +148,32 @@ export function NotaEntregaVista({ datos }: { datos: NotaEntregaDatos }) {
         <div className="space-y-1 rounded-md bg-amber-50 p-3 dark:bg-amber-950/30">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Subtotal</span>
-            <span className="tabular-nums">{usd(doc.subtotalUsd)}</span>
+            <span className="tabular-nums">{m(doc.subtotalUsd)}</span>
           </div>
           {doc.ivaUsd > 0 ? (
             <div className="flex justify-between">
               <span className="text-muted-foreground">IVA</span>
-              <span className="tabular-nums">{usd(doc.ivaUsd)}</span>
+              <span className="tabular-nums">{m(doc.ivaUsd)}</span>
             </div>
           ) : null}
           {doc.igtfUsd > 0 ? (
             <div className="flex justify-between">
               <span className="text-muted-foreground">IGTF (3 %)</span>
-              <span className="tabular-nums">{usd(doc.igtfUsd)}</span>
+              <span className="tabular-nums">{m(doc.igtfUsd)}</span>
             </div>
           ) : null}
           <div className="flex justify-between border-t border-amber-700/40 pt-1.5 text-base font-semibold">
             <span>Total</span>
-            <span className="tabular-nums text-amber-700">{usd(doc.totalUsd)}</span>
+            <span className="tabular-nums text-amber-700">
+              {modo === "VES" ? bs(doc.totalBs) : usd(doc.totalUsd)}
+            </span>
           </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Total en Bs</span>
-            <span className="tabular-nums">{bs(doc.totalBs)}</span>
-          </div>
+          {modo !== "VES" ? (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Total en Bs</span>
+              <span className="tabular-nums">{bs(doc.totalBs)}</span>
+            </div>
+          ) : null}
           <p className="text-muted-foreground text-right text-xs tabular-nums">
             Tasa del día de la venta: Bs. {doc.tasa.toFixed(2)} / USD
           </p>

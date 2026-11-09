@@ -51,6 +51,35 @@ export function fmtDocumento(valorUsd: number, tasa: number, modo: ModoMoneda): 
   return modo === "VES" ? bs(montoDocumento(valorUsd, tasa, modo)) : usd(valorUsd);
 }
 
+/** Moneda de un método según el catálogo (`METODOS_PAGO`). Saldo a favor y
+ * fiado no son dinero en una moneda concreta → "credito". */
+export function monedaDeMetodo(metodo: string): "USD" | "VES" | "credito" {
+  if (metodo === "credito_cliente") return "credito";
+  return METODOS_PAGO.find((m) => m.value === metodo)?.moneda ?? "credito";
+}
+
+/** `monedaDelRecibo` para listados que solo conocen los métodos usados (sin
+ * la moneda congelada de cada pago): la deduce del catálogo. */
+export function monedaPorMetodos(metodos: readonly string[]): ModoMoneda {
+  return monedaDelRecibo(metodos.map((metodo) => ({ metodo, moneda: monedaDeMetodo(metodo) })));
+}
+
+/**
+ * Total ya congelado (USD y Bs de la venta, sin recalcular) tal como lo ve el
+ * CLIENTE en sus documentos: pago nacional → solo Bs (la tasa se imprime
+ * aparte, sin referencia en USD); pago en divisas o mixto → USD principal y
+ * Bs de referencia.
+ */
+export function totalesDocumento(
+  totalUsd: number,
+  totalBs: number,
+  modo: ModoMoneda,
+): { principal: string; referencia: string | null } {
+  return modo === "VES"
+    ? { principal: bs(totalBs), referencia: null }
+    : { principal: usd(totalUsd), referencia: bs(totalBs) };
+}
+
 // --- Formato del ticket térmico (`mm_config_negocio.parametros.formato_ticket`) ---
 
 export interface FormatoTicket {

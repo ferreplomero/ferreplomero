@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  bs,
   FORMATO_TICKET_DEFAULT,
+  monedaDeMetodo,
+  monedaPorMetodos,
+  totalesDocumento,
+  usd,
   metodoLabel,
   monedaDelRecibo,
   montoDocumento,
@@ -91,5 +96,33 @@ describe("montoDocumento / metodoLabel", () => {
   });
   it("etiqueta el saldo a favor", () => {
     expect(metodoLabel("credito_cliente")).toBe("Saldo a favor");
+  });
+});
+
+describe("moneda del documento por métodos (Bs nacional / USD divisas)", () => {
+  it("monedaDeMetodo usa el catálogo; saldo a favor y fiado no son moneda", () => {
+    expect(monedaDeMetodo("pago_movil")).toBe("VES");
+    expect(monedaDeMetodo("cashea")).toBe("VES");
+    expect(monedaDeMetodo("zelle")).toBe("USD");
+    expect(monedaDeMetodo("fiado")).toBe("credito");
+    expect(monedaDeMetodo("credito_cliente")).toBe("credito");
+    expect(monedaDeMetodo("desconocido")).toBe("credito");
+  });
+
+  it("monedaPorMetodos: nacional → VES, divisas → USD, mezcla → MIXTO", () => {
+    expect(monedaPorMetodos(["pago_movil", "transferencia"])).toBe("VES");
+    expect(monedaPorMetodos(["efectivo_usd"])).toBe("USD");
+    expect(monedaPorMetodos(["zelle", "efectivo_bs"])).toBe("MIXTO");
+    expect(monedaPorMetodos(["pago_movil", "credito_cliente"])).toBe("VES");
+    expect(monedaPorMetodos(["fiado"])).toBe("MIXTO");
+  });
+
+  it("totalesDocumento: en Bs no muestra USD; en USD/mixto el Bs es referencia", () => {
+    const ves = totalesDocumento(10, 3650, "VES");
+    expect(ves.principal).toBe(bs(3650));
+    expect(ves.referencia).toBeNull();
+    const u = totalesDocumento(10, 3650, "USD");
+    expect(u.principal).toBe(usd(10));
+    expect(u.referencia).toBe(bs(3650));
   });
 });

@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Button, Input, WhatsAppIcon } from "@arkiteq/ui";
 import { normalizarTelefonoWhatsapp } from "@/lib/telefono-wa";
+import { monedaDelRecibo } from "@/lib/minimarket/recibo-formato";
 
 interface Props {
   /** Link público de solo lectura del recibo (sin sesión). */
@@ -13,6 +14,11 @@ interface Props {
   negocioNombre: string;
   totalUsd: number;
   totalBs: number;
+  /** Pagos congelados de la venta: si todos fueron por medios nacionales el
+   * mensaje muestra solo Bs y la tasa (sin USD). */
+  pagos?: readonly { metodo: string; moneda: string }[];
+  /** Tasa congelada de la venta (Bs/USD). */
+  tasa?: number;
   /** Nombre del documento en los textos ("recibo" por defecto; la nota de
    * entrega reutiliza este mismo botón con "nota de entrega"). */
   documento?: string;
@@ -39,6 +45,8 @@ export function ReciboWhatsappBoton({
   negocioNombre,
   totalUsd,
   totalBs,
+  pagos = [],
+  tasa,
   documento = "recibo",
   articulo = "el",
 }: Props) {
@@ -59,7 +67,9 @@ export function ReciboWhatsappBoton({
 
     const mensaje = [
       `¡Hola${clienteNombre ? ` ${clienteNombre}` : ""}! Gracias por tu compra en ${negocioNombre}.`,
-      `Total: ${usd(totalUsd)} (${bs(totalBs)}).`,
+      monedaDelRecibo(pagos) === "VES"
+        ? `Total: ${bs(totalBs)}${tasa ? ` (tasa: Bs. ${tasa.toFixed(2)}/USD)` : ""}.`
+        : `Total: ${usd(totalUsd)} (${bs(totalBs)}).`,
       `Puedes ver tu ${documento} aquí: ${link}`,
     ].join(" ");
 

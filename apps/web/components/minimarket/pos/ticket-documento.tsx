@@ -4,6 +4,7 @@ import {
   bs,
   fmtDocumento,
   metodoLabel,
+  monedaDeMetodo,
   monedaDelRecibo,
   usd,
   type FormatoTicket,
@@ -124,8 +125,9 @@ export function TicketDocumento({
       <div className="text-[1.15em]">
         <Fila izq="TOTAL" der={modo === "VES" ? bs(doc.totalBs) : usd(doc.totalUsd)} fuerte />
       </div>
-      {modo === "MIXTO" ? <Fila izq="Total en Bs" der={bs(doc.totalBs)} /> : null}
-      {modo !== "USD" ? <p className="text-right">Tasa: Bs. {doc.tasa.toFixed(2)}/USD</p> : null}
+      {/* Pago nacional → solo Bs + tasa; divisas/mixto → Bs de referencia. */}
+      {modo !== "VES" ? <Fila izq="Ref. Bs" der={bs(doc.totalBs)} /> : null}
+      <p className="text-right">Tasa: Bs. {doc.tasa.toFixed(2)}/USD</p>
 
       {doc.pagos.length > 0 ? (
         <>
@@ -171,7 +173,11 @@ export function TicketDocumento({
           <Separador />
           <Fila
             izq="Devuelto al cliente"
-            der={`${usd(doc.devolucion.montoUsd)} (${bs(doc.devolucion.montoBs)})`}
+            der={
+              monedaDeMetodo(doc.devolucion.metodo) === "VES"
+                ? bs(doc.devolucion.montoBs)
+                : `${usd(doc.devolucion.montoUsd)} (${bs(doc.devolucion.montoBs)})`
+            }
             fuerte
           />
           <p>

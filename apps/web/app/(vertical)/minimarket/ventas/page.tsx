@@ -10,6 +10,7 @@ import { createClient } from "@/lib/supabase/server";
 import { listVentas } from "@/lib/minimarket/data/ventas";
 import { listClientes } from "@/lib/minimarket/data/clientes";
 import { METODOS_PAGO } from "@/lib/minimarket/constants";
+import { monedaPorMetodos } from "@/lib/minimarket/recibo-formato";
 import { getTimezoneNegocio } from "@/lib/minimarket/timezone";
 import { fechaEnTz, fmtFechaHora, hoyEnTz } from "@/lib/minimarket/date-format";
 import { BotonAnular } from "@/components/minimarket/ventas/boton-anular";
@@ -303,10 +304,12 @@ export default async function VentasHistorialPage({
                     </div>
                     <div className="shrink-0 text-right">
                       <p className="text-heading whitespace-nowrap font-medium tabular-nums">
-                        {usd(v.total_usd)}
+                        {monedaPorMetodos(v.metodos) === "VES" ? bs(v.total_bs) : usd(v.total_usd)}
                       </p>
                       <p className="text-muted-foreground whitespace-nowrap text-xs tabular-nums">
-                        {bs(v.total_bs)}
+                        {monedaPorMetodos(v.metodos) === "VES"
+                          ? `Ref. ${usd(v.total_usd)}`
+                          : bs(v.total_bs)}
                       </p>
                     </div>
                   </div>
@@ -413,9 +416,15 @@ export default async function VentasHistorialPage({
                         {v.igtf_usd > 0 ? usd(v.igtf_usd) : "—"}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-right">
-                        <p className="text-heading font-medium tabular-nums">{usd(v.total_usd)}</p>
+                        <p className="text-heading font-medium tabular-nums">
+                          {monedaPorMetodos(v.metodos) === "VES"
+                            ? bs(v.total_bs)
+                            : usd(v.total_usd)}
+                        </p>
                         <p className="text-muted-foreground text-xs tabular-nums">
-                          {bs(v.total_bs)}
+                          {monedaPorMetodos(v.metodos) === "VES"
+                            ? `Ref. ${usd(v.total_usd)}`
+                            : bs(v.total_bs)}
                         </p>
                       </td>
                       <td className="text-muted-foreground px-4 py-3 text-xs">

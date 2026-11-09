@@ -1,6 +1,14 @@
 import { LeyendaNoFiscal } from "@arkiteq/ui";
 import type { DocumentoFiscal } from "@/lib/minimarket/documento";
-import { bs, metodoLabel, usd } from "@/lib/minimarket/recibo-formato";
+import {
+  bs,
+  fmtDocumento,
+  metodoLabel,
+  monedaDeMetodo,
+  monedaDelRecibo,
+  totalesDocumento,
+  usd,
+} from "@/lib/minimarket/recibo-formato";
 
 /**
  * Contenido del recibo de venta (para pintar dentro de un `<Card>`). Compartido
@@ -8,6 +16,15 @@ import { bs, metodoLabel, usd } from "@/lib/minimarket/recibo-formato";
  * sin sesión (`/r/[ventaId]/[token]`) para que ambas se vean idénticas.
  */
 export function ReciboDocumento({ doc, fecha }: { doc: DocumentoFiscal; fecha: string }) {
+  // Pago nacional (Bs) → el documento se expresa SOLO en Bs con la tasa
+  // congelada de la venta (es lo que ve el cliente por el link); pago en
+  // divisas o mixto → USD principal y Bs de referencia. Solo presentación.
+  const modo = monedaDelRecibo(doc.pagos);
+  const m = (valorUsd: number) => fmtDocumento(valorUsd, doc.tasa, modo);
+  const total = totalesDocumento(doc.totalUsd, doc.totalBs, modo);
+  // Monto USD/Bs ya congelado: en Bs va solo; en USD lleva el Bs de referencia.
+  const par = (montoUsd: number, montoBs: number, enBs = modo === "VES") =>
+    enBs ? bs(montoBs) : `${usd(montoUsd)} (${bs(montoBs)})`;
   return (
     <>
       {doc.estado === "anulada" ? (
@@ -69,7 +86,7 @@ export function ReciboDocumento({ doc, fecha }: { doc: DocumentoFiscal; fecha: s
                 <td className="py-1 pr-2">
                   <span className="tabular-nums">{l.cantidad}×</span> {l.descripcion}
                   <div className="text-muted-foreground text-xs tabular-nums">
-                    {usd(l.precioUsd)} c/u
+                    {m(l.precioUsd)} c/u
                   </div>
                   {l.exenta ? (
                     <span className="bg-surface-2 text-muted-foreground mt-0.5 inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium">
@@ -82,7 +99,7 @@ export function ReciboDocumento({ doc, fecha }: { doc: DocumentoFiscal; fecha: s
                     </span>
                   ) : null}
                 </td>
-                <td className="py-1 text-right tabular-nums">{usd(l.totalUsd)}</td>
+                <td className="py-1 text-right tabular-nums">{m(l.totalUsd)}</td>
               </tr>
             ))}
           </tbody>
@@ -95,14 +112,14 @@ export function ReciboDocumento({ doc, fecha }: { doc: DocumentoFiscal; fecha: s
             <div className="flex justify-between gap-4">
               <span className="text-muted-foreground">Subtotal</span>
               <span className="whitespace-nowrap tabular-nums">
-                {usd(doc.subtotalUsd + (doc.descuentoUsd ?? 0))}
+                {m(doc.subtotalUsd + (doc.descuentoUsd ?? 0))}
               </span>
             </div>
             {(doc.descuentoUsd ?? 0) - (doc.descuentoDivisasUsd ?? 0) > 0.001 ? (
               <div className="flex justify-between gap-4">
                 <span className="text-muted-foreground">Descuento</span>
                 <span className="whitespace-nowrap tabular-nums">
-                  −{usd((doc.descuentoUsd ?? 0) - (doc.descuentoDivisasUsd ?? 0))}
+                  −{m((doc.descuentoUsd ?? 0) - (doc.descuentoDivisasUsd ?? 0))}
                 </span>
               </div>
             ) : null}
@@ -110,7 +127,7 @@ export function ReciboDocumento({ doc, fecha }: { doc: DocumentoFiscal; fecha: s
               <div className="flex justify-between gap-4">
                 <span className="text-muted-foreground">Descuento por pago en divisas</span>
                 <span className="whitespace-nowrap tabular-nums">
-                  −{usd(doc.descuentoDivisasUsd ?? 0)}
+                  −{m(doc.descuentoDivisasUsd ?? 0)}
                 </span>
               </div>
             ) : null}
@@ -118,29 +135,30 @@ export function ReciboDocumento({ doc, fecha }: { doc: DocumentoFiscal; fecha: s
         ) : (
           <div className="flex justify-between gap-4">
             <span className="text-muted-foreground">Subtotal</span>
-            <span className="whitespace-nowrap tabular-nums">{usd(doc.subtotalUsd)}</span>
+            <span className="whitespace-nowrap tabular-nums">{m(doc.subtotalUsd)}</span>
           </div>
         )}
         {doc.ivaUsd > 0 ? (
           <div className="flex justify-between">
             <span className="text-muted-foreground">IVA</span>
-            <span className="tabular-nums">{usd(doc.ivaUsd)}</span>
+            <span className="tabular-nums">{m(doc.ivaUsd)}</span>
           </div>
         ) : null}
         {doc.igtfUsd > 0 ? (
           <div className="flex justify-between">
             <span className="text-muted-foreground">IGTF (3 %)</span>
-            <span className="tabular-nums">{usd(doc.igtfUsd)}</span>
+            <span className="tabular-nums">{m(doc.igtfUsd)}</span>
           </div>
         ) : null}
         <div className="border-border flex justify-between border-t pt-1.5 text-base font-semibold">
           <span>Total</span>
-          <span className="tabular-nums">{usd(doc.totalUsd)}</span>
+          <span className="tabular-nums">{total.principal}</span>
         </div>
-        <div className="flex justify-between">
-          <span className="text-muted-foreground">Total en Bs</span>
-          <span className="tabular-nums">{bs(doc.totalBs)}</span>
-        </div>
+        {total.referencia ? (
+          <p className="text-muted-foreground text-right text-xs tabular-nums">
+            {total.referencia}
+          </p>
+        ) : null}
         <p className="text-muted-foreground pt-1 text-right text-xs tabular-nums">
           Tasa: Bs. {doc.tasa.toFixed(2)} / USD
         </p>
@@ -149,10 +167,15 @@ export function ReciboDocumento({ doc, fecha }: { doc: DocumentoFiscal; fecha: s
       {doc.pagos.length > 0 ? (
         <div className="border-border border-t pt-3 text-sm">
           {doc.pagos.map((p, i) => (
-            <div key={i} className="flex justify-between">
+            <div key={i} className="flex justify-between gap-4">
               <span className="text-muted-foreground">{metodoLabel(p.metodo)}</span>
-              <span className="tabular-nums">
+              <span className="text-right tabular-nums">
                 {p.moneda === "USD" ? usd(p.monto) : bs(p.monto)}
+                {doc.tasa > 0 && p.moneda === "USD" ? (
+                  <span className="text-muted-foreground block text-xs">
+                    {bs(p.monto * doc.tasa)}
+                  </span>
+                ) : null}
               </span>
             </div>
           ))}
@@ -167,16 +190,20 @@ export function ReciboDocumento({ doc, fecha }: { doc: DocumentoFiscal; fecha: s
         <div className="space-y-1.5 rounded-md border border-dashed border-emerald-300 bg-emerald-50 p-3 text-sm">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Pagó</span>
-            <span className="tabular-nums">{usd(doc.totalUsd + doc.excedente.montoUsd)}</span>
+            <span className="tabular-nums">
+              {modo === "VES"
+                ? bs(doc.totalBs + doc.excedente.montoBs)
+                : usd(doc.totalUsd + doc.excedente.montoUsd)}
+            </span>
           </div>
           <div className="flex justify-between">
             <span className="text-muted-foreground">Total de la venta</span>
-            <span className="tabular-nums">{usd(doc.totalUsd)}</span>
+            <span className="tabular-nums">{total.principal}</span>
           </div>
           <div className="flex justify-between font-medium text-emerald-700">
             <span>Excedente</span>
             <span className="tabular-nums">
-              {usd(doc.excedente.montoUsd)} ({bs(doc.excedente.montoBs)})
+              {par(doc.excedente.montoUsd, doc.excedente.montoBs)}
             </span>
           </div>
           <p className="border-t border-emerald-200 pt-1 text-xs text-emerald-700">
@@ -197,7 +224,11 @@ export function ReciboDocumento({ doc, fecha }: { doc: DocumentoFiscal; fecha: s
           <div className="flex justify-between font-medium text-red-700">
             <span>Devuelto al cliente</span>
             <span className="tabular-nums">
-              {usd(doc.devolucion.montoUsd)} ({bs(doc.devolucion.montoBs)})
+              {par(
+                doc.devolucion.montoUsd,
+                doc.devolucion.montoBs,
+                monedaDeMetodo(doc.devolucion.metodo) === "VES",
+              )}
             </span>
           </div>
           <p className="border-t border-red-200 pt-1 text-xs text-red-700">

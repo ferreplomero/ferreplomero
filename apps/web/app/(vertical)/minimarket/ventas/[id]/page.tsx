@@ -15,6 +15,7 @@ import {
   fmtFechaLarga as dfFechaLarga,
 } from "@/lib/minimarket/date-format";
 import { BotonAnular } from "@/components/minimarket/ventas/boton-anular";
+import { monedaDeMetodo, monedaDelRecibo, round2 } from "@/lib/minimarket/recibo-formato";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -66,6 +67,11 @@ export default async function VentaDetallePage({ params }: Props) {
     new Intl.NumberFormat(country.locale, { style: "currency", currency: "USD" }).format(n);
   const bs = (n: number) =>
     new Intl.NumberFormat(country.locale, { style: "currency", currency: "VES" }).format(n);
+  // Pago nacional → montos en Bs (tasa congelada de la venta) y USD solo de
+  // referencia; pago en divisas o mixto → USD principal. Solo presentación.
+  const modo = monedaDelRecibo(venta.pagos);
+  const m = (valorUsd: number) =>
+    modo === "VES" ? bs(round2(valorUsd * venta.tasa)) : usd(valorUsd);
   const fmtFecha = (s: string) => dfFechaLarga(s, tz);
   const fmtFechaHora = (s: string) => dfFechaHora(s, tz);
 
@@ -184,10 +190,10 @@ export default async function VentaDetallePage({ params }: Props) {
                     {l.cantidad}
                   </td>
                   <td className="text-muted-foreground px-4 py-3 text-right tabular-nums">
-                    {usd(l.precioUsd)}
+                    {m(l.precioUsd)}
                   </td>
                   <td className="text-heading px-4 py-3 text-right font-medium tabular-nums">
-                    {usd(l.totalUsd)}
+                    {m(l.totalUsd)}
                   </td>
                 </tr>
               ))}
@@ -207,13 +213,13 @@ export default async function VentaDetallePage({ params }: Props) {
             <>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Subtotal bruto</span>
-                <span className="tabular-nums">{usd(venta.subtotalUsd + venta.descuento_usd)}</span>
+                <span className="tabular-nums">{m(venta.subtotalUsd + venta.descuento_usd)}</span>
               </div>
               {venta.descuento_usd - venta.descuento_divisas_usd > 0.001 ? (
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Descuento</span>
                   <span className="text-success tabular-nums">
-                    −{usd(venta.descuento_usd - venta.descuento_divisas_usd)}
+                    −{m(venta.descuento_usd - venta.descuento_divisas_usd)}
                   </span>
                 </div>
               ) : null}
@@ -221,7 +227,7 @@ export default async function VentaDetallePage({ params }: Props) {
                 <div className="flex justify-between gap-3">
                   <span className="text-muted-foreground">Descuento por pago en divisas</span>
                   <span className="text-success whitespace-nowrap tabular-nums">
-                    −{usd(venta.descuento_divisas_usd)}
+                    −{m(venta.descuento_divisas_usd)}
                   </span>
                 </div>
               ) : null}
@@ -229,30 +235,36 @@ export default async function VentaDetallePage({ params }: Props) {
           ) : null}
           <div className="flex justify-between">
             <span className="text-muted-foreground">Subtotal</span>
-            <span className="tabular-nums">{usd(venta.subtotalUsd)}</span>
+            <span className="tabular-nums">{m(venta.subtotalUsd)}</span>
           </div>
           {(() => {
             const ivaUsd = Math.max(0, venta.totalUsd - venta.igtfUsd - venta.subtotalUsd);
             return ivaUsd > 0.001 ? (
               <div className="flex justify-between">
                 <span className="text-muted-foreground">IVA registrado</span>
-                <span className="tabular-nums">{usd(ivaUsd)}</span>
+                <span className="tabular-nums">{m(ivaUsd)}</span>
               </div>
             ) : null;
           })()}
           {venta.igtfUsd > 0 ? (
             <div className="flex justify-between">
               <span className="text-muted-foreground">IGTF cobrado (3 %)</span>
-              <span className="tabular-nums">{usd(venta.igtfUsd)}</span>
+              <span className="tabular-nums">{m(venta.igtfUsd)}</span>
             </div>
           ) : null}
           <div className="border-border flex justify-between border-t pt-2 text-base font-semibold">
-            <span>Total USD</span>
-            <span className="tabular-nums">{usd(venta.totalUsd)}</span>
+            <span>{modo === "VES" ? "Total Bs" : "Total USD"}</span>
+            <span className="tabular-nums">
+              {modo === "VES" ? bs(venta.totalBs) : usd(venta.totalUsd)}
+            </span>
           </div>
           <div className="flex justify-between">
-            <span className="text-muted-foreground">Total Bs</span>
-            <span className="tabular-nums">{bs(venta.totalBs)}</span>
+            <span className="text-muted-foreground">
+              {modo === "VES" ? "Ref. USD" : "Total Bs"}
+            </span>
+            <span className="text-muted-foreground tabular-nums">
+              {modo === "VES" ? usd(venta.totalUsd) : bs(venta.totalBs)}
+            </span>
           </div>
           <p className="text-muted-foreground border-border border-t pt-2 text-right text-xs tabular-nums">
             Tasa: Bs.&nbsp;{venta.tasa.toFixed(2)} / USD
@@ -266,10 +278,17 @@ export default async function VentaDetallePage({ params }: Props) {
           </p>
           {venta.pagos.length > 0 ? (
             venta.pagos.map((p, i) => (
-              <div key={i} className="flex justify-between">
+              <div key={i} className="flex justify-between gap-4">
                 <span className="text-muted-foreground">{metodoLabel(p.metodo)}</span>
-                <span className="tabular-nums">
+                <span className="text-right tabular-nums">
                   {p.moneda === "USD" ? usd(p.monto) : bs(p.monto)}
+                  {venta.tasa > 0 && (p.moneda === "USD" || p.moneda === "VES") ? (
+                    <span className="text-muted-foreground block text-xs">
+                      {p.moneda === "VES"
+                        ? `Ref. ${usd(p.monto / venta.tasa)}`
+                        : bs(p.monto * venta.tasa)}
+                    </span>
+                  ) : null}
                 </span>
               </div>
             ))
@@ -370,7 +389,16 @@ export default async function VentaDetallePage({ params }: Props) {
                       </span>
                     </div>
                     <div className="text-right">
-                      <p className="text-heading tabular-nums">{usd(a.monto_usd)}</p>
+                      {monedaDeMetodo(a.metodo) === "VES" && a.monto_bs !== null ? (
+                        <>
+                          <p className="text-heading tabular-nums">{bs(a.monto_bs)}</p>
+                          <p className="text-muted-foreground text-xs tabular-nums">
+                            Ref. {usd(a.monto_usd)}
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-heading tabular-nums">{usd(a.monto_usd)}</p>
+                      )}
                       {a.igtf_usd > 0 ? (
                         <p className="text-muted-foreground text-xs tabular-nums">
                           IGTF: {usd(a.igtf_usd)}
@@ -398,10 +426,14 @@ export default async function VentaDetallePage({ params }: Props) {
             <div className="rounded-lg bg-red-50 p-3">
               <p className="text-muted-foreground text-xs">Monto devuelto</p>
               <p className="text-danger font-display mt-0.5 font-semibold tabular-nums">
-                {usd(venta.devolucion.montoUsd)}
+                {monedaDeMetodo(venta.devolucion.metodo) === "VES"
+                  ? bs(venta.devolucion.montoBs)
+                  : usd(venta.devolucion.montoUsd)}
               </p>
               <p className="text-muted-foreground text-xs tabular-nums">
-                {bs(venta.devolucion.montoBs)}
+                {monedaDeMetodo(venta.devolucion.metodo) === "VES"
+                  ? `Ref. ${usd(venta.devolucion.montoUsd)}`
+                  : bs(venta.devolucion.montoBs)}
               </p>
             </div>
             <div className="bg-surface-2 rounded-lg p-3">

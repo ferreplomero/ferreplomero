@@ -8,6 +8,7 @@ import { getSessionContext } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getRecibosDelDia } from "@/lib/minimarket/data/ventas";
 import { METODOS_PAGO } from "@/lib/minimarket/constants";
+import { monedaPorMetodos } from "@/lib/minimarket/recibo-formato";
 import { getTimezoneNegocio } from "@/lib/minimarket/timezone";
 import { fmtHora, hoyEnTz } from "@/lib/minimarket/date-format";
 
@@ -103,9 +104,13 @@ export default async function RecibosDelDiaPage() {
                 {/* Totales */}
                 <div className="shrink-0 text-right">
                   <p className="text-heading font-display font-semibold tabular-nums">
-                    {usd(v.total_usd)}
+                    {monedaPorMetodos(v.metodos) === "VES" ? bs(v.total_bs) : usd(v.total_usd)}
                   </p>
-                  <p className="text-muted-foreground text-xs tabular-nums">{bs(v.total_bs)}</p>
+                  <p className="text-muted-foreground text-xs tabular-nums">
+                    {monedaPorMetodos(v.metodos) === "VES"
+                      ? `Ref. ${usd(v.total_usd)}`
+                      : bs(v.total_bs)}
+                  </p>
                 </div>
 
                 {/* Acciones */}

@@ -5,7 +5,13 @@ import {
   vueltoEstimado,
   type PedidoDocumento,
 } from "@/lib/minimarket/pedidos/documento";
-import { bs, metodoLabel, usd } from "@/lib/minimarket/recibo-formato";
+import {
+  bs,
+  fmtDocumento,
+  metodoLabel,
+  monedaPorMetodos,
+  usd,
+} from "@/lib/minimarket/recibo-formato";
 
 const ESTADO_CLASES: Record<PedidoDocumento["estado"], string> = {
   pendiente: "border-amber-300 bg-amber-50 text-amber-800",
@@ -23,6 +29,10 @@ const ESTADO_CLASES: Record<PedidoDocumento["estado"], string> = {
  */
 export function PedidoReciboDocumento({ doc, fecha }: { doc: PedidoDocumento; fecha: string }) {
   const vuelto = vueltoEstimado(doc);
+  // Medio de pago nacional → solo Bs con la tasa del pedido; en divisas → USD
+  // principal y Bs de referencia. Solo presentación.
+  const modo = monedaPorMetodos([doc.metodo]);
+  const m = (valorUsd: number) => fmtDocumento(valorUsd, doc.tasa, modo);
   return (
     <div className="space-y-4 bg-white p-5 text-gray-900">
       <header className="space-y-0.5 text-center">
@@ -76,9 +86,9 @@ export function PedidoReciboDocumento({ doc, fecha }: { doc: PedidoDocumento; fe
               <p className="truncate">
                 <span className="tabular-nums">{l.cantidad}×</span> {l.nombre}
               </p>
-              <p className="text-xs tabular-nums text-gray-500">{usd(l.precioUsd)} c/u</p>
+              <p className="text-xs tabular-nums text-gray-500">{m(l.precioUsd)} c/u</p>
             </div>
-            <span className="tabular-nums">{usd(l.totalUsd)}</span>
+            <span className="tabular-nums">{m(l.totalUsd)}</span>
           </li>
         ))}
       </ul>
@@ -86,28 +96,32 @@ export function PedidoReciboDocumento({ doc, fecha }: { doc: PedidoDocumento; fe
       <div className="space-y-1 text-sm">
         <div className="flex justify-between">
           <span className="text-gray-500">Subtotal</span>
-          <span className="tabular-nums">{usd(doc.subtotalUsd)}</span>
+          <span className="tabular-nums">{m(doc.subtotalUsd)}</span>
         </div>
         {doc.ivaUsd > 0 ? (
           <div className="flex justify-between">
             <span className="text-gray-500">IVA</span>
-            <span className="tabular-nums">{usd(doc.ivaUsd)}</span>
+            <span className="tabular-nums">{m(doc.ivaUsd)}</span>
           </div>
         ) : null}
         {doc.igtfUsd > 0 ? (
           <div className="flex justify-between">
             <span className="text-gray-500">IGTF (3 %)</span>
-            <span className="tabular-nums">{usd(doc.igtfUsd)}</span>
+            <span className="tabular-nums">{m(doc.igtfUsd)}</span>
           </div>
         ) : null}
         <div className="flex justify-between border-t border-gray-200 pt-1.5 text-base font-semibold">
           <span>Total</span>
-          <span className="tabular-nums">{usd(doc.totalUsd)}</span>
+          <span className="tabular-nums">
+            {modo === "VES" ? bs(doc.totalBs) : usd(doc.totalUsd)}
+          </span>
         </div>
-        <div className="flex justify-between">
-          <span className="text-gray-500">Total en Bs</span>
-          <span className="tabular-nums">{bs(doc.totalBs)}</span>
-        </div>
+        {modo !== "VES" ? (
+          <div className="flex justify-between">
+            <span className="text-gray-500">Total en Bs</span>
+            <span className="tabular-nums">{bs(doc.totalBs)}</span>
+          </div>
+        ) : null}
         <p className="text-right text-xs tabular-nums text-gray-500">
           Tasa: Bs. {doc.tasa.toFixed(2)} / USD
         </p>
