@@ -27,7 +27,13 @@ import {
   esMetodoVueltoDigital,
   METODO_CUENTA_LABEL,
 } from "@/lib/minimarket/bancos";
-import { esEfectivo, subtotalNetoGravado, subtotalNetoSujetoIgtf } from "@/lib/minimarket/pos-calc";
+import {
+  esEfectivo,
+  productoCausaIgtf,
+  productoPagaIva,
+  subtotalNetoGravado,
+  subtotalNetoSujetoIgtf,
+} from "@/lib/minimarket/pos-calc";
 import { getSesionAbierta } from "@/lib/minimarket/data/caja";
 import { listCuentasBancarias } from "@/lib/minimarket/data/bancos";
 import type { MmCreditoClienteTipo, MmCuentaBancaria, MmMetodoPago } from "@arkiteq/db";
@@ -578,17 +584,17 @@ export async function registrarVenta(input: VentaInput): Promise<VentaResult> {
           ? `Precio del presupuesto ${presupuestoVenta.numero}`
           : null);
       const total = redondear(precioUnitario * item.cantidad);
-      // Override puntual de IVA/IGTF de esta línea, SOLO para esta venta —
-      // nunca toca `mm_productos`. `undefined` = usa el estado guardado del
-      // producto, igual que siempre. Lo que se resuelva aquí queda congelado
-      // en `mm_ventas_items.impuesto_id`/`aplica_igtf` de esta venta.
-      const aplicaIva = item.iva_override ?? prod.impuesto_id !== "exento";
+      // IVA e IGTF los decide SOLO Configuración (y el interruptor de toda la
+      // venta): toda línea es gravada y sujeta a IGTF. Se ignoran la ficha del
+      // producto y cualquier `iva_override`/`igtf_override` que mande un POS
+      // viejo en caché. Queda congelado en `mm_ventas_items` de esta venta.
+      const aplicaIva = productoPagaIva(prod.impuesto_id);
       const impuestoIdEfectivo = aplicaIva
         ? prod.impuesto_id === "exento"
           ? "iva"
           : prod.impuesto_id
         : "exento";
-      const aplicaIgtfLinea = item.igtf_override ?? prod.aplica_igtf;
+      const aplicaIgtfLinea = productoCausaIgtf(prod.aplica_igtf);
       return {
         producto_id: prod.id,
         descripcion: prod.nombre,

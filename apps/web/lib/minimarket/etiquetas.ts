@@ -2,11 +2,13 @@
  * Etiquetas de precio para pegar en los productos (Inventario → Etiquetas).
  *
  * Solo LEEN datos: no tocan precios, stock ni dinero. El precio de un
- * producto (`mm_productos.precio_usd`) está guardado SIN IVA; el IVA solo se
- * suma si el producto no es exento, con el % de `parametros.iva_pct` del
- * negocio — mismo criterio que el POS (`pos-calc.ts`). El precio en Bs es el
- * precio en USD por la tasa vigente, igual que en la lista del inventario.
+ * producto (`mm_productos.precio_usd`) está guardado SIN IVA; el IVA se suma
+ * a todo producto con el % de `parametros.iva_pct` del negocio (lo decide
+ * Configuración, no la ficha) — mismo criterio que el POS (`pos-calc.ts`). El
+ * precio en Bs es el precio en USD por la tasa vigente.
  */
+
+import { productoPagaIva } from "@/lib/minimarket/pos-calc";
 
 export type TamanoEtiqueta = "pequena" | "mediana" | "grande";
 export type MonedaEtiqueta = "bs" | "usd" | "ambas";
@@ -91,7 +93,7 @@ export interface PrecioEtiqueta {
 
 /** Precio que lleva la etiqueta según las opciones elegidas. */
 export function precioEtiqueta(input: PrecioEtiquetaInput): PrecioEtiqueta {
-  const exento = input.impuestoId === "exento";
+  const exento = !productoPagaIva(input.impuestoId);
   const base = Number.isFinite(input.precioUsd) ? input.precioUsd : 0;
   const factor = input.conIva && !exento && input.ivaPct > 0 ? 1 + input.ivaPct / 100 : 1;
   const usd = redondear(base * factor);

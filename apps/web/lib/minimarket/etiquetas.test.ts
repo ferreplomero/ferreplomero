@@ -21,7 +21,7 @@ describe("precioEtiqueta", () => {
     ).toEqual({ usd: 15, bs: 13152, exento: false });
   });
 
-  it("un producto exento no suma IVA aunque se pida con IVA", () => {
+  it("el IVA lo decide Configuración: un producto marcado exento igual suma IVA", () => {
     expect(
       precioEtiqueta({
         precioUsd: 25,
@@ -30,7 +30,7 @@ describe("precioEtiqueta", () => {
         conIva: true,
         tasa: 876.8,
       }),
-    ).toEqual({ usd: 25, bs: 21920, exento: true });
+    ).toEqual({ usd: 29, bs: 25427.2, exento: false });
   });
 
   it("sin tasa no hay precio en Bs", () => {

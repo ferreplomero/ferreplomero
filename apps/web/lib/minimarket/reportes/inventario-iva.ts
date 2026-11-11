@@ -8,7 +8,7 @@
  * REFERENCIAL, aunque el negocio tenga el IVA desactivado en Configuración
  * (decisión del usuario); los exentos quedan en 0.
  */
-import { esLineaExenta } from "@/lib/minimarket/pos-calc";
+import { productoPagaIva } from "@/lib/minimarket/pos-calc";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -28,7 +28,7 @@ export function preciosConIva(
   ivaPct: number,
   tasa: number | null,
 ): PreciosIva {
-  const gravado = !esLineaExenta(impuestoId) && ivaPct > 0;
+  const gravado = productoPagaIva(impuestoId) && ivaPct > 0;
   const sinIvaUsd = r2(precioSinIvaUsd);
   const ivaUsd = gravado ? r2((precioSinIvaUsd * ivaPct) / 100) : 0;
   const conIvaUsd = r2(sinIvaUsd + ivaUsd);
@@ -51,6 +51,6 @@ export function ivaDeValor(
   impuestoId: string | null | undefined,
   ivaPct: number,
 ): number {
-  if (esLineaExenta(impuestoId) || ivaPct <= 0) return 0;
+  if (!productoPagaIva(impuestoId) || ivaPct <= 0) return 0;
   return r2((valorSinIvaUsd * ivaPct) / 100);
 }

@@ -87,7 +87,7 @@ describe("calcularPedidoPublico", () => {
     expect(pos.vuelto).toBe(0);
   });
 
-  it("IVA solo sobre lo gravado y IGTF con efectivo USD en el local", () => {
+  it("IVA de Configuración sobre TODO (aunque el producto esté marcado exento) e IGTF con efectivo USD", () => {
     const r = calcularPedidoPublico({
       items: [
         { producto_id: "harina", cantidad: 4 },
@@ -100,9 +100,9 @@ describe("calcularPedidoPublico", () => {
     });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.ivaUsd).toBe(0.8); // 16 % de 5,00 gravado; el arroz es exento
+    expect(r.ivaUsd).toBe(1.14); // 16 % de 7,10: el IVA lo decide Configuración, no la ficha
     expect(r.igtfUsd).toBeGreaterThan(0);
-    expect(r.totalUsd).toBe(Math.round((7.1 + 0.8 + r.igtfUsd) * 100) / 100);
+    expect(r.totalUsd).toBe(Math.round((7.1 + 1.14 + r.igtfUsd) * 100) / 100);
   });
 
   it("IGTF desactivado en el negocio: Zelle no suma IGTF", () => {

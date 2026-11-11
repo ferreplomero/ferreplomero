@@ -4,6 +4,8 @@ import {
   calcularExcedenteBs,
   calcularMontoSaldo,
   computeCobro,
+  productoCausaIgtf,
+  productoPagaIva,
   recalcularPagosPorTasa,
   subtotalNetoGravado,
   subtotalNetoSujetoIgtf,
@@ -1041,5 +1043,36 @@ describe("recalcularPagosPorTasa — incluirDivisas (cambio de total por descuen
     expect(recalcularPagosPorTasa(aMano, 13.28, TASA, false, true, 16, 13.28, 13.28, true)).toBe(
       aMano,
     );
+  });
+});
+
+describe("IVA e IGTF los decide SOLO Configuración (no la ficha del producto)", () => {
+  it("todo producto paga IVA y causa IGTF, aunque esté marcado exento / sin IGTF", () => {
+    expect(productoPagaIva("exento")).toBe(true);
+    expect(productoPagaIva("iva")).toBe(true);
+    expect(productoCausaIgtf(false)).toBe(true);
+  });
+
+  it("caso real: producto de Bs 901,62 (USD 1,00 a 901,62) → IVA 16 % = Bs 144,26; al 10 % = Bs 90,16", () => {
+    const tasa = 901.62;
+    const lineas = [{ totalUsd: 1, impuestoId: productoPagaIva("exento") ? "iva" : "exento" }];
+    const base = subtotalNetoGravado(lineas, 0);
+    const iva16 = Math.round(base * 16) / 100;
+    const iva10 = Math.round(base * 10) / 100;
+    expect(Math.round(iva16 * tasa * 100) / 100).toBe(144.26);
+    expect(Math.round(iva10 * tasa * 100) / 100).toBe(90.16);
+    const r = computeCobro({
+      pagos: [{ metodo: "tarjeta", monto: "1045.88" }],
+      subtotalNeto: 1,
+      tasa,
+      cantidadLineas: 1,
+      clienteId: null,
+      igtfActivo: false,
+      ivaActivo: true,
+      ivaPct: 16,
+      subtotalGravado: base,
+    });
+    expect(r.ivaUsd).toBe(0.16);
+    expect(r.totalUsd).toBe(1.16);
   });
 });

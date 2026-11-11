@@ -103,7 +103,24 @@ export function esEfectivo(metodo: MmMetodoPago): boolean {
   return metodo === "efectivo_bs" || metodo === "efectivo_usd";
 }
 
-/** ¿Esta línea NO paga IVA? (el producto tiene `impuesto_id = "exento"`). */
+/**
+ * ¿El producto paga IVA? SIEMPRE sí: el IVA lo decide SOLO Configuración
+ * (`parametros.iva_activo` / `iva_pct`), nunca la ficha del producto. Su
+ * `impuesto_id` se conserva en la base pero ya no influye en ningún cálculo.
+ */
+export function productoPagaIva(_impuestoId?: string | null): boolean {
+  return true;
+}
+
+/**
+ * ¿El producto causa IGTF al pagarse en divisa? SIEMPRE sí: el IGTF lo decide
+ * SOLO Configuración (`parametros.igtf_activo`), nunca `mm_productos.aplica_igtf`.
+ */
+export function productoCausaIgtf(_aplicaIgtf?: boolean | null): boolean {
+  return true;
+}
+
+/** ¿Esta línea (ya resuelta para la venta) NO paga IVA? (`impuesto_id = "exento"`). */
 export function esLineaExenta(impuestoId: string | null | undefined): boolean {
   return impuestoId === "exento";
 }

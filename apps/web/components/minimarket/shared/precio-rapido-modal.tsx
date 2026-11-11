@@ -4,7 +4,7 @@ import * as React from "react";
 import Image from "next/image";
 import { ImageIcon } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@arkiteq/ui";
-import { esLineaExenta } from "@/lib/minimarket/pos-calc";
+import { productoPagaIva } from "@/lib/minimarket/pos-calc";
 
 /** Datos mínimos que necesita el modal — cualquier producto del catálogo los tiene. */
 export interface ProductoParaPrecioRapido {
@@ -71,7 +71,7 @@ export function PrecioRapidoModal({
     [locale],
   );
 
-  const exento = producto ? esLineaExenta(producto.impuesto_id) : false;
+  const exento = producto ? !productoPagaIva(producto.impuesto_id) : false;
   const precioSinIvaUsd = producto ? Number(producto.precio_usd) : 0;
   // Alícuota de referencia: la configurada; si no hay una válida, la general (16%).
   const pctReferencia = ivaPct > 0 ? ivaPct : 16;

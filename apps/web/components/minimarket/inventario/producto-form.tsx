@@ -1063,42 +1063,25 @@ export function ProductoForm({
           </div>
         </div>
 
-        {/* Impuesto + IGTF */}
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="impuesto_id">Impuesto aplicable</Label>
-            <select
-              id="impuesto_id"
-              name="impuesto_id"
-              defaultValue={producto?.impuesto_id ?? impuestoIdDefault}
-              className={SELECT_CLASS}
-            >
-              {impuestos.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-            {state.fieldErrors?.impuesto_id ? (
-              <p className="text-danger text-xs">{state.fieldErrors.impuesto_id}</p>
-            ) : null}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="aplica_igtf">IGTF en divisa</Label>
-            <label className="border-border flex h-10 cursor-pointer items-center gap-2 rounded-md border px-3 text-sm">
-              <input
-                id="aplica_igtf"
-                name="aplica_igtf"
-                type="checkbox"
-                value="1"
-                defaultChecked={producto ? producto.aplica_igtf : aplicaIgtfDefault}
-                className="size-4 accent-[var(--brand-500)]"
-              />
-              Aplica IGTF al pagar en divisa
-            </label>
-            <p className="text-muted-foreground text-xs">Efectivo USD o Zelle (3% configurable).</p>
-          </div>
-        </div>
+        {/* Impuestos: IVA e IGTF los decide SOLO Configuración, no el producto.
+            Se conservan los valores guardados (ocultos) para no alterarlos. */}
+        <input
+          type="hidden"
+          name="impuesto_id"
+          value={
+            impuestos.some((t) => t.id === (producto?.impuesto_id ?? impuestoIdDefault))
+              ? (producto?.impuesto_id ?? impuestoIdDefault)
+              : impuestoIdDefault
+          }
+        />
+        <input
+          type="hidden"
+          name="aplica_igtf"
+          value={(producto ? producto.aplica_igtf : aplicaIgtfDefault) ? "1" : "0"}
+        />
+        <p className="text-muted-foreground border-border rounded-md border px-3 py-2 text-xs">
+          El IVA y el IGTF los aplica el sistema a todos los productos según Configuración.
+        </p>
 
         {/* Proveedor + estado */}
         <div className="grid gap-4 sm:grid-cols-2">

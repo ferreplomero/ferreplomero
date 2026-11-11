@@ -16,6 +16,8 @@ import type { MmMetodoPago } from "@arkiteq/db";
 import {
   calcularMontoSaldo,
   computeCobro,
+  productoCausaIgtf,
+  productoPagaIva,
   subtotalNetoGravado,
   subtotalNetoSujetoIgtf,
 } from "@/lib/minimarket/pos-calc";
@@ -126,7 +128,7 @@ export function calcularPedidoPublico(params: {
       cantidad,
       precioUsd: precio,
       totalUsd: round2(precio * cantidad),
-      exenta: p.impuesto_id === "exento",
+      exenta: !productoPagaIva(p.impuesto_id),
     });
   }
   if (primerError) return { ok: false, error: primerError, faltantes };
@@ -139,7 +141,7 @@ export function calcularPedidoPublico(params: {
   const subtotalSujetoIgtf = subtotalNetoSujetoIgtf(
     lineas.map((l) => ({
       totalUsd: l.totalUsd,
-      aplicaIgtf: productos.get(l.producto_id)?.aplica_igtf ?? true,
+      aplicaIgtf: productoCausaIgtf(productos.get(l.producto_id)?.aplica_igtf),
     })),
     0,
   );

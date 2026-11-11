@@ -62,7 +62,8 @@ import {
   calcularExcedenteBs,
   calcularMontoSaldo,
   computeCobro,
-  esLineaExenta,
+  productoCausaIgtf,
+  productoPagaIva,
   recalcularPagosPorTasa,
   subtotalNetoGravado,
   subtotalNetoSujetoIgtf,
@@ -220,21 +221,21 @@ function precioUnitarioLinea(l: LineaCarrito): number {
   return l.precioAjustadoUsd ?? Number(l.producto.precio_usd);
 }
 
-/** ¿Esta línea lleva IVA en ESTA venta? Override puntual si existe, si no el
- * estado guardado del producto. */
+/** ¿Esta línea lleva IVA? SIEMPRE: el IVA lo decide solo Configuración (y el
+ * interruptor de toda la venta en el cobro). Se ignoran la ficha del producto
+ * y cualquier `ivaOverride` viejo de un carrito "en espera". */
 function lineaAplicaIva(l: LineaCarrito): boolean {
-  return l.ivaOverride ?? !esLineaExenta(l.producto.impuesto_id);
+  return productoPagaIva(l.producto.impuesto_id);
 }
 
-/** ¿Esta línea causa IGTF en ESTA venta? Override puntual si existe, si no el
- * estado guardado del producto. */
+/** ¿Esta línea causa IGTF? SIEMPRE: lo decide solo Configuración (y el
+ * interruptor de toda la venta). Se ignoran producto y `igtfOverride` viejos. */
 function lineaAplicaIgtf(l: LineaCarrito): boolean {
-  return l.igtfOverride ?? l.producto.aplica_igtf;
+  return productoCausaIgtf(l.producto.aplica_igtf);
 }
 
-/** `impuesto_id` EFECTIVO de una línea para esta venta (folding del override
- * de IVA, si lo hay) — se usa como entrada de `subtotalNetoGravado`, que solo
- * distingue `"exento"` de cualquier otro valor, sin tocar esa función. */
+/** `impuesto_id` EFECTIVO de una línea para esta venta — entrada de
+ * `subtotalNetoGravado` (que solo distingue `"exento"` de lo demás). */
 function impuestoIdEfectivoLinea(l: LineaCarrito): string {
   if (!lineaAplicaIva(l)) return "exento";
   return l.producto.impuesto_id === "exento" ? "iva" : l.producto.impuesto_id;
@@ -1099,28 +1100,6 @@ export function PosCliente({
       const cantidad = ya.cantidad + delta;
       if (cantidad <= 0) next.delete(id);
       else next.set(id, { ...ya, cantidad });
-      return next;
-    });
-  }
-  /** Alterna el IVA de ESTA línea SOLO para esta venta (no toca el producto en
-   * Inventario ni la config del negocio) — arranca del estado guardado del
-   * producto y, al tocarlo, pasa al valor contrario explícito. */
-  function alternarIvaLinea(id: string) {
-    setCarrito((prev) => {
-      const next = new Map(prev);
-      const ya = next.get(id);
-      if (!ya) return prev;
-      next.set(id, { ...ya, ivaOverride: !lineaAplicaIva(ya) });
-      return next;
-    });
-  }
-  /** Análogo a `alternarIvaLinea` pero para IGTF. */
-  function alternarIgtfLinea(id: string) {
-    setCarrito((prev) => {
-      const next = new Map(prev);
-      const ya = next.get(id);
-      if (!ya) return prev;
-      next.set(id, { ...ya, igtfOverride: !lineaAplicaIgtf(ya) });
       return next;
     });
   }
@@ -2684,32 +2663,6 @@ export function PosCliente({
                         {money(Number(l.producto.precio_usd), "USD")} c/u
                       </p>
                     )}
-                    <div className="mt-0.5 flex flex-wrap items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => alternarIvaLinea(l.producto.id)}
-                        aria-pressed={lineaAplicaIva(l)}
-                        className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
-                          lineaAplicaIva(l)
-                            ? "bg-surface-2 text-muted-foreground"
-                            : "bg-amber-100 text-amber-700"
-                        }`}
-                      >
-                        {lineaAplicaIva(l) ? "IVA" : "Sin IVA (esta venta)"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => alternarIgtfLinea(l.producto.id)}
-                        aria-pressed={lineaAplicaIgtf(l)}
-                        className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
-                          lineaAplicaIgtf(l)
-                            ? "bg-surface-2 text-muted-foreground"
-                            : "bg-amber-100 text-amber-700"
-                        }`}
-                      >
-                        {lineaAplicaIgtf(l) ? "IGTF" : "Sin IGTF (esta venta)"}
-                      </button>
-                    </div>
                   </div>
                   <div className="flex items-center gap-1">
                     {puedeAjustarPrecio ? (
@@ -3313,32 +3266,6 @@ export function PosCliente({
                                   {money(Number(l.producto.precio_usd), "USD")} c/u
                                 </p>
                               )}
-                              <div className="mt-0.5 flex flex-wrap items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() => alternarIvaLinea(l.producto.id)}
-                                  aria-pressed={lineaAplicaIva(l)}
-                                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
-                                    lineaAplicaIva(l)
-                                      ? "bg-surface-2 text-muted-foreground"
-                                      : "bg-amber-100 text-amber-700"
-                                  }`}
-                                >
-                                  {lineaAplicaIva(l) ? "IVA" : "Sin IVA (esta venta)"}
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => alternarIgtfLinea(l.producto.id)}
-                                  aria-pressed={lineaAplicaIgtf(l)}
-                                  className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
-                                    lineaAplicaIgtf(l)
-                                      ? "bg-surface-2 text-muted-foreground"
-                                      : "bg-amber-100 text-amber-700"
-                                  }`}
-                                >
-                                  {lineaAplicaIgtf(l) ? "IGTF" : "Sin IGTF (esta venta)"}
-                                </button>
-                              </div>
                             </div>
                             <div className="flex items-center gap-1">
                               {puedeAjustarPrecio ? (

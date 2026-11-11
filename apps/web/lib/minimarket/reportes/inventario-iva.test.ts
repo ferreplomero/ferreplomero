@@ -15,13 +15,13 @@ describe("preciosConIva", () => {
     });
   });
 
-  it("producto exento: IVA 0 y precio con IVA = sin IVA", () => {
+  it("marcado exento: igual paga el IVA de Configuración", () => {
     const p = preciosConIva(3.5, "exento", 16, 800);
-    expect(p.gravado).toBe(false);
-    expect(p.ivaUsd).toBe(0);
-    expect(p.conIvaUsd).toBe(3.5);
-    expect(p.ivaBs).toBe(0);
-    expect(p.conIvaBs).toBe(2800);
+    expect(p.gravado).toBe(true);
+    expect(p.ivaUsd).toBe(0.56);
+    expect(p.conIvaUsd).toBe(4.06);
+    expect(p.ivaBs).toBe(448);
+    expect(p.conIvaBs).toBe(3248);
   });
 
   it("redondea el IVA a 2 decimales como la venta", () => {
@@ -42,7 +42,7 @@ describe("ivaDeValor", () => {
     expect(ivaDeValor(3.87, "iva", 16)).toBe(0.62);
   });
 
-  it("exento → 0", () => {
-    expect(ivaDeValor(100, "exento", 16)).toBe(0);
+  it("marcado exento → igual paga el IVA de Configuración", () => {
+    expect(ivaDeValor(100, "exento", 16)).toBe(16);
   });
 });
