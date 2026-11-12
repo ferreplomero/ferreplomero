@@ -95,6 +95,16 @@ export interface CobroResultado {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /**
+ * Redondeo a céntimos "half-up" exacto para montos en Bs. `round2` falla en
+ * medios céntimos por el punto flotante: 18,50 $ × 1003,49 = 18.564,565 Bs y
+ * `Math.round(1856456.4999999998)` da 18.564,56 en vez de 18.564,57 (lo que
+ * da Postgres `round(…, 2)`). `toPrecision(12)` absorbe ese ruido.
+ */
+export function redondearBs(n: number): number {
+  return Math.round(Number((n * 100).toPrecision(12))) / 100;
+}
+
+/**
  * IVA en Bs calculado sobre el subtotal gravado YA convertido a Bs:
  * `round2(round2(gravadoUsd × tasa) × pct)`. NUNCA convertir el IVA en USD
  * redondeado a centavos (`round2(gravado × pct) × tasa`): con la tasa cerca
@@ -109,7 +119,7 @@ export function ivaBsDe(
   ivaPct: number,
 ): number {
   if (!ivaActivo || !(ivaPct > 0) || !(tasa > 0)) return 0;
-  return round2((round2(subtotalGravadoUsd * tasa) * ivaPct) / 100);
+  return redondearBs((redondearBs(subtotalGravadoUsd * tasa) * ivaPct) / 100);
 }
 
 /**
@@ -127,8 +137,10 @@ export function totalBsVenta(input: {
   const { subtotalNeto, igtf, tasa, ivaActivo, ivaPct } = input;
   if (!(tasa > 0)) return 0;
   const gravado = input.subtotalGravado ?? subtotalNeto;
-  return round2(
-    round2(subtotalNeto * tasa) + ivaBsDe(gravado, tasa, ivaActivo, ivaPct) + round2(igtf * tasa),
+  return redondearBs(
+    redondearBs(subtotalNeto * tasa) +
+      ivaBsDe(gravado, tasa, ivaActivo, ivaPct) +
+      redondearBs(igtf * tasa),
   );
 }
 

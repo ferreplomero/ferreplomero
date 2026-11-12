@@ -8,6 +8,7 @@ import {
   productoCausaIgtf,
   productoPagaIva,
   recalcularPagosPorTasa,
+  redondearBs,
   subtotalNetoGravado,
   subtotalNetoSujetoIgtf,
   totalBsVenta,
@@ -1146,5 +1147,13 @@ describe("IVA en Bs sobre el subtotal en Bs (venta R-000168 y otras reales)", ()
         ivaPct: 16,
       }),
     ).toBe(9000 + 576);
+  });
+
+  it("medio céntimo redondea hacia arriba como Postgres (18,50 $ × 1003,49)", () => {
+    // 18.564,565 Bs → 18.564,57 (Math.round en flotante daba 18.564,56)
+    expect(redondearBs(18.5 * 1003.49)).toBe(18564.57);
+    expect(
+      totalBsVenta({ subtotalNeto: 18.5, igtf: 0, tasa: 1003.49, ivaActivo: true, ivaPct: 16 }),
+    ).toBe(21534.9);
   });
 });

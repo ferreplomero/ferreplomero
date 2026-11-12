@@ -6,6 +6,7 @@
  * muestre exactamente lo mismo que el recibo carta.
  */
 import { METODOS_PAGO } from "@/lib/minimarket/constants";
+import { redondearBs } from "@/lib/minimarket/pos-calc";
 
 export function metodoLabel(metodo: string): string {
   // "Saldo a favor" no vive en METODOS_PAGO (no es un método que el negocio
@@ -43,7 +44,8 @@ export function monedaDelRecibo(pagos: readonly { metodo: string; moneda: string
 /** Monto USD expresado en la moneda del documento: en modo Bs se convierte con
  * la tasa CONGELADA de la venta; en USD/mixto queda en USD. */
 export function montoDocumento(valorUsd: number, tasa: number, modo: ModoMoneda): number {
-  return modo === "VES" ? round2(valorUsd * tasa) : valorUsd;
+  // Mismo redondeo exacto que el total en Bs (`totalBsVenta`), para que cuadren.
+  return modo === "VES" ? redondearBs(valorUsd * tasa) : valorUsd;
 }
 
 /** Formatea un monto USD en la moneda del documento. */

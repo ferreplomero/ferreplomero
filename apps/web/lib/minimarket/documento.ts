@@ -3,6 +3,7 @@
  * fiscal SENIAT serán implementaciones del MISMO modelo, para no incrustar
  * lógica fiscal en la UI. La UI del recibo solo consume `DocumentoFiscal`.
  */
+import { redondearBs } from "@/lib/minimarket/pos-calc";
 import type { MmDocTipo, MmMetodoPago, MmPagoVenta, MmVenta, MmVentaItem } from "@arkiteq/db";
 
 export interface LineaDocumento {
@@ -212,7 +213,7 @@ export function ivaBsDocumento(
   tasa: number,
 ): number {
   if (!(tasa > 0)) return 0;
-  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const r2 = redondearBs;
   const iva = r2(totalBs - r2(subtotalUsd * tasa) - r2(igtfUsd * tasa));
   return iva >= 0.01 ? iva : 0;
 }

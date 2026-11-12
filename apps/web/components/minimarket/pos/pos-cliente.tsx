@@ -65,6 +65,7 @@ import {
   productoCausaIgtf,
   productoPagaIva,
   recalcularPagosPorTasa,
+  redondearBs,
   subtotalNetoGravado,
   subtotalNetoSujetoIgtf,
 } from "@/lib/minimarket/pos-calc";
@@ -3945,7 +3946,7 @@ export function PosCliente({
                       {money(subtotalBruto, "USD")}
                       {tasaCobro ? (
                         <span className="text-muted-foreground block text-xs tabular-nums">
-                          {money(Math.round(subtotalBruto * tasaCobro * 100) / 100, "VES")}
+                          {money(redondearBs(subtotalBruto * tasaCobro), "VES")}
                         </span>
                       ) : null}
                     </span>

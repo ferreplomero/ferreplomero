@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { IGTF_RATE } from "@/lib/minimarket/constants";
-import { computeCobro } from "@/lib/minimarket/pos-calc";
+import { computeCobro, redondearBs } from "@/lib/minimarket/pos-calc";
 import { calcularPedidoPublico, type ProductoParaPedido } from "./calculo";
 
 function prod(p: Partial<ProductoParaPedido> & { id: string }): ProductoParaPedido {
@@ -49,9 +49,10 @@ describe("calcularPedidoPublico", () => {
     expect(r.subtotalUsd).toBe(3.75);
     expect(r.igtfUsd).toBe(0);
     expect(r.totalUsd).toBe(3.75);
-    // Mismo redondeo que registrarVenta: round2(3.75 × 772.54) = 2897.02 (2897.0249… en coma flotante).
-    expect(r.totalBs).toBe(Math.round(3.75 * TASA * 100) / 100);
-    expect(r.totalBs).toBe(2897.02);
+    // Mismo redondeo que registrarVenta (`totalBsVenta`): 3.75 × 772.54 = 2897,025
+    // exacto → 2897,03 half-up como Postgres (el flotante daba 2897,0249… → ,02).
+    expect(r.totalBs).toBe(redondearBs(3.75 * TASA));
+    expect(r.totalBs).toBe(2897.03);
   });
 
   it("con Zelle: el IGTF coincide al céntimo con el que registrarVenta calcula para ese pago", () => {
