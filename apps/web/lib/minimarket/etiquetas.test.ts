@@ -76,7 +76,7 @@ describe("precioEtiqueta — IVA en Bs sobre el precio en Bs", () => {
   it("9,14 $ a 904,45 con IVA → Bs 9.589,34 (no 10,60 × tasa = 9.587,17)", () => {
     const r = precioEtiqueta({
       precioUsd: 9.14,
-      impuestoId: null,
+      impuestoId: "iva",
       ivaPct: 16,
       conIva: true,
       tasa: 904.45,
