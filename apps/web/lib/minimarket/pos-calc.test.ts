@@ -4,11 +4,13 @@ import {
   calcularExcedenteBs,
   calcularMontoSaldo,
   computeCobro,
+  ivaBsDe,
   productoCausaIgtf,
   productoPagaIva,
   recalcularPagosPorTasa,
   subtotalNetoGravado,
   subtotalNetoSujetoIgtf,
+  totalBsVenta,
 } from "./pos-calc";
 
 // Tasa de referencia para los casos: 623.02 Bs/USD (ejemplo real del usuario).
@@ -1074,5 +1076,75 @@ describe("IVA e IGTF los decide SOLO Configuración (no la ficha del producto)",
     });
     expect(r.ivaUsd).toBe(0.16);
     expect(r.totalUsd).toBe(1.16);
+  });
+});
+
+describe("IVA en Bs sobre el subtotal en Bs (venta R-000168 y otras reales)", () => {
+  const casos = [
+    // [subtotal USD, tasa, IVA Bs correcto, total Bs correcto]
+    { sub: 9.14, tasa: 904.45, ivaBs: 1322.67, totalBs: 9589.34 }, // R-000168
+    { sub: 4.97, tasa: 901.62, ivaBs: 716.97, totalBs: 5198.02 }, // R-000166
+    { sub: 0.97, tasa: 901.62, ivaBs: 139.93, totalBs: 1014.5 }, // R-000163
+    { sub: 1, tasa: 901.62, ivaBs: 144.26, totalBs: 1045.88 }, // R-000167 (ya cuadraba)
+  ];
+
+  for (const c of casos) {
+    it(`${c.sub} $ a ${c.tasa}: IVA ${c.ivaBs} Bs y total ${c.totalBs} Bs`, () => {
+      expect(ivaBsDe(c.sub, c.tasa, true, 16)).toBe(c.ivaBs);
+      expect(
+        totalBsVenta({ subtotalNeto: c.sub, igtf: 0, tasa: c.tasa, ivaActivo: true, ivaPct: 16 }),
+      ).toBe(c.totalBs);
+
+      // El POS sugiere exactamente el total en Bs para un pago en Bs…
+      const pagos = [{ key: "p1", metodo: "pago_movil" as const, monto: "" }];
+      const sugerido = calcularMontoSaldo(pagos, "p1", c.sub, c.tasa, true, true, 16);
+      expect(sugerido).toBe(c.totalBs.toFixed(2));
+      const monto = sugerido ?? "";
+
+      // …con ese pago la venta queda cubierta, sin excedente falso.
+      const r = computeCobro({
+        pagos: [{ metodo: "pago_movil", monto }],
+        subtotalNeto: c.sub,
+        tasa: c.tasa,
+        cantidadLineas: 1,
+        clienteId: null,
+        ivaActivo: true,
+        ivaPct: 16,
+      });
+      expect(r.ivaBs).toBe(c.ivaBs);
+      expect(r.totalBs).toBe(c.totalBs);
+      expect(r.puedeConfirmar).toBe(true);
+      expect(r.vuelto).toBe(0);
+      expect(calcularExcedenteBs([{ metodo: "pago_movil", monto }], c.tasa, r.totalBs)).toBe(0);
+      // El lado USD no cambia: IVA redondeado a centavos de $.
+      expect(r.totalUsd).toBe(Math.round((c.sub + Math.round(c.sub * 16) / 100) * 100) / 100);
+    });
+  }
+
+  it("sin IVA: total Bs = subtotal × tasa (como siempre)", () => {
+    expect(ivaBsDe(9.14, 904.45, false, 16)).toBe(0);
+    expect(
+      totalBsVenta({ subtotalNeto: 9.14, igtf: 0, tasa: 904.45, ivaActivo: false, ivaPct: 16 }),
+    ).toBe(8266.67);
+  });
+
+  it("con IGTF: total Bs suma el IGTF convertido aparte", () => {
+    // 10 $ + IVA 16 % sobre 9045 Bs = 1447,20 + IGTF 0,35 $ = 316,58 Bs
+    expect(
+      totalBsVenta({ subtotalNeto: 10, igtf: 0.35, tasa: 904.5, ivaActivo: true, ivaPct: 16 }),
+    ).toBe(9045 + 1447.2 + 316.58);
+  });
+
+  it("IVA solo sobre lo gravado", () => {
+    expect(
+      totalBsVenta({
+        subtotalNeto: 10,
+        subtotalGravado: 4,
+        igtf: 0,
+        tasa: 900,
+        ivaActivo: true,
+        ivaPct: 16,
+      }),
+    ).toBe(9000 + 576);
   });
 });

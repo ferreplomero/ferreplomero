@@ -104,6 +104,10 @@ export interface DocumentoFiscal {
   /** IVA cobrado en la venta, derivado (total − IGTF − subtotal). 0 si el
    * negocio no cobra IVA o si todo lo vendido estaba exento. */
   ivaUsd: number;
+  /** IVA en Bs tal como se cobró: `total_bs − subtotal Bs − IGTF Bs` (ver
+   * `ivaBsDocumento`). Es lo que muestran los documentos en modo Bs — NO
+   * `ivaUsd × tasa`, que se desvía varios Bs por el redondeo a centavos de $. */
+  ivaBs: number;
   totalUsd: number;
   totalBs: number;
   tasa: number;
@@ -180,6 +184,12 @@ export function construirRecibo(
         (Number(venta.total_usd) - Number(venta.igtf_usd) - Number(venta.subtotal_usd)) * 100,
       ) / 100,
     ),
+    ivaBs: ivaBsDocumento(
+      Number(venta.total_bs),
+      Number(venta.subtotal_usd),
+      Number(venta.igtf_usd),
+      Number(venta.tasa_usada),
+    ),
     totalUsd: Number(venta.total_usd),
     totalBs: Number(venta.total_bs),
     tasa: Number(venta.tasa_usada),
@@ -188,4 +198,21 @@ export function construirRecibo(
     estado,
     devolucion,
   };
+}
+
+/**
+ * IVA en Bs de una venta registrada, derivado de lo congelado: total Bs −
+ * subtotal Bs − IGTF Bs. Así el documento siempre cuadra con el `total_bs`
+ * cobrado (también en ventas viejas). < 0,01 → 0 (venta sin IVA).
+ */
+export function ivaBsDocumento(
+  totalBs: number,
+  subtotalUsd: number,
+  igtfUsd: number,
+  tasa: number,
+): number {
+  if (!(tasa > 0)) return 0;
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const iva = r2(totalBs - r2(subtotalUsd * tasa) - r2(igtfUsd * tasa));
+  return iva >= 0.01 ? iva : 0;
 }

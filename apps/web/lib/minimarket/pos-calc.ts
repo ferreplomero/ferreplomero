@@ -60,6 +60,8 @@ export interface CobroResultado {
   igtf: number;
   /** IVA calculado sobre el subtotal neto (0 si ivaActivo=false). */
   ivaUsd: number;
+  /** IVA en Bs calculado sobre el subtotal gravado EN Bs (ver `ivaBsDe`). */
+  ivaBs: number;
   totalUsd: number;
   totalBs: number;
   /** Cubierto por pagos reales + fiado, en USD. */
@@ -91,6 +93,47 @@ export interface CobroResultado {
 }
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * IVA en Bs calculado sobre el subtotal gravado YA convertido a Bs:
+ * `round2(round2(gravadoUsd × tasa) × pct)`. NUNCA convertir el IVA en USD
+ * redondeado a centavos (`round2(gravado × pct) × tasa`): con la tasa cerca
+ * de 900 Bs/$ cada centavo de dólar son ~9 Bs y el IVA en Bs se desviaba hasta
+ * ±4,5 Bs del 16 % real del subtotal en Bs (venta R-000168: 9,14 $ a 904,45 →
+ * debía ser 1.322,67 y salía 1.320,50).
+ */
+export function ivaBsDe(
+  subtotalGravadoUsd: number,
+  tasa: number,
+  ivaActivo: boolean,
+  ivaPct: number,
+): number {
+  if (!ivaActivo || !(ivaPct > 0) || !(tasa > 0)) return 0;
+  return round2((round2(subtotalGravadoUsd * tasa) * ivaPct) / 100);
+}
+
+/**
+ * Total de la venta en Bs: subtotal Bs + IVA Bs (sobre la base en Bs) + IGTF Bs.
+ * Fuente única de `total_bs` (POS, venta offline y `registrarVenta`).
+ */
+export function totalBsVenta(input: {
+  subtotalNeto: number;
+  subtotalGravado?: number;
+  igtf: number;
+  tasa: number;
+  ivaActivo: boolean;
+  ivaPct: number;
+}): number {
+  const { subtotalNeto, igtf, tasa, ivaActivo, ivaPct } = input;
+  if (!(tasa > 0)) return 0;
+  const gravado = input.subtotalGravado ?? subtotalNeto;
+  return round2(
+    round2(subtotalNeto * tasa) + ivaBsDe(gravado, tasa, ivaActivo, ivaPct) + round2(igtf * tasa),
+  );
+}
+
+/** `Math.ceil` a centavos tolerante al ruido de punto flotante (9589.340000001 → 9589.34). */
+const ceil2 = (n: number) => Math.ceil(Math.round(n * 1e6) / 1e4) / 100;
 
 /** ¿En qué moneda se ingresa el monto de este método? */
 function esMonedaDivisa(metodo: MmMetodoPago): boolean {
@@ -255,6 +298,7 @@ export function computeCobro(input: CobroInput): CobroResultado {
     return {
       igtf: 0,
       ivaUsd,
+      ivaBs: 0,
       totalUsd: round2(subtotalNeto + ivaUsd),
       totalBs: 0,
       cubierto: 0,
@@ -288,7 +332,9 @@ export function computeCobro(input: CobroInput): CobroResultado {
 
   igtf = round2(igtf);
   const totalUsd = round2(subtotalNeto + igtf + ivaUsd);
-  const totalBs = round2(totalUsd * tasa);
+  // IVA y total en Bs sobre la base en Bs (ver `ivaBsDe`), no `totalUsd × tasa`.
+  const ivaBs = ivaBsDe(subtotalGravado, tasa, ivaActivo, ivaPct);
+  const totalBs = totalBsVenta({ subtotalNeto, subtotalGravado, igtf, tasa, ivaActivo, ivaPct });
 
   // Monto cubierto con saldo a favor del cliente — a diferencia de fiado, NO
   // se auto-completa si la fila queda en blanco: siempre es un monto
@@ -339,6 +385,7 @@ export function computeCobro(input: CobroInput): CobroResultado {
   return {
     igtf,
     ivaUsd,
+    ivaBs,
     totalUsd,
     totalBs,
     cubierto,
@@ -457,17 +504,24 @@ export function calcularMontoSaldo(
 
   let igtfOtros = 0;
   let cubiertoOtros = 0;
+  // Lo mismo, pero en Bs: los pagos en Bs se suman en su moneda nativa (sin
+  // ida y vuelta Bs→USD→Bs) para sugerir el saldo exacto en Bs.
+  let cubiertoOtrosBs = 0;
   for (const p of pagos) {
     if (p.key === key) continue;
     if (p.metodo === "fiado" || p.metodo === "credito_cliente") {
       const num = parseFloat((p.monto ?? "").replace(",", "."));
-      if (Number.isFinite(num) && num > 0) cubiertoOtros += num;
+      if (Number.isFinite(num) && num > 0) {
+        cubiertoOtros += num;
+        cubiertoOtrosBs += num * tasa;
+      }
       continue;
     }
     const num = parseFloat(p.monto.replace(",", "."));
     if (!Number.isFinite(num) || num <= 0) continue;
     const usd = esMonedaDivisa(p.metodo) ? num : num / tasa;
     cubiertoOtros += usd;
+    cubiertoOtrosBs += esMonedaDivisa(p.metodo) ? num * tasa : num;
     if (igtfActivo && causaIgtf(p.metodo)) igtfOtros += usd * igtfRateEfectiva;
   }
   igtfOtros = round2(igtfOtros);
@@ -488,9 +542,18 @@ export function calcularMontoSaldo(
     const pUsd = montoMinimoQueCubreConIgtf(faltanteBase, igtfRateEfectiva);
     return esDivisa ? pUsd.toFixed(2) : (Math.ceil(pUsd * tasa * 100) / 100).toFixed(2);
   }
-  return esDivisa
-    ? (Math.ceil(faltanteBase * 100) / 100).toFixed(2)
-    : (Math.ceil(faltanteBase * tasa * 100) / 100).toFixed(2);
+  if (esDivisa) return (Math.ceil(faltanteBase * 100) / 100).toFixed(2);
+  // Método en Bs: el saldo sale del total en Bs con el IVA sobre la base en
+  // Bs (`totalBsVenta`), no de `faltanteBase × tasa` (IVA redondeado en USD).
+  const totalBs = totalBsVenta({
+    subtotalNeto,
+    subtotalGravado,
+    igtf: igtfOtros,
+    tasa,
+    ivaActivo,
+    ivaPct,
+  });
+  return ceil2(Math.max(0, totalBs - cubiertoOtrosBs)).toFixed(2);
 }
 
 /**

@@ -33,6 +33,7 @@ import {
   productoPagaIva,
   subtotalNetoGravado,
   subtotalNetoSujetoIgtf,
+  totalBsVenta,
 } from "@/lib/minimarket/pos-calc";
 import { getSesionAbierta } from "@/lib/minimarket/data/caja";
 import { listCuentasBancarias } from "@/lib/minimarket/data/bancos";
@@ -664,7 +665,15 @@ export async function registrarVenta(input: VentaInput): Promise<VentaResult> {
     );
     const ivaTotal = ivaActivo && ivaPct > 0 ? redondear((subtotalGravado * ivaPct) / 100) : 0;
     const totalUsd = redondear(subtotalNeto + igtf + ivaTotal);
-    const totalBs = redondear(totalUsd * tasaUsada);
+    // IVA en Bs sobre el subtotal en Bs (no `totalUsd × tasa`): ver `ivaBsDe`.
+    const totalBs = totalBsVenta({
+      subtotalNeto,
+      subtotalGravado,
+      igtf,
+      tasa: tasaUsada,
+      ivaActivo,
+      ivaPct,
+    });
 
     // Verifica que los pagos cubran el total (con tolerancia de 0.02 por redondeo).
     const sumPagosUsd = redondear(

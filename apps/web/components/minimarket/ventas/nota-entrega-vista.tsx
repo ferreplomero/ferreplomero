@@ -153,7 +153,7 @@ export function NotaEntregaVista({ datos }: { datos: NotaEntregaDatos }) {
           {doc.ivaUsd > 0 ? (
             <div className="flex justify-between">
               <span className="text-muted-foreground">IVA</span>
-              <span className="tabular-nums">{m(doc.ivaUsd)}</span>
+              <span className="tabular-nums">{modo === "VES" ? bs(doc.ivaBs) : m(doc.ivaUsd)}</span>
             </div>
           ) : null}
           {doc.igtfUsd > 0 ? (

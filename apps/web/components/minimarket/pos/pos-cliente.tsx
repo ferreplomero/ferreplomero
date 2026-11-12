@@ -3985,7 +3985,7 @@ export function PosCliente({
                         {money(calcPagos.ivaUsd, "USD")}
                         {tasaCobro ? (
                           <span className="text-muted-foreground block text-xs tabular-nums">
-                            {money(Math.round(calcPagos.ivaUsd * tasaCobro * 100) / 100, "VES")}
+                            {money(calcPagos.ivaBs, "VES")}
                           </span>
                         ) : null}
                       </span>

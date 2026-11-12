@@ -8,6 +8,7 @@ import { getCountryConfig } from "@arkiteq/core";
 import { getSessionContext } from "@/lib/auth/session";
 import { createClient } from "@/lib/supabase/server";
 import { getVentaDetalle } from "@/lib/minimarket/data/ventas";
+import { ivaBsDocumento } from "@/lib/minimarket/documento";
 import { METODOS_PAGO } from "@/lib/minimarket/constants";
 import { getTimezoneNegocio } from "@/lib/minimarket/timezone";
 import {
@@ -242,7 +243,13 @@ export default async function VentaDetallePage({ params }: Props) {
             return ivaUsd > 0.001 ? (
               <div className="flex justify-between">
                 <span className="text-muted-foreground">IVA registrado</span>
-                <span className="tabular-nums">{m(ivaUsd)}</span>
+                <span className="tabular-nums">
+                  {modo === "VES"
+                    ? bs(
+                        ivaBsDocumento(venta.totalBs, venta.subtotalUsd, venta.igtfUsd, venta.tasa),
+                      )
+                    : m(ivaUsd)}
+                </span>
               </div>
             ) : null;
           })()}

@@ -120,7 +120,9 @@ export function TicketDocumento({
       ) : (
         <Fila izq="Subtotal" der={m(doc.subtotalUsd)} />
       )}
-      {doc.ivaUsd > 0 ? <Fila izq="IVA" der={m(doc.ivaUsd)} /> : null}
+      {doc.ivaUsd > 0 ? (
+        <Fila izq="IVA" der={modo === "VES" ? bs(doc.ivaBs) : m(doc.ivaUsd)} />
+      ) : null}
       {doc.igtfUsd > 0 ? <Fila izq="IGTF (3 %)" der={m(doc.igtfUsd)} /> : null}
       <div className="text-[1.15em]">
         <Fila izq="TOTAL" der={modo === "VES" ? bs(doc.totalBs) : usd(doc.totalUsd)} fuerte />
