@@ -4,7 +4,7 @@ import * as React from "react";
 import Image from "next/image";
 import { ImageIcon } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@arkiteq/ui";
-import { productoPagaIva } from "@/lib/minimarket/pos-calc";
+import { productoPagaIva, redondearBs, totalBsVenta } from "@/lib/minimarket/pos-calc";
 
 /** Datos mínimos que necesita el modal — cualquier producto del catálogo los tiene. */
 export interface ProductoParaPrecioRapido {
@@ -112,7 +112,9 @@ export function PrecioRapidoModal({
                     {money(precioSinIvaUsd, "USD")}
                   </p>
                   <p className="text-heading font-display text-3xl font-bold tabular-nums">
-                    {tasa ? money(precioSinIvaUsd * tasa, "VES") : "Sin tasa registrada"}
+                    {tasa
+                      ? money(redondearBs(precioSinIvaUsd * tasa), "VES")
+                      : "Sin tasa registrada"}
                   </p>
                 </div>
               ) : (
@@ -125,7 +127,7 @@ export function PrecioRapidoModal({
                       {money(precioSinIvaUsd, "USD")}
                     </p>
                     <p className="text-heading bg-surface-2 rounded-md px-1.5 py-1 text-lg font-bold tabular-nums">
-                      {tasa ? money(precioSinIvaUsd * tasa, "VES") : "—"}
+                      {tasa ? money(redondearBs(precioSinIvaUsd * tasa), "VES") : "—"}
                     </p>
                   </div>
                   <div className="space-y-1">
@@ -136,7 +138,18 @@ export function PrecioRapidoModal({
                       {money(precioConIvaUsd, "USD")}
                     </p>
                     <p className="text-accent-600 bg-accent-50 rounded-md px-1.5 py-1 text-lg font-bold tabular-nums">
-                      {tasa ? money(precioConIvaUsd * tasa, "VES") : "—"}
+                      {tasa
+                        ? money(
+                            totalBsVenta({
+                              subtotalNeto: precioSinIvaUsd,
+                              igtf: 0,
+                              tasa,
+                              ivaActivo: !exento,
+                              ivaPct: pctReferencia,
+                            }),
+                            "VES",
+                          )
+                        : "—"}
                     </p>
                   </div>
                 </div>

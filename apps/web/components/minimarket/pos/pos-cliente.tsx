@@ -58,6 +58,7 @@ import {
 import { METODOS_PAGO } from "@/lib/minimarket/constants";
 import { formatMaskedAmount, parseMaskedInput } from "@/lib/minimarket/currency-mask";
 import {
+  calcularCubiertoBs,
   calcularDescuentoDivisas,
   calcularExcedenteBs,
   calcularMontoSaldo,
@@ -68,6 +69,7 @@ import {
   redondearBs,
   subtotalNetoGravado,
   subtotalNetoSujetoIgtf,
+  totalBsVenta,
 } from "@/lib/minimarket/pos-calc";
 import { registrarVentaLocal } from "@/lib/minimarket/powersync/registrar-venta-local";
 import {
@@ -2932,9 +2934,7 @@ export function PosCliente({
                       {money(subtotalNetoCarrito, "USD")}
                     </span>
                     <span className="text-muted-foreground block whitespace-nowrap text-xs">
-                      {tasa
-                        ? money(Math.round(subtotalNetoCarrito * tasa * 100) / 100, "VES")
-                        : "—"}
+                      {tasa ? money(redondearBs(subtotalNetoCarrito * tasa), "VES") : "—"}
                     </span>
                   </dd>
                 </div>
@@ -2947,7 +2947,18 @@ export function PosCliente({
                       </span>
                       <span className="text-muted-foreground block whitespace-nowrap text-xs">
                         {tasa
-                          ? money(Math.round(totalConIvaCarrito * tasa * 100) / 100, "VES")
+                          ? money(
+                              // IVA en Bs sobre la base en Bs (no `totalConIvaCarrito × tasa`).
+                              totalBsVenta({
+                                subtotalNeto: subtotalNetoCarrito,
+                                subtotalGravado: subtotalGravadoCarrito,
+                                igtf: 0,
+                                tasa,
+                                ivaActivo: true,
+                                ivaPct,
+                              }),
+                              "VES",
+                            )
                           : "—"}
                       </span>
                     </dd>
@@ -4039,7 +4050,15 @@ export function PosCliente({
                       <p className="tabular-nums">{money(calcPagos.cubierto, "USD")}</p>
                       {tasaCobro && calcPagos.cubierto > 0.001 ? (
                         <p className="text-muted-foreground tabular-nums">
-                          {money(calcPagos.cubierto * tasaCobro, "VES")}
+                          {money(
+                            calcularCubiertoBs(
+                              pagos,
+                              tasaCobro,
+                              calcPagos.fiadoMonto,
+                              calcPagos.creditoMonto,
+                            ),
+                            "VES",
+                          )}
                         </p>
                       ) : null}
                     </div>

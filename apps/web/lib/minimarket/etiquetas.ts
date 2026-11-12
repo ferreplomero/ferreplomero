@@ -8,7 +8,7 @@
  * precio en Bs es el precio en USD por la tasa vigente.
  */
 
-import { productoPagaIva } from "@/lib/minimarket/pos-calc";
+import { productoPagaIva, totalBsVenta } from "@/lib/minimarket/pos-calc";
 
 export type TamanoEtiqueta = "pequena" | "mediana" | "grande";
 export type MonedaEtiqueta = "bs" | "usd" | "ambas";
@@ -95,9 +95,20 @@ export interface PrecioEtiqueta {
 export function precioEtiqueta(input: PrecioEtiquetaInput): PrecioEtiqueta {
   const exento = !productoPagaIva(input.impuestoId);
   const base = Number.isFinite(input.precioUsd) ? input.precioUsd : 0;
-  const factor = input.conIva && !exento && input.ivaPct > 0 ? 1 + input.ivaPct / 100 : 1;
+  const conIva = input.conIva && !exento && input.ivaPct > 0;
+  const factor = conIva ? 1 + input.ivaPct / 100 : 1;
   const usd = redondear(base * factor);
-  const bs = input.tasa && input.tasa > 0 ? redondear(usd * input.tasa) : null;
+  // En Bs el IVA va sobre el precio YA en Bs (`totalBsVenta`), no `usd × tasa`.
+  const bs =
+    input.tasa && input.tasa > 0
+      ? totalBsVenta({
+          subtotalNeto: base,
+          igtf: 0,
+          tasa: input.tasa,
+          ivaActivo: conIva,
+          ivaPct: input.ivaPct,
+        })
+      : null;
   return { usd, bs, exento };
 }
 

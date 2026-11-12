@@ -431,6 +431,21 @@ export function calcularExcedenteBs(
   fiadoMonto = 0,
   creditoMonto = 0,
 ): number {
+  const sumBs = calcularCubiertoBs(pagos, tasa, fiadoMonto, creditoMonto);
+  return Math.max(0, round2(sumBs - totalBs));
+}
+
+/**
+ * Lo cubierto expresado en Bs, sumando cada pago en su moneda nativa (los
+ * pagos en Bs tal cual; divisa, fiado y saldo a favor × tasa). Para mostrar
+ * "Cubierto" en Bs sin el desvío de `cubierto (USD redondeado) × tasa`.
+ */
+export function calcularCubiertoBs(
+  pagos: PagoCalcInput[],
+  tasa: number,
+  fiadoMonto = 0,
+  creditoMonto = 0,
+): number {
   let sumBs = round2(fiadoMonto * tasa) + round2(creditoMonto * tasa);
   for (const p of pagos) {
     if (p.metodo === "fiado" || p.metodo === "credito_cliente") continue;
@@ -438,7 +453,7 @@ export function calcularExcedenteBs(
     if (!Number.isFinite(num) || num <= 0) continue;
     sumBs += esMonedaDivisa(p.metodo) ? num * tasa : num;
   }
-  return Math.max(0, round2(sumBs - totalBs));
+  return round2(sumBs);
 }
 
 /** Una fila de pago que además recuerda si su monto lo puso el sistema para

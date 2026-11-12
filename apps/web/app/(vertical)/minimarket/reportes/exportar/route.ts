@@ -17,6 +17,7 @@ import { getTimezoneNegocio } from "@/lib/minimarket/timezone";
 import { fmtFechaHora, rangoLocalAUtc } from "@/lib/minimarket/date-format";
 import { agregarHoja, respuestaXlsx } from "@/lib/minimarket/reportes/excel-plantilla";
 import { ivaDeValor, preciosConIva } from "@/lib/minimarket/reportes/inventario-iva";
+import { totalBsVenta } from "@/lib/minimarket/pos-calc";
 import { corteInventario, resolverRangoReporte } from "@/lib/minimarket/reportes/rango";
 import { getTasaParaFecha } from "@/lib/minimarket/exchange-rate";
 
@@ -346,7 +347,15 @@ export async function GET(request: NextRequest) {
         valorSinIva,
         ivaStock,
         valorConIva,
-        valorConIvaBs: tasa ? r2(valorConIva * tasa) : null,
+        valorConIvaBs: tasa
+          ? totalBsVenta({
+              subtotalNeto: valorSinIva,
+              igtf: 0,
+              tasa,
+              ivaActivo: ivaStock > 0,
+              ivaPct,
+            })
+          : null,
       };
     });
     const sumar = (xs: number[]) => r2(xs.reduce((x, y) => x + y, 0));
@@ -430,7 +439,7 @@ export async function GET(request: NextRequest) {
         sumar(filas.map((f) => f.valorSinIva)),
         sumar(filas.map((f) => f.ivaStock)),
         totalConIva,
-        tasa ? r2(totalConIva * tasa) : null,
+        tasa ? sumar(filas.map((f) => f.valorConIvaBs ?? 0)) : null,
       ],
     });
 

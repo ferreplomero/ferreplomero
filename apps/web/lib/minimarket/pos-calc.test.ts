@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  calcularCubiertoBs,
   calcularDescuentoDivisas,
   calcularExcedenteBs,
   calcularMontoSaldo,
@@ -1155,5 +1156,13 @@ describe("IVA en Bs sobre el subtotal en Bs (venta R-000168 y otras reales)", ()
     expect(
       totalBsVenta({ subtotalNeto: 18.5, igtf: 0, tasa: 1003.49, ivaActivo: true, ivaPct: 16 }),
     ).toBe(21534.9);
+  });
+
+  it("cubierto en Bs suma cada pago en su moneda (no cubierto USD × tasa)", () => {
+    const pagos = [{ metodo: "tarjeta" as const, monto: "49121.77" }];
+    expect(calcularCubiertoBs(pagos, 904.45)).toBe(49121.77);
+    expect(calcularCubiertoBs([{ metodo: "efectivo_usd" as const, monto: "10" }], 904.45)).toBe(
+      9044.5,
+    );
   });
 });

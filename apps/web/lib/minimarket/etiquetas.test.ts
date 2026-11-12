@@ -71,3 +71,17 @@ describe("formato y leyendas", () => {
     expect(escalaNombreEtiqueta(largo, "pequena")).toBeGreaterThanOrEqual(0.6);
   });
 });
+
+describe("precioEtiqueta — IVA en Bs sobre el precio en Bs", () => {
+  it("9,14 $ a 904,45 con IVA → Bs 9.589,34 (no 10,60 × tasa = 9.587,17)", () => {
+    const r = precioEtiqueta({
+      precioUsd: 9.14,
+      impuestoId: null,
+      ivaPct: 16,
+      conIva: true,
+      tasa: 904.45,
+    });
+    expect(r.usd).toBe(10.6);
+    expect(r.bs).toBe(9589.34);
+  });
+});

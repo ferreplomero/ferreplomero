@@ -8,7 +8,7 @@
  * REFERENCIAL, aunque el negocio tenga el IVA desactivado en Configuración
  * (decisión del usuario); los exentos quedan en 0.
  */
-import { productoPagaIva } from "@/lib/minimarket/pos-calc";
+import { ivaBsDe, productoPagaIva, redondearBs } from "@/lib/minimarket/pos-calc";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -32,15 +32,19 @@ export function preciosConIva(
   const sinIvaUsd = r2(precioSinIvaUsd);
   const ivaUsd = gravado ? r2((precioSinIvaUsd * ivaPct) / 100) : 0;
   const conIvaUsd = r2(sinIvaUsd + ivaUsd);
-  const bs = (usd: number) => (tasa && tasa > 0 ? r2(usd * tasa) : null);
+  // En Bs el IVA se calcula sobre el precio YA convertido a Bs (`ivaBsDe`), no
+  // `ivaUsd × tasa` (el redondeo a centavos de $ desviaba hasta ±4,5 Bs).
+  const hayTasa = !!tasa && tasa > 0;
+  const sinIvaBs = hayTasa ? redondearBs(sinIvaUsd * tasa) : null;
+  const ivaBs = hayTasa ? ivaBsDe(sinIvaUsd, tasa, gravado, ivaPct) : null;
   return {
     gravado,
     sinIvaUsd,
     ivaUsd,
     conIvaUsd,
-    sinIvaBs: bs(sinIvaUsd),
-    ivaBs: bs(ivaUsd),
-    conIvaBs: bs(conIvaUsd),
+    sinIvaBs,
+    ivaBs,
+    conIvaBs: sinIvaBs !== null && ivaBs !== null ? redondearBs(sinIvaBs + ivaBs) : null,
   };
 }
 
