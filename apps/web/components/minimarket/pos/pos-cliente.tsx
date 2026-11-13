@@ -419,6 +419,12 @@ export function PosCliente({
   // Descuento
   const [descPct, setDescPct] = React.useState("");
   const [descMonto, setDescMonto] = React.useState("");
+  // Cuál de los dos campos manda (el último que el cajero editó): con
+  // "porcentaje" el monto se recalcula sobre el subtotal bruto vivo, así un
+  // 10 % sigue siendo 10 % si luego se agregan productos o cambian cantidades.
+  // Con "monto" manda el monto en USD (lo de siempre; también al restaurar una
+  // venta en espera o un presupuesto, donde el monto guardado es la verdad).
+  const [descTipo, setDescTipo] = React.useState<"porcentaje" | "monto">("monto");
 
   // Ventas en espera / borrador: `activeCartId` identifica el cobro que se está
   // armando AHORA en este dispositivo — se persiste en localStorage para que,
@@ -732,15 +738,65 @@ export function PosCliente({
   const lineaEditandoPrecio = precioEditandoId ? (carrito.get(precioEditandoId) ?? null) : null;
   const subtotalBruto = lineas.reduce((s, l) => s + precioUnitarioLinea(l) * l.cantidad, 0);
 
-  const descMontoNum = React.useMemo(() => {
-    const m = parseFloat(descMonto.replace(",", "."));
-    return Number.isFinite(m) && m >= 0 ? Math.min(m, subtotalBruto) : 0;
-  }, [descMonto, subtotalBruto]);
-
-  const descPctNum = React.useMemo(() => {
+  // Descuento general de TODA la venta, siempre sobre el subtotal (antes de
+  // impuestos): el IVA se calcula después sobre lo que queda.
+  const descPctEscrito = React.useMemo(() => {
     const p = parseFloat(descPct.replace(",", "."));
     return Number.isFinite(p) && p >= 0 ? Math.min(p, 100) : 0;
   }, [descPct]);
+
+  const descMontoNum = React.useMemo(() => {
+    if (descTipo === "porcentaje") {
+      return Math.round((descPctEscrito / 100) * subtotalBruto * 100) / 100;
+    }
+    const m = parseFloat(descMonto.replace(",", "."));
+    return Number.isFinite(m) && m >= 0 ? Math.min(m, subtotalBruto) : 0;
+  }, [descTipo, descPctEscrito, descMonto, subtotalBruto]);
+
+  const descPctNum =
+    descTipo === "porcentaje"
+      ? descPctEscrito
+      : subtotalBruto > 0
+        ? Math.round((descMontoNum / subtotalBruto) * 10000) / 100
+        : 0;
+
+  // Mantiene el texto del campo que NO manda alineado con el subtotal vivo,
+  // para que lo que se ve y lo que se guarda en "En espera" sea coherente.
+  React.useEffect(() => {
+    if (descTipo === "porcentaje") {
+      if (descPct.trim() === "") return;
+      const m = String(descMontoNum);
+      setDescMonto((prev) => (prev === m ? prev : m));
+    } else {
+      if (descMonto.trim() === "" || subtotalBruto <= 0) return;
+      const p = String(descPctNum);
+      setDescPct((prev) => (prev === p ? prev : p));
+    }
+  }, [descTipo, descPct, descMonto, descMontoNum, descPctNum, subtotalBruto]);
+
+  /** El cajero escribe el descuento en % (carrito o modal de cobro). */
+  function cambiarDescPct(valor: string) {
+    setDescTipo("porcentaje");
+    setDescPct(valor);
+    const p = parseFloat(valor.replace(",", "."));
+    setDescMonto(
+      Number.isFinite(p) && p >= 0
+        ? String(Math.round((Math.min(p, 100) / 100) * subtotalBruto * 100) / 100)
+        : "",
+    );
+  }
+
+  /** El cajero escribe el descuento como monto fijo en USD (sin IVA). */
+  function cambiarDescMonto(valor: string) {
+    setDescTipo("monto");
+    setDescMonto(valor);
+    const m = parseFloat(valor.replace(",", "."));
+    setDescPct(
+      Number.isFinite(m) && m >= 0 && subtotalBruto > 0
+        ? String(Math.round((Math.min(m, subtotalBruto) / subtotalBruto) * 10000) / 100)
+        : "",
+    );
+  }
 
   // Descuento del CARRITO (el de siempre) y lo que queda tras él: es lo que
   // muestra el panel del carrito y lo que se guarda en "En espera".
@@ -1506,11 +1562,17 @@ export function PosCliente({
   // reajustan las filas en USD que representan "el saldo" (el efectivo USD
   // pre-llenado): el total bajó y el cliente paga menos. Un monto en USD
   // tecleado a mano (el billete que entregó) sigue sin tocarse.
+  // Lo mismo si cambia el descuento general de la venta (editable ahora
+  // también desde el modal de cobro).
   const descDivisasPrevRef = React.useRef(0);
+  const descCarritoPrevRef = React.useRef(0);
   React.useEffect(() => {
     if (!tasaCobro) return;
-    const cambioDescuentoDivisas = descDivisasPrevRef.current !== descuentoDivisasUsd;
+    const cambioDescuentoDivisas =
+      descDivisasPrevRef.current !== descuentoDivisasUsd ||
+      descCarritoPrevRef.current !== descuentoCarritoUsd;
     descDivisasPrevRef.current = descuentoDivisasUsd;
+    descCarritoPrevRef.current = descuentoCarritoUsd;
     setPagos((prev) =>
       recalcularPagosPorTasa(
         prev,
@@ -1533,6 +1595,7 @@ export function PosCliente({
     subtotalGravado,
     subtotalSujetoIgtf,
     descuentoDivisasUsd,
+    descuentoCarritoUsd,
   ]);
 
   // ── Ventas en espera / borrador ──────────────────────────────────────────
@@ -1602,6 +1665,7 @@ export function PosCliente({
           : [{ key: newKey(), metodo: metodoPorDefecto, monto: "" }],
       );
       setClienteId(row.cliente_id ?? "");
+      setDescTipo("monto");
       setDescMonto(row.descuento_monto ?? "");
       setDescPct(row.descuento_pct ?? "");
       if (esTipoTasa(row.tasa_tipo)) setTasaCobroTipo(row.tasa_tipo);
@@ -1921,6 +1985,7 @@ export function PosCliente({
   function iniciarCarritoNuevo() {
     setCarrito(new Map());
     setPagos([{ key: newKey(), metodo: metodoPorDefecto, monto: "" }]);
+    setDescTipo("monto");
     setDescMonto("");
     setDescPct("");
     setClienteId("");
@@ -2746,15 +2811,7 @@ export function PosCliente({
                     min="0"
                     max="100"
                     value={descPct}
-                    onChange={(e) => {
-                      setDescPct(e.target.value);
-                      const p = parseFloat(e.target.value);
-                      if (Number.isFinite(p) && p >= 0) {
-                        setDescMonto(
-                          String(Math.round((Math.min(p, 100) / 100) * subtotalBruto * 100) / 100),
-                        );
-                      }
-                    }}
+                    onChange={(e) => cambiarDescPct(e.target.value)}
                     placeholder="0"
                     className="pl-7 text-sm"
                     aria-label="Descuento en porcentaje"
@@ -2770,17 +2827,7 @@ export function PosCliente({
                     step="0.01"
                     min="0"
                     value={descMonto}
-                    onChange={(e) => {
-                      setDescMonto(e.target.value);
-                      const m = parseFloat(e.target.value);
-                      if (Number.isFinite(m) && m >= 0 && subtotalBruto > 0) {
-                        setDescPct(
-                          String(
-                            Math.round((Math.min(m, subtotalBruto) / subtotalBruto) * 10000) / 100,
-                          ),
-                        );
-                      }
-                    }}
+                    onChange={(e) => cambiarDescMonto(e.target.value)}
                     placeholder="0.00"
                     className="pl-7 text-sm"
                     aria-label="Descuento en dólares"
@@ -3341,6 +3388,88 @@ export function PosCliente({
                         ))}
                       </ul>
                     ) : null}
+                  </div>
+                ) : null}
+
+                {/* Descuento general de TODA la venta (mismo estado que el del
+                carrito): se resta del subtotal y el IVA se calcula después
+                sobre lo que queda. */}
+                {lineas.length > 0 ? (
+                  <div className="border-border space-y-2 rounded-lg border p-3">
+                    <div className="flex items-center gap-2">
+                      <Tag className="text-accent-600 size-4 shrink-0" aria-hidden />
+                      <p className="text-heading text-sm font-medium">Descuento a toda la venta</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <div
+                        role="radiogroup"
+                        aria-label="Tipo de descuento de la venta"
+                        className="border-border bg-surface inline-flex shrink-0 rounded-md border p-0.5"
+                      >
+                        {(
+                          [
+                            { valor: "porcentaje", etiqueta: "%" },
+                            { valor: "monto", etiqueta: "USD" },
+                          ] as const
+                        ).map((op) => (
+                          <button
+                            key={op.valor}
+                            type="button"
+                            role="radio"
+                            aria-checked={descTipo === op.valor}
+                            onClick={() => setDescTipo(op.valor)}
+                            className={cn(
+                              "rounded px-3 py-1.5 text-sm font-medium transition-colors",
+                              descTipo === op.valor
+                                ? "bg-accent-500 text-white"
+                                : "text-muted-foreground hover:text-heading",
+                            )}
+                          >
+                            {op.etiqueta}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="relative min-w-0 flex-1">
+                        <span className="text-muted-foreground pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs">
+                          {descTipo === "porcentaje" ? "%" : "$"}
+                        </span>
+                        <Input
+                          type="number"
+                          inputMode="decimal"
+                          step="0.01"
+                          min="0"
+                          max={descTipo === "porcentaje" ? "100" : undefined}
+                          value={descTipo === "porcentaje" ? descPct : descMonto}
+                          onChange={(e) =>
+                            descTipo === "porcentaje"
+                              ? cambiarDescPct(e.target.value)
+                              : cambiarDescMonto(e.target.value)
+                          }
+                          placeholder={descTipo === "porcentaje" ? "Ej. 10" : "Ej. 2.00"}
+                          className="pl-7 text-sm"
+                          aria-label={
+                            descTipo === "porcentaje"
+                              ? "Descuento de la venta en porcentaje"
+                              : "Descuento de la venta en dólares, antes del IVA"
+                          }
+                        />
+                      </div>
+                    </div>
+                    {descuentoCarritoUsd > 0 ? (
+                      <p className="text-success text-xs font-medium tabular-nums">
+                        −{money(descuentoCarritoUsd, "USD")}
+                        {tasaCobro
+                          ? ` · −${money(redondearBs(descuentoCarritoUsd * tasaCobro), "VES")}`
+                          : ""}{" "}
+                        ({numeroLocal(descPctNum, 2)} %) · el IVA se calcula sobre{" "}
+                        {money(subtotalNetoCarrito, "USD")}
+                      </p>
+                    ) : (
+                      <p className="text-muted-foreground text-xs">
+                        Opcional. Porcentaje o monto fijo en USD que se resta del subtotal antes del
+                        IVA.
+                      </p>
+                    )}
                   </div>
                 ) : null}
 
@@ -3964,12 +4093,14 @@ export function PosCliente({
                   </div>
                   {descuentoCarritoUsd > 0 ? (
                     <div className="flex items-start justify-between">
-                      <span className="text-muted-foreground">Descuento</span>
+                      <span className="text-muted-foreground">
+                        Descuento ({numeroLocal(descPctNum, 2)} %)
+                      </span>
                       <span className="text-success text-right tabular-nums">
                         −{money(descuentoCarritoUsd, "USD")}
                         {tasaCobro ? (
                           <span className="text-muted-foreground block text-xs tabular-nums">
-                            −{money(Math.round(descuentoCarritoUsd * tasaCobro * 100) / 100, "VES")}
+                            −{money(redondearBs(descuentoCarritoUsd * tasaCobro), "VES")}
                           </span>
                         ) : null}
                       </span>
