@@ -852,6 +852,13 @@ export function PosCliente({
             100,
         ) / 100
       : 0;
+  // Descuentos en Bs para MOSTRAR, como diferencia de los subtotales ya
+  // redondeados en Bs (no `descuento × tasa`): así "Subtotal bruto − descuentos
+  // + IVA" suma exactamente el total en Bs, sin el céntimo de desvío.
+  const descuentoCarritoBs = (t: number) =>
+    redondearBs(redondearBs(subtotalBruto * t) - redondearBs(subtotalNetoCarrito * t));
+  const descuentoDivisasBs = (t: number) =>
+    redondearBs(redondearBs(subtotalNetoCarrito * t) - redondearBs(subtotalNeto * t));
   // Análogo para IGTF: solo las líneas que realmente lo causan (estado
   // efectivo, con override puntual si lo hay). Cuando TODAS las líneas
   // causan IGTF (el caso de hoy) el resultado es exactamente `subtotalNeto` —
@@ -3458,10 +3465,8 @@ export function PosCliente({
                     {descuentoCarritoUsd > 0 ? (
                       <p className="text-success text-xs font-medium tabular-nums">
                         −{money(descuentoCarritoUsd, "USD")}
-                        {tasaCobro
-                          ? ` · −${money(redondearBs(descuentoCarritoUsd * tasaCobro), "VES")}`
-                          : ""}{" "}
-                        ({numeroLocal(descPctNum, 2)} %) · el IVA se calcula sobre{" "}
+                        {tasaCobro ? ` · −${money(descuentoCarritoBs(tasaCobro), "VES")}` : ""} (
+                        {numeroLocal(descPctNum, 2)} %) · el IVA se calcula sobre{" "}
                         {money(subtotalNetoCarrito, "USD")}
                       </p>
                     ) : (
@@ -4100,7 +4105,7 @@ export function PosCliente({
                         −{money(descuentoCarritoUsd, "USD")}
                         {tasaCobro ? (
                           <span className="text-muted-foreground block text-xs tabular-nums">
-                            −{money(redondearBs(descuentoCarritoUsd * tasaCobro), "VES")}
+                            −{money(descuentoCarritoBs(tasaCobro), "VES")}
                           </span>
                         ) : null}
                       </span>
@@ -4113,7 +4118,7 @@ export function PosCliente({
                         −{money(descuentoDivisasUsd, "USD")}
                         {tasaCobro ? (
                           <span className="text-muted-foreground block text-xs tabular-nums">
-                            −{money(Math.round(descuentoDivisasUsd * tasaCobro * 100) / 100, "VES")}
+                            −{money(descuentoDivisasBs(tasaCobro), "VES")}
                           </span>
                         ) : null}
                       </span>
