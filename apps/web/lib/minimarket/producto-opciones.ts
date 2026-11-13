@@ -15,6 +15,9 @@ export const UNIDADES_PREDEFINIDAS: { value: string; label: string }[] = [
   { value: "g", label: "Gramo (g)" },
   { value: "l", label: "Litro (L)" },
   { value: "ml", label: "Mililitro (ml)" },
+  { value: "m", label: "Metro (m)" },
+  { value: "cm", label: "Centímetro (cm)" },
+  { value: "mm", label: "Milímetro (mm)" },
   { value: "caja", label: "Caja" },
   { value: "paquete", label: "Paquete" },
   { value: "docena", label: "Docena" },
@@ -23,21 +26,53 @@ export const UNIDADES_PREDEFINIDAS: { value: string; label: string }[] = [
   { value: "saco", label: "Saco" },
 ];
 
-/** Tipo de venta del producto: por unidad o a granel (por peso). */
+/** Tipo de venta del producto: por unidad o a granel (por peso, volumen o longitud). */
 export const TIPOS_VENTA: { value: "unidad" | "granel"; label: string }[] = [
   { value: "unidad", label: "Por unidad" },
-  { value: "granel", label: "A granel (por peso)" },
+  { value: "granel", label: "A granel (por peso o medida)" },
 ];
 
-/** Unidades que tienen sentido según el tipo de venta (granel = peso/volumen). */
+/** Unidades fraccionables (peso, volumen, longitud): válidas para venta a granel. */
+const UNIDADES_GRANEL = ["kg", "g", "l", "ml", "m", "cm", "mm"];
+
+/**
+ * Unidades que, al escogerlas en el formulario, ACTIVAN la venta a granel
+ * automáticamente (peso y longitud). Litro/ml no se incluyen: en ferretería
+ * suelen venderse envasados por unidad (galón, envase), y el usuario puede
+ * pasar a granel a mano si los vende fraccionados.
+ */
+const UNIDADES_ACTIVAN_GRANEL = ["kg", "g", "m", "cm", "mm"];
+
+export function unidadActivaGranel(unidad: string): boolean {
+  return UNIDADES_ACTIVAN_GRANEL.includes(unidad);
+}
+
+/** Unidades que tienen sentido según el tipo de venta (granel = peso/volumen/longitud). */
 export function unidadesSugeridas(
   tipoVenta: "unidad" | "granel",
 ): { value: string; label: string }[] {
   if (tipoVenta === "granel") {
-    const pesoValores = ["kg", "g", "l", "ml"];
-    return UNIDADES_PREDEFINIDAS.filter((u) => pesoValores.includes(u.value));
+    return UNIDADES_PREDEFINIDAS.filter((u) => UNIDADES_GRANEL.includes(u.value));
   }
   return UNIDADES_PREDEFINIDAS;
+}
+
+const NOMBRE_PLURAL_UNIDAD: Record<string, string> = {
+  kg: "kilos",
+  g: "gramos",
+  l: "litros",
+  ml: "mililitros",
+  m: "metros",
+  cm: "centímetros",
+  mm: "milímetros",
+};
+
+/**
+ * Nombre en plural de la unidad para la pregunta del POS ("¿Cuántos metros…?").
+ * Unidades libres o no reconocidas devuelven la propia unidad.
+ */
+export function nombrePluralUnidad(unidad: string): string {
+  return NOMBRE_PLURAL_UNIDAD[unidad.trim().toLowerCase()] ?? unidad;
 }
 
 /**

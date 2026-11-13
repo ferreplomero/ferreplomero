@@ -56,6 +56,7 @@ import {
   precioDesdeMargen,
   precioDesdeMargenVenta,
   unidadesSugeridas,
+  unidadActivaGranel,
   type OpcionImpuesto,
   type TipoTasaDiferencial,
 } from "@/lib/minimarket/producto-opciones";
@@ -230,6 +231,12 @@ export function ProductoForm({
     // Granel se vende por peso/volumen: sugiere kg si la unidad era "unidad".
     if (value === "granel" && (unidadSel === "unidad" || unidadSel === "")) setUnidadSel("kg");
     if (value === "unidad" && unidadSel === "kg") setUnidadSel("unidad");
+  }
+
+  /** Al escoger kg, g, m, cm o mm, el tipo de venta pasa a granel solo (el POS pedirá la cantidad). */
+  function onUnidad(value: string) {
+    setUnidadSel(value);
+    if (unidadActivaGranel(value)) setTipoVenta("granel");
   }
 
   // ---- Precios y margen (bidireccional, con margen de ganancia global) ----
@@ -780,7 +787,7 @@ export function ProductoForm({
               id="unidad_sel"
               className={SELECT_CLASS}
               value={unidadSel}
-              onChange={(e) => setUnidadSel(e.target.value)}
+              onChange={(e) => onUnidad(e.target.value)}
             >
               {unidadesDisponibles.map((u) => (
                 <option key={u.value} value={u.value}>

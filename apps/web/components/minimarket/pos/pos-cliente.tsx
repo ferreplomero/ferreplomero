@@ -82,6 +82,7 @@ import {
   type VentaPendienteRow,
 } from "@/lib/minimarket/powersync/ventas-pendientes-local";
 import { useOnline } from "@/lib/minimarket/use-online";
+import { nombrePluralUnidad } from "@/lib/minimarket/producto-opciones";
 import { reintentar } from "@/lib/minimarket/reintentar";
 import {
   guardarEnOutbox,
@@ -4371,7 +4372,8 @@ export function PosCliente({
             <DialogHeader>
               <DialogTitle>Cantidad — {granelProducto?.nombre}</DialogTitle>
               <DialogDescription>
-                Ingresa el peso o volumen vendido ({granelProducto?.unidad ?? "kg"}).
+                ¿Cuántos {nombrePluralUnidad(granelProducto?.unidad ?? "kg")} se venden? (precio por{" "}
+                {granelProducto?.unidad ?? "kg"})
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-3 py-2">

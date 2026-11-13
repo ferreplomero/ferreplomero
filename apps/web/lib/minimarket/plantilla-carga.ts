@@ -101,11 +101,11 @@ const INSTRUCCIONES: [string, string][] = [
   ["categoria", "Opcional. Si la categoría no existe todavía, el sistema la crea automáticamente."],
   [
     "tipo_venta",
-    "Escribe unidad (se vende por pieza) o granel (se vende por peso, ej. queso, embutidos). Vacío = unidad.",
+    "Escribe unidad (se vende por pieza) o granel (se vende por peso o medida, ej. queso, cable, tubo). Vacío = unidad.",
   ],
   [
     "unidad",
-    "Unidad de medida: unidad, kg, g, l, ml, caja, paquete, docena, sixpack, bulto, saco. Vacío = unidad.",
+    "Unidad de medida: unidad, kg, g, l, ml, m, cm, mm, caja, paquete, docena, sixpack, bulto, saco. Vacío = unidad.",
   ],
   ["costo_usd", "Precio de COMPRA en USD. Usa punto o coma decimal (ej. 2.60 o 2,60). Vacío = 0."],
   ["precio_usd", "Obligatorio. Precio de VENTA en USD. Usa punto o coma decimal (ej. 3.50)."],

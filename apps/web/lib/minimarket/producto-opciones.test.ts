@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { getCountryConfig } from "@arkiteq/core";
 import {
+  nombrePluralUnidad,
+  unidadActivaGranel,
+  unidadesSugeridas,
   calcularDiferencial,
   defaultsFiscalesProducto,
   diferencialManual,
@@ -107,5 +110,23 @@ describe("margenMostrado — la tabla/tarjetas/detalle deben mostrar el margen I
       margen_venta_pct: null,
     };
     expect(margenMostrado(producto)).toBe(50);
+  });
+});
+
+describe("unidades de medida por longitud y peso", () => {
+  it("kg, g, m, cm y mm activan la venta a granel; litro y unidad no", () => {
+    for (const u of ["kg", "g", "m", "cm", "mm"]) expect(unidadActivaGranel(u)).toBe(true);
+    for (const u of ["l", "ml", "unidad", "caja"]) expect(unidadActivaGranel(u)).toBe(false);
+  });
+  it("granel ofrece metro, centímetro y milímetro", () => {
+    const vals = unidadesSugeridas("granel").map((u) => u.value);
+    expect(vals).toEqual(expect.arrayContaining(["kg", "g", "m", "cm", "mm"]));
+    expect(vals).not.toContain("unidad");
+  });
+  it("nombre plural para la pregunta del POS", () => {
+    expect(nombrePluralUnidad("m")).toBe("metros");
+    expect(nombrePluralUnidad("cm")).toBe("centímetros");
+    expect(nombrePluralUnidad("kg")).toBe("kilos");
+    expect(nombrePluralUnidad("rollo")).toBe("rollo");
   });
 });
